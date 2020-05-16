@@ -1,0 +1,88 @@
+## Load CMIP6 3D ocean potential temp NetCDFs and extract surface and bottom temperature
+# 5/15/2020
+# JGM
+
+
+# The levels are not constant across models. But I'm going to assume that I can use the top and bottom of each one. 
+# GINS I took 1985-2012
+
+library(ncdf4)
+
+# GFDL
+gfdl <- nc_open ("Data/thetao_Omon_GFDL-CM4_historical_r1i1p1f1_gn_201001-201412.nc")
+print (gfdl)
+#thetao is temp, lev is depth. top grid cell 0-2m?
+
+gfdl_thetao <- gfdl$var[[1]] 
+gfdl_start <- rep (1, gfdl_thetao$ndims)
+gfdl_count <- gfdl_thetao$varsize #1440, 1080, 35, 60
+gfdl_count[3] <- 1
+
+gfdl_sst <- ncvar_get (gfdl, "thetao", start = rep(1,4), count = gfdl_count)
+
+gfdl_start[3] <- 35
+gfdl_bt <- ncvar_get (gfdl, "thetao", start = gfdl_start, count = gfdl_count)
+
+# HadGEM ----
+# 3 files files, 1950-1991 and 199
+mohc <- nc_open ("Data/thetao_Omon_HadGEM3-GC31-LL_historical_r1i1p1f3_gn_195001-199912.nc")
+
+# IPSL----
+# one file, 1950-2014. 780 time steps--I want 324 months total. Start at 432 should end at 756
+ipsl <- nc_open ("Data/thetao_Omon_IPSL-CM6A-LR_historical_r1i1p1f1_gn_195001-201412.nc")
+print (ipsl)
+
+ipsl_thetao <- ipsl$var[[8]] # varsize 362, 332, 75, 780
+
+# need to figure out where bottom temp is. first take full layers for the years that I want, then try to subset. still too big. take 1 year.
+
+# looks like this is like GINS, where numbers drop off at deeper depths. nothing at level 70, but 21204 values at level 74, 42720 at 73.
+
+# maybe try subsetting my region. GINS is lat 50-85, -44.875- 15.125
+# can't, it's not a standard grid. 
+lat <- ncvar_get (ipsl, "nav_lat")
+lon <- ncvar_get (ipsl, "nav_lon")
+ipsl_t <- ncvar_get (ipsl, "thetao", start = c(1,1,1, 432), count = c(362, 332, 75, 12))
+ipsl_sst <- ncvar_get (ipsl, "thetao", start = c(1,1,1, 432), count = c(362, 332, 1, 324))
+
+# take average across months
+#https://stackoverflow.com/questions/43619818/how-can-i-average-a-matrix-every-nth-elements-in-a-vectorized-way
+# can't figure this out for 3d, just using a forloop
+
+month_seq <- seq(0, 312, by = 12)
+
+ipsl_sst_mn <- array(dim = c(362, 332, 12))
+
+for (i in 1:12){
+  ipsl_month <- ipsl_sst [,,month_seq + i]
+  ipsl_sst_mn[,,i] <- apply (ipsl_month, 1:2, mean, na.rm = TRUE)
+  
+}
+save (ipsl_sst_mn, file = "Data/IPSL_sst.RData")
+
+# bottom temp. layer 75 is all NA
+ipsl_bt <- ncvar_get (ipsl, "thetao", start = c(1,1,75, 432), count = c(362, 332, 1, 324))
+
+ipsl_bt_mn <- array(dim = c(362, 332, 12))
+
+for (i in 1:12){
+  ipsl_month <- ipsl_bt [,,month_seq + i]
+  ipsl_bt_mn[,,i] <- apply (ipsl_month, 1:2, mean, na.rm = TRUE)
+  
+}
+
+# plot to check
+
+# can't figure out gridded lat/lon. rasterize??
+library (raster)
+ipsl_rot <- apply (t(ipsl_sst_mn[,,6]), 2, rev)
+ipsl_r_tmp <- raster(ipsl_rot)
+plot (ipsl_r_tmp)
+
+ipsl_rot <- apply (t(ipsl_bt_mn[,,1]), 2, rev)
+ipsl_r_tmp <- raster(ipsl_rot)
+plot (ipsl_r_tmp)
+
+gfdl_r <- apply (t(gfdl_bt[,,10]), 2, rev)
+gfdl_r_tmp <- raster(gfdl_sst[,,10])
+plot (gfdl_r_tmp)
