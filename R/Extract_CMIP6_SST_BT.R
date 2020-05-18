@@ -3,12 +3,12 @@
 # JGM
 
 
-# The levels are not constant across models. But I'm going to assume that I can use the top and bottom of each one. 
+# The levels are not constant across models. But I'm going to assume that I can use the top as SST and deepest value "bottom" of each one. 
 # GINS I took 1985-2012
 
-## ** might need to redo IPSL and do starts with odd numbers
 
 library(ncdf4)
+library (raster)
 
 # GFDL---
 # 3 files, 1970-1989 [start at 181st time step for 1985, take 60 total], 1990-2009, 2010-2014 [end at 36th time step for 2012]
@@ -53,20 +53,20 @@ gfdl_sst_mn <- function (filename){
   
   gfdl_sst_tmp <- ncvar_get (gfdl, "thetao", start = start, count = count)
   
-  month_seq <- seq(0, dim (gfdl_sst_tmp)[3] - 12, by = 12)
+  # change into a 4d array with months as 3rd dimension and years as 4th dimension
+  gfdl_sst_mn_array <- array (gfdl_sst_tmp, 
+                             dim = c(gfdl$var[[1]]$varsize[1], 
+                                     gfdl$var[[1]]$varsize[2],
+                                     12,
+                                     n_months/12))
   
-  gfdl_sst_mn <- array(dim = c(
-    dim (gfdl_sst_tmp)[1],
-    dim (gfdl_sst_tmp)[2],
-    12)
-    )
+  # take mean across 4th dimension
+  gfdl_sst_mn <- apply (gfdl_sst_mn_array, c(1:3), mean)
   
-  for (i in 1:12){
-    sst_month <- gfdl_sst_tmp[,,month_seq + i]
-    gfdl_sst_mn[,,i] <- apply (sst_month, 1:2, mean, na.rm = TRUE)
-    
-  }
+  # clean up
+  rm (list = c ("gfdl_sst_tmp", "gfdl_sst_mn_array"))
   nc_close (gfdl)
+  
   return (gfdl_sst_mn)
 }
 
@@ -299,154 +299,106 @@ mohc_2 <- nc_open ("Data/thetao_Omon_HadGEM3-GC31-LL_historical_r1i1p1f3_gn_2000
 
 
 # start with SST
-# for first file to get to 1985, start would be 433
-mohc_sst <- array (dim = c(360, 330, 324))
-mohc_sst[,,1:168] <- ncvar_get (mohc_1, "thetao", start = c(1,1,1, 433), count = c(360, 330, 1, 168)) # 360x330x168
-mohc_sst[,,169:324] <- ncvar_get (mohc_2, "thetao", start = c(1,1,1,1), count = c(360, 330, 1, 156)) # 360x330x168
+# for first file to get to 1985, start would be 421
+mohc_sst <- array (dim = c(360, 330, 336))
+mohc_sst[,,1:180] <- ncvar_get (mohc_1, "thetao", start = c(1,1,1, 421), count = c(360, 330, 1, 180)) # 360x330x180
+mohc_sst[,,181:336] <- ncvar_get (mohc_2, "thetao", start = c(1,1,1,1), count = c(360, 330, 1, 156)) # 360x330x156
 
-# take average across months
-#https://stackoverflow.com/questions/43619818/how-can-i-average-a-matrix-every-nth-elements-in-a-vectorized-way
-# can't figure this out for 3d, just using a forloop
+# change into a 4d array with months as 3rd dimension and years as 4th dimension
+mohc_sst_array <- array (mohc_sst, 
+                            dim = c(mohc_1$var[[7]]$varsize[1], 
+                                    mohc_1$var[[7]]$varsize[2],
+                                    12, 28)) # 12 months, 28 years
 
-month_seq <- seq(0, 312, by = 12)
-
-mohc_sst_mn <- array(dim = c(360, 330, 12))
-
-for (i in 1:12){
-  mohc_month <- mohc_sst[,,month_seq + i]
-  mohc_sst_mn[,,i] <- apply (mohc_month, 1:2, mean, na.rm = TRUE)
-  
-}
+# take mean across 4th dimension
+mohc_sst_mn <- apply (mohc_sst_array, c(1:3), mean)
 save (mohc_sst_mn, file = "Data/mohc_sst.RData")
 
-rm (list = c ("mohc_month", "mohc_sst", "mohc_sst_mn", "mohc_thetao"))
+# clean up
+rm (list = c ("mohc_sst", "mohc_sst_array"))
 
-# bottom temp. take several arrays because these get too big
-
-# take two from mohc_1, 7 yrs each
-mohc_bt_array_1 <- array (dim = c(360, 330, 74, 84))
-count_bt <- c(360, 330, 74, 12) # will start at 2, and then take 12 time steps
-
-for (i in 1:7){ 
-  start_bt <- c(1, 1, 2, 433 + 12*(i-1))
-  mohc_bt_tmp <- ncvar_get (mohc_1, "thetao", 
-                            start = start_bt,
-                            count = count_bt)
-  mohc_bt_array_1[ , , , (12*(i-1) + 1):(12*i)] <- mohc_bt_tmp
-  print (c((12*(i-1) + 1), 12*i)) # print first and last
-}
-
-# too big to save. take mean first
-mohc_bt_mn_1 <- array(dim = c(360, 330, 74, 12))
-month_seq <- seq(0, 72, by = 12)
-
-for (i in 1:12){
-  mohc_month <- mohc_bt_array_1 [,,, month_seq + i]
-  mohc_bt_mn_1[,,,i] <- apply (mohc_month, 1:3, mean, na.rm = TRUE)
-  print (i)
-}
-
-rm (list = c("mohc_bt_array_1", "mohc_month", "mohc_bt_tmp"))
-
-# 2nd half
-mohc_bt_array_2 <- array (dim = c(360, 330, 74, 84))
-
-for (i in 1:7){ 
-  start_bt <- c(1, 1, 2, 517 + 12*(i-1)) # prev ended at 516 (432+84)
-  mohc_bt_tmp <- ncvar_get (mohc_1, "thetao", 
-                            start = start_bt,
-                            count = count_bt)
-  mohc_bt_array_2[ , , , (12*(i-1) + 1):(12*i)] <- mohc_bt_tmp
-  print (c((12*(i-1) + 1), 12*i))
-}
-
-mohc_bt_mn_2 <- array(dim = c(360, 330, 74, 12))
-
-for (i in 1:12){
-  mohc_month <- mohc_bt_array_2 [,,, month_seq + i]
-  mohc_bt_mn_2[,,,i] <- apply (mohc_month, 1:3, mean, na.rm = TRUE)
-  print (i)
-}
-
-rm (list = c("mohc_bt_array_2", "mohc_month", "mohc_bt_tmp"))
-
-# Mohc 2, 156 time steps, 13 years. do 6 and 5
-mohc_bt_array_3 <- array (dim = c(360, 330, 74, 72))
-count_bt <- c(360, 330, 74, 12) # will start at 2, and then take 12 time steps
-
-for (i in 1:6){ 
-  start_bt <- c(1, 1, 2, 1 + 12*(i-1))
-  mohc_bt_tmp <- ncvar_get (mohc_2, "thetao", 
-                            start = start_bt,
-                            count = count_bt)
-  mohc_bt_array_3[ , , , (12*(i-1) + 1):(12*i)] <- mohc_bt_tmp
-  print (c((12*(i-1) + 1), 12*i))
-}
-
-mohc_bt_mn_3 <- array(dim = c(360, 330, 74, 12))
-month_seq <- seq(0, 60, by = 12) # need smaller month_seq
-
-for (i in 1:12){
-  mohc_month <- mohc_bt_array_3 [,,, month_seq + i]
-  mohc_bt_mn_3[,,,i] <- apply (mohc_month, 1:3, mean, na.rm = TRUE)
-  print (i)
-}
-rm (list = c("mohc_bt_array_3", "mohc_month", "mohc_bt_tmp"))
-
-
-mohc_bt_array_4 <- array (dim = c(360, 330, 74, 60))
-
-for (i in 1:5){ 
-  start_bt <- c(1, 1, 2, 73 + 12*(i-1)) # shouldn't the start be an odd number??
-  mohc_bt_tmp <- ncvar_get (mohc_2, "thetao", 
-                            start = start_bt,
-                            count = count_bt)
-  mohc_bt_array_4[ , , , (12*(i-1) + 1):(12*i)] <- mohc_bt_tmp
-  print (c((12*(i-1) + 1), 12*i))
-}
-mohc_bt_mn_4 <- array(dim = c(360, 330, 74, 12))
-
-month_seq <- seq(0, 48, by = 12) # need smaller month_seq
-for (i in 1:12){
-  mohc_month <- mohc_bt_array_4 [,,, month_seq + i]
-  mohc_bt_mn_4[,,,i] <- apply (mohc_month, 1:3, mean, na.rm = TRUE)
-  print (i)
-}
-rm (list = c("mohc_bt_array_4", "mohc_month", "mohc_bt_tmp"))
-
-# put them together, take overall mean, and find bottom
-mohc_bt_mn <- array (dim = c (360, 330, 74, 12))
-
-for (i in 1:12){
-  mohc_month <- array (
-    c(mohc_bt_mn_1 [,,,i],
-      mohc_bt_mn_2 [,,,i],
-      mohc_bt_mn_3 [,,,i],
-      mohc_bt_mn_4 [,,,i]
-    ),
-    dim = c (360, 330, 74, 4)
+# bottom temp. make a function like gfdl to go through both files
+mohc_bt_mn_fun <- function (filename, n_months, start_val){
+  
+  mohc <- nc_open (filename)
+  
+  count_bt <- c(mohc$var[[7]]$varsize[1],
+                mohc$var[[7]]$varsize[2],
+                mohc$var[[7]]$varsize[3] -1, # all levels but 1st
+                1) # just one month
+  
+  # array to hold the bottom temp values for each month
+  mohc_bt_array_tmp <- array (dim = c(
+    mohc$var[[7]]$varsize[1], 
+    mohc$var[[7]]$varsize[2],
+    n_months)
   )
-  mohc_bt_mn[,,,i] <- apply (mohc_month, 1:3, mean, na.rm = TRUE)
-  print (i)
+  
+  for (i in 1:n_months){ # number of months depends on file
+    start_bt <- c(1, 1, 2, start_val + i)
+    mohc_bt_tmp <- ncvar_get (mohc, "thetao", 
+                              start = start_bt,
+                              count = count_bt)
+    mohc_floor_tmp <- apply (mohc_bt_tmp, c(1,2), function(x) x[max(which(!is.na(x)))]) # take deepest non-NA number in the 3rd dimension
+    mohc_bt_array_tmp[ , , i] <- mohc_floor_tmp
+    rm (mohc_bt_tmp) # save some memory?
+    print (i)
+  }
+  
+  # change into a 4d array with months as 3rd dimension and years as 4th dimension
+  mohc_bt_mn_array <- array (mohc_bt_array_tmp, 
+                             dim = c(mohc$var[[7]]$varsize[1], 
+                                     mohc$var[[7]]$varsize[2],
+                                     12,
+                                     n_months/12))
+  
+  # take mean across 4th dimension
+  mohc_bt_mn <- apply (mohc_bt_mn_array, c(1:3), mean)
+  
+  # clean up
+  rm (list = c("mohc_bt_array_tmp", "mohc_bt_mn_array"))
+  nc_close (mohc)
+  
+  return (mohc_bt_mn)
+  
 }
 
-mohc_bt <- apply (mohc_bt_mn, c(1,2,4), function(x) x[max(which(!is.na(x)))])
-save (mohc_bt, file = "Data/mohc_bt.RData")
-rm (mohc_month)
+
+# apply across files. first start val is 420( starts at val + i), counts are 180 and 156
+
+mohc_nc_files <- list.files (path = "Data", pattern = "Omon_Had", full.names = TRUE)
+mohc_start_vals <- c(420, 0)
+mohc_n_months <- c(180, 156)
+
+
+#lapply has been  too big, so instead, make array and do it in a for loop
+mohc_bt_array <- array (dim = c (360, 330, 12, 2)) # 12 months, 3 files
+
+for (i in 1:length (mohc_nc_files)){
+  start_val <-  mohc_start_vals[i]
+  n_months <- mohc_n_months[i]
+  mohc_bt_array [,,,i] <- mohc_bt_mn_fun (filename =mohc_nc_files[i],
+                                          n_months = n_months, 
+                                          start_val = start_val)
+}
+
+
+mohc_bt_mn <- apply (mohc_bt_array, 1:3, mean, na.rm = TRUE)
+save (mohc_bt_mn, file = "Data/mohc_bt.RData")
+
 
 # quick plot check
-mohc_rot <- apply (t(mohc_bt_mn[,,1,7]), 2, rev)
+mohc_rot <- apply (t(mohc_bt_mn[,,7]), 2, rev)
 mohc_r_tmp <- raster(mohc_rot)
 plot (mohc_r_tmp)
 
 
 nc_close (mohc_1)
 nc_close (mohc_2)
-
-rm (list = c ("mohc_1", "mohc_2", "mohc_r_tmp", "mohc_rot", "mohc_bt", "mohc_bt_mn", "mohc_bt_mn_1", "mohc_bt_mn_2", "mohc_bt_mn_3", "mohc_bt_mn_4"))
+rm (list = c ("mohc_bt_array", "mohc_1", "mohc_2", "mohc_r_tmp", "mohc_rot", "mohc_thetao"))
 
 # IPSL----
-# one file, 1950-2014. 780 time steps--I want 324 months total (1985-2012). Start at 432 and should end at 756.
+# one file, 1950-2014. 780 time steps--I want 336 months total (1985-2012). Start at 421 and should end at 756.
 ipsl <- nc_open ("Data/thetao_Omon_IPSL-CM6A-LR_historical_r1i1p1f1_gn_195001-201412.nc")
 #print (ipsl)
 
@@ -461,31 +413,30 @@ ipsl <- nc_open ("Data/thetao_Omon_IPSL-CM6A-LR_historical_r1i1p1f1_gn_195001-20
 
 
 # Start with SST- 1st layer
-ipsl_sst <- ncvar_get (ipsl, "thetao", start = c(1,1,1, 433), count = c(362, 332, 1, 324))
+ipsl_sst <- ncvar_get (ipsl, "thetao", start = c(1,1,1, 421), count = c(362, 332, 1, 336)) # 362 x 332 x 336
 
-# take average across months
-#https://stackoverflow.com/questions/43619818/how-can-i-average-a-matrix-every-nth-elements-in-a-vectorized-way
-# can't figure this out for 3d, just using a forloop
 
-month_seq <- seq(0, 312, by = 12)
+# change into a 4d array with months as 3rd dimension and years as 4th dimension
+ipsl_sst_array <- array (ipsl_sst, 
+                         dim = c(ipsl$var[[8]]$varsize[1], 
+                                 ipsl$var[[8]]$varsize[2],
+                                 12, 28)) # 12 months, 28 years
 
-ipsl_sst_mn <- array(dim = c(362, 332, 12))
+# take mean across 4th dimension
+ipsl_sst_mn <- apply (ipsl_sst_array, c(1:3), mean)
 
-for (i in 1:12){
-  ipsl_month <- ipsl_sst [,,month_seq + i]
-  ipsl_sst_mn[,,i] <- apply (ipsl_month, 1:2, mean, na.rm = TRUE)
-  
-}
-save (ipsl_sst_mn, file = "Data/IPSL_sst.RData")
+save (ipsl_sst_mn, file = "Data/ipsl_sst.RData")
+
+rm (list = c ("ipsl_sst", "ipsl_sst_array"))
 
 # bottom temp. layer 75 is all NA, so I need to take all the layers or at least some of them to find the seafloor. Looks from a quick check of the first 10 years that the # of NAs is consistent across the files, so I should be able to take the bottom layer first, and then take a mean. 
 
 # try taking one month at a time, finding bottom, and putting together in a list
-ipsl_bt_array <- array (dim = c(362, 332, 324))
+ipsl_bt_array <- array (dim = c(362, 332, 336))
 count_bt <- c(362, 332, 74, 1) # will start at depth 2, take one month at a time
 
-for (i in 1:324){ # 27 total years, 324 months
-  start_bt <- c(1, 1, 2, 432 + i)
+for (i in 1:336){ 
+  start_bt <- c(1, 1, 2, 420 + i)
   ipsl_bt_tmp <- ncvar_get (ipsl, "thetao", 
                             start = start_bt,
                             count = count_bt)
@@ -496,25 +447,26 @@ for (i in 1:324){ # 27 total years, 324 months
 }
 
 # take mean across months
-month_seq <- seq(0, 312, by = 12)
+# change into a 4d array with months as 3rd dimension and years as 4th dimension
+ipsl_bt_mn_array <- array (ipsl_bt_array, 
+                           dim = c(ipsl$var[[8]]$varsize[1], 
+                                   ipsl$var[[8]]$varsize[2],
+                                   12,
+                                   28))
 
-ipsl_bt_mn <- array(dim = c(362, 332, 12))
-
-for (i in 1:12){
-  ipsl_month <- ipsl_bt_array [,,month_seq + i]
-  ipsl_bt_mn[,,i] <- apply (ipsl_month, 1:2, mean, na.rm = TRUE)
-  
-}
+# take mean across 4th dimension
+ipsl_bt_mn <- apply (ipsl_bt_mn_array, c(1:3), mean)
 
 save (ipsl_bt_mn, file = "Data/ipsl_bt.RData")
 
 nc_close(ipsl)
+
 # plot to check
 
 # can't figure out gridded lat/lon. rasterize??
-library (raster)
 
-ipsl_rot <- apply (t(ipsl_bt_mn[,,10]), 2, rev)
+
+ipsl_rot <- apply (t(ipsl_bt_mn[,,1]), 2, rev)
 ipsl_r_tmp <- raster(ipsl_rot)
 plot (ipsl_r_tmp)
 
