@@ -81,15 +81,10 @@ gfdl_sst_mn <- apply (gfdl_sst_array, 1:3, mean, na.rm = TRUE)
 
 save (gfdl_sst_mn, file = "Data/gfdl_sst.RData")
 
-# plot to check
-ipsl_rot <- apply (t(gfdl_bt_mn[,,7]), 2, rev)
-ipsl_r_tmp <- raster(ipsl_rot)
-plot (ipsl_r_tmp)
-  
 # bottom temp: take layers 2-35 and find deepest level 
-# try taking one year at a time, finding bottom, and putting together in a list
 
-# make a function that takes one year at a time. and then in a for loop, set starts and counts. 
+
+# make a function that takes one month at a time, finds bottom, puts months together, and finds a monthly mean for each file. Will have to specify a different starting point and number of months for each file. 
 
 
 gfdl_bt_mn_fun <- function (filename, n_months, start_val){
@@ -101,13 +96,14 @@ gfdl_bt_mn_fun <- function (filename, n_months, start_val){
                 gfdl$var[[1]]$varsize[3] -1, # all levels but 1st
                 1) # just one month
   
+  # array to hold the bottom temp values for each month
   gfdl_bt_array_tmp <- array (dim = c(
     gfdl$var[[1]]$varsize[1], 
     gfdl$var[[1]]$varsize[2],
     n_months)
   )
   
-  for (i in 1:n_months){ # number of months depends on filename
+  for (i in 1:n_months){ # number of months depends on file
     start_bt <- c(1, 1, 2, start_val + i)
     gfdl_bt_tmp <- ncvar_get (gfdl, "thetao", 
                               start = start_bt,
@@ -118,25 +114,24 @@ gfdl_bt_mn_fun <- function (filename, n_months, start_val){
     print (i)
   }
   
-  # take mean across months
-  month_seq <- seq(0, n_months-12, by = 12)
+  # change into a 4d array with months as 3rd dimension and years as 4th dimension
+  gfdl_bt_mn_array <- array (gfdl_bt_array_tmp, 
+                             dim = c(gfdl$var[[1]]$varsize[1], 
+                                     gfdl$var[[1]]$varsize[2],
+                                     12,
+                                     n_months/12))
   
-  gfdl_bt_mn <- array(dim = c(gfdl$var[[1]]$varsize[1], 
-                              gfdl$var[[1]]$varsize[2],
-                              12))
+  # take mean across 4th dimension
+  gfdl_bt_mn <- apply (gfdl_bt_mn_array, c(1:3), mean)
   
-  for (j in 1:12){
-    gfdl_month <- gfdl_bt_array_tmp [,,month_seq + j]
-    gfdl_bt_mn[,,j] <- apply (gfdl_month, 1:2, mean, na.rm = TRUE)
-    
-  }
-  
-  rm (gfdl_bt_array_tmp)
+  # clean up
+  rm (list = c("gfdl_bt_array_tmp", "gfdl_bt_mn_array"))
   nc_close (gfdl)
   
   return (gfdl_bt_mn)
   
 }
+
   
 # can I just make a vector of start values and n_months? star val is 180, 0, 0; n_months is 60, 240, 36
 gfdl_start_vals <- c(180, 0, 0)
@@ -144,7 +139,8 @@ gfdl_n_months <- c(60, 240, 36)
 
 # gfdl_bt <- lapply (gfdl_nc_files, gfdl_bt_mn_fun, n_months = gfdl_n_months, start_val = gfdl_start_vals) # cannot allocate vector of size 3003.4Gb
 
-gfdl_bt_array <- array (dim = c (1440, 1080, 12, 3))
+#instead, make array and do it in a for loop
+gfdl_bt_array <- array (dim = c (1440, 1080, 12, 3)) # 12 months, 3 files
 
 for (i in 1:length (gfdl_nc_files)){
   start_val <-  gfdl_start_vals[i]
@@ -158,7 +154,132 @@ for (i in 1:length (gfdl_nc_files)){
 gfdl_bt_mn <- apply (gfdl_bt_array, 1:3, mean, na.rm = TRUE)
 save (gfdl_bt_mn, file = "Data/gfdl_bt.RData")
 
+# AWI ----
+# 4 files, 1981-1990 [start at 49, 72 steps], 1991-2000, 2000-2009, 2010-2014 [36 time steps]. 
+# this one will be different--1d lat/lon
 
+awi_nc_files <- list.files (path = "Data", pattern = "Omon_AWI", full.names = TRUE)
+
+awi <- nc_open (awi_nc_files[1])
+print (awi) # thetao is 830305 x 46 depth x 120 time
+
+awi_thetao <- awi$var[[2]]
+
+lat_awi <- ncvar_get (awi, "lat")
+lon_awi <- ncvar_get (awi, "lon")
+
+# not sure these will actually be useful? 830305x1
+save (lat_awi, file = "Data/awi_lat.RData")
+save (lon_awi, file = "Data/awi_lon.RData")
+
+# SST - first level
+awi_sst_mn_fun <- function (filename){
+  
+  awi <- nc_open (filename)
+  
+  # 4 files, 1981-1990 [start at 49, 72 steps], 1991-2000, 2001-2010, 2011-2014 [24 time steps].
+  if (grepl ("1981", filename)) {
+    start <- c(1, 1, 49)
+    count <- c(awi$var[[2]]$varsize[1], 1, 72)
+  } else if (grepl ("2010", filename)){
+    start <- rep (1, 3)
+    count <- c(awi$var[[2]]$varsize[1], 1, 24)
+  } else {
+    start <- rep (1, 3)
+    count <- c(awi$var[[2]]$varsize[1],
+               1, awi$var[[2]]$varsize[3])
+  }
+  
+  awi_sst_tmp <- ncvar_get (awi, "thetao", start = start, count = count) # 830305 x n time steps
+  
+  # reshape to 3d array with coords as rows, months as columns, floors as years. 
+  awi_sst_mn_array <- array (awi_sst_tmp, 
+                            dim = c (830305, 12, dim (awi_sst_tmp)[2]/12))
+  
+  # take mean over floors
+  awi_sst_mn <- apply (awi_sst_mn_array, c(1, 2), mean)
+  
+  # clean up
+  nc_close (awi)
+  rm (list = c("awi_sst_tmp", "awi_sst_mn_array"))
+  
+  # spit out monthly means for that file
+  return (awi_sst_mn)
+}
+
+# attempt to plot?
+#awi_grid <- expand.grid (lon = lon_awi, lat = lat_awi) # Error: cannot allocate vector of size 2568.2 Gb
+
+# apply function across files in list
+awi_sst_l <- lapply (awi_nc_files, awi_sst_mn_fun)
+
+# put back into an array and take a mean of means for each month
+awi_sst_array <- array (unlist (awi_sst_l), 
+                         dim = c (830305, 12, length (awi_nc_files)))
+
+awi_sst_mn <- apply (awi_sst_array, 1:2, mean, na.rm = TRUE)
+
+save (awi_sst_mn, file = "Data/awi_sst.RData")
+
+rm (list = c ("awi_sst_l", "awi_sst_array"))
+
+# bottom temp, 46 total layers
+
+awi_bt_mn_fun <- function (filename, n_months, start_val){
+  
+  awi <- nc_open (filename)
+  
+  count_bt <- c(awi$var[[2]]$varsize[1],
+                awi$var[[2]]$varsize[2] -1, # all levels but 1st
+                1) # just one month
+  
+  # array to hold the bottom temp values for each month
+  awi_bt_array_tmp <- array (dim = c(awi$var[[2]]$varsize[1], n_months)) # 830305 x 72
+  
+  for (i in 1:n_months){ # number of months depends on file
+    start_bt <- c(1, 2, start_val + i)
+    awi_bt_tmp <- ncvar_get (awi, "thetao", 
+                              start = start_bt,
+                              count = count_bt) # 830305 x 45
+    awi_floor_tmp <- apply (awi_bt_tmp, 1, function(x) x[max(which(!is.na(x)))]) # numeric vector 1x830305
+    awi_bt_array_tmp[ , i] <- awi_floor_tmp
+    rm (awi_bt_tmp) # save some memory?
+    print (i)
+  }
+  
+  # take mean across months. can just do by turning into 3d array
+  awi_bt_mn_array <- array (awi_bt_array_tmp, 
+                            dim = c (830305, 12, n_months/12))
+  
+  awi_bt_mn <- apply (awi_bt_mn_array, c(1, 2), mean)
+  rm (list = c("awi_bt_array_tmp", "awi_bt_mn_array"))
+  nc_close (awi)
+  
+  return (awi_bt_mn) # should be 830305 x 12
+  
+}
+
+# Make a vector of start values and n_months for the 4 files. start val would be 48, 0, 0, 0; n_months is 72, 120, 120, 24
+awi_start_vals <- c(48, 0, 0, 0)
+awi_n_months <- c(72, 120, 120, 24)
+
+# awi_bt <- lapply (awi_nc_files, awi_bt_mn_fun, n_months = awi_n_months, start_val = awi_start_vals) # cannot allocate vector of size 3003.4Gb
+
+#instead, make array and do it in a for loop
+awi_bt_array <- array (dim = c (830305, 12, length (awi_nc_files))) # 12 months, 4 files
+
+for (i in 1:length (awi_nc_files)){
+  start_val <-  awi_start_vals[i]
+  n_months <- awi_n_months[i]
+  awi_bt_array [,,i] <- awi_bt_mn_fun (filename =awi_nc_files[i],
+                                          n_months = n_months, 
+                                          start_val = start_val)
+}
+
+
+
+awi_bt_mn <- apply (awi_bt_array, 1:2, mean, na.rm = TRUE)
+save (awi_bt_mn, file = "Data/awi_bt.RData")
 
 # HadGEM ----
 # 2 files, 1950-1999 (600 time steps) and 2000-2014 (180 time steps)
