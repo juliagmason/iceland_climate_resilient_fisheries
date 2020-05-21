@@ -3,12 +3,153 @@
 # JGM
 
 
-# The levels are not constant across models. But I'm going to assume that I can use the top as SST and deepest value "bottom" of each one. 
-# GINS I took 1985-2012
+# The levels are not constant across models. For comparing to GINS, I should try to match as closely as possible. But for running the actual models with the survey data, should I just use the model data as is?
 
 
 library(ncdf4)
 library (raster)
+
+# CNRM---
+# take SST for now to compare with GFDL and AWI
+cnrm_nc_files <- list.files (path = "Data", pattern = "Omon_CNRM", full.names = TRUE)
+
+cnrm <- nc_open (cnrm_nc_files[1])
+print (cnrm)
+
+lat_cnrm <- ncvar_get (cnrm, "lat") # these are normal?
+lon_cnrm <- ncvar_get (cnrm, "lon") # -180-180
+
+# check depths
+depth_cnrm <- ncvar_get (cnrm, "lev") # 75 levels, 0.5 to 5902. 
+
+nc_close (cnrm)
+
+# save these so I can delete the netcdf
+save (lat_cnrm, file = "Data/cnrm_lat.RData")
+save (lon_cnrm, file = "Data/cnrm_lon.RData")
+
+# grab sst, use tidync later
+cnrm_sst_mn_fun <- function (filename){
+  
+  cnrm <- nc_open (filename)
+  
+  # first file starts at 1985! so just need to clip the last one. 2010-2014, so need 36
+  if (grepl ("2014", filename)) {
+    start <- rep (1, 4)
+    count <- c(cnrm$var[[7]]$varsize[1], 
+               cnrm$var[[7]]$varsize[2],
+               1, 36)
+  } else {
+    start <- rep (1, 4)
+    count <- c(cnrm$var[[7]]$varsize[1],
+               cnrm$var[[7]]$varsize[2], 
+               1, cnrm$var[[7]]$varsize[4])
+  }
+  
+  cnrm_sst_tmp <- ncvar_get (cnrm, "thetao", start = start, count = count)
+  
+  # change into a 4d array with months as 3rd dimension and years as 4th dimension
+  cnrm_sst_mn_array <- array (cnrm_sst_tmp, 
+                              dim = c(cnrm$var[[7]]$varsize[1], 
+                                      cnrm$var[[7]]$varsize[2],
+                                      12,
+                                      count[4]/12))
+  
+  # take mean across 4th dimension
+  cnrm_sst_mn <- apply (cnrm_sst_mn_array, c(1:3), mean)
+  
+  # clean up
+  rm (list = c ("cnrm_sst_tmp", "cnrm_sst_mn_array"))
+  nc_close (cnrm)
+  
+  return (cnrm_sst_mn)
+}
+
+# apply function across files in list
+cnrm_sst_l <- lapply (cnrm_nc_files, cnrm_sst_mn_fun)
+
+# put back into an array and take a mean of means for each month
+cnrm_sst_array <- array (unlist (cnrm_sst_l), 
+                         dim = c (cnrm$var[[7]]$varsize[1],
+                                  cnrm$var[[7]]$varsize[2],
+                                  12, 
+                                  length (cnrm_nc_files)))
+
+cnrm_sst_mn <- apply (cnrm_sst_array, 1:3, mean, na.rm = TRUE)
+
+save (cnrm_sst_mn, file = "Data/cnrm_sst.RData")
+
+ipsl_rot <- apply (t(cnrm_bt_mn[,,7]), 2, rev)
+ipsl_r_tmp <- raster(ipsl_rot)
+plot (ipsl_r_tmp)
+
+# bottom temp. can't really do tidync with cnrm because the lat/lon are indices, so can't filter. default 60 per file
+cnrm_bt_mn_fun <- function (filename){
+  print (filename)
+  cnrm <- nc_open (filename)
+  
+  # define start val and n_months within function? first file starts in 1985, so all I need is the last one. start val will be all the same. 
+  n_months <- ifelse (grepl ("2014", filename), 36, 60) 
+  
+  start_bt <- c(1, 1, 2, 1)
+  
+  count_bt <- c(cnrm$var[[7]]$varsize[1],
+                cnrm$var[[7]]$varsize[2],
+                cnrm$var[[7]]$varsize[3] -1, # all levels but 1st
+                1) # just one month
+  
+  # array to hold the bottom temp values for each month
+  cnrm_bt_array_tmp <- array (dim = c(
+    cnrm$var[[7]]$varsize[1], 
+    cnrm$var[[7]]$varsize[2],
+    n_months)
+  )
+  
+  for (i in 1:n_months){ # number of months depends on file
+    
+    cnrm_bt_tmp <- ncvar_get (cnrm, "thetao", 
+                              start = start_bt,
+                              count = count_bt)
+    cnrm_floor_tmp <- apply (cnrm_bt_tmp, c(1,2), function(x) x[max(which(!is.na(x)))]) # take deepest non-NA number in the 3rd dimension
+    cnrm_bt_array_tmp[ , , i] <- cnrm_floor_tmp
+    rm (cnrm_bt_tmp) # save some memory?
+    print (i)
+  }
+  
+  # change into a 4d array with months as 3rd dimension and years as 4th dimension
+  cnrm_bt_mn_array <- array (cnrm_bt_array_tmp, 
+                             dim = c(cnrm$var[[7]]$varsize[1], 
+                                     cnrm$var[[7]]$varsize[2],
+                                     12,
+                                     n_months/12))
+  
+  # take mean across 4th dimension
+  cnrm_bt_mn <- apply (cnrm_bt_mn_array, c(1:3), mean)
+  
+  # clean up
+  rm (list = c("cnrm_bt_array_tmp", "cnrm_bt_mn_array"))
+  nc_close (cnrm)
+  
+  return (cnrm_bt_mn)
+  
+}
+
+cnrm_bt_list <- lapply (cnrm_nc_files, cnrm_bt_mn_fun)
+
+#instead, make array and do it in a for loop
+# cnrm_bt_array <- array (dim = c (1442, 1050, 12, length (cnrm_nc_files))) # 12 months, 6 files
+# 
+# for (i in 1:length (cnrm_nc_files)){
+#   start_val <-  cnrm_start_vals[i]
+#   n_months <- cnrm_n_months[i]
+#   cnrm_bt_array [,,,i] <- cnrm_bt_mn_fun (filename =cnrm_nc_files[i],
+#                                           n_months = n_months, 
+#                                           start_val = start_val)
+# }
+
+cnrm_bt_array <- array (unlist (cnrm_bt_list), dim = c (1442, 1050, 12, 6))
+cnrm_bt_mn <- apply (cnrm_bt_array, 1:3, mean, na.rm = TRUE)
+save (cnrm_bt_mn, file = "Data/cnrm_bt.RData")
 
 # GFDL---
 # 3 files, 1970-1989 [start at 181st time step for 1985, take 60 total], 1990-2009, 2010-2014 [end at 36th time step for 2012]
@@ -24,6 +165,9 @@ lon_gfdl <- ncvar_get (gfdl, "lon")
 # save these so I can delete the netcdf
 save (lat_gfdl, file = "Data/gfdl_lat.RData")
 save (lon_gfdl, file = "Data/gfdl_lon.RData")
+
+# check depths
+depth_gfdl <- ncvar_get (gfdl, "lev") # 35 levels, 2.5 to 6500. 
 
 nc_close (gfdl)
 
@@ -58,7 +202,7 @@ gfdl_sst_mn <- function (filename){
                              dim = c(gfdl$var[[1]]$varsize[1], 
                                      gfdl$var[[1]]$varsize[2],
                                      12,
-                                     n_months/12))
+                                     count[4]/12))
   
   # take mean across 4th dimension
   gfdl_sst_mn <- apply (gfdl_sst_mn_array, c(1:3), mean)
@@ -171,6 +315,8 @@ lon_awi <- ncvar_get (awi, "lon")
 # not sure these will actually be useful? 830305x1
 save (lat_awi, file = "Data/awi_lat.RData")
 save (lon_awi, file = "Data/awi_lon.RData")
+
+depth_awi <- ncvar_get (awi, "depth")
 
 # SST - first level
 awi_sst_mn_fun <- function (filename){
@@ -294,6 +440,8 @@ mohc_thetao <- mohc_1$var[[7]] # 360 x 330 x 75 x 600
 # save (lat_mohc, file = "Data/mohc_lat.RData")
 # save (lon_mohc, file = "Data/mohc_lon.RData")
 
+depth_mohc <- ncvar_get (mohc_2, "lev")
+
 mohc_2 <- nc_open ("Data/thetao_Omon_HadGEM3-GC31-LL_historical_r1i1p1f3_gn_200001-201412.nc")
 # thetao is 360-330-75x180
 
@@ -411,7 +559,7 @@ ipsl <- nc_open ("Data/thetao_Omon_IPSL-CM6A-LR_historical_r1i1p1f1_gn_195001-20
 # save (lat_ipsl, file = "Data/ipsl_lat.RData")
 # save (lon_ipsl, file = "Data/ipsl_lon.RData")
 
-
+depth_ipsl <- ncvar_get (ipsl, "olevel")
 # Start with SST- 1st layer
 ipsl_sst <- ncvar_get (ipsl, "thetao", start = c(1,1,1, 421), count = c(362, 332, 1, 336)) # 362 x 332 x 336
 
