@@ -1,0 +1,188 @@
+---
+title: "Explore MFRI survey data"
+date: "2020-06-16"
+output: html_notebook
+---
+
+Pamela Woods provided autumn and spring survey data on 6/16/20. Performing preliminary data exploration here. 
+
+```{r, setup}
+library(tidyverse)
+library (skimr)
+library (lubridate)
+
+spr_ds <- read_csv ("../Data/springsurvey.csv",
+                    col_types = cols(
+                      sample_id = col_factor(),
+                      species = col_factor(),
+                      stat_sq = col_factor() # staves off trailing ch parsing error
+      
+                    )) %>%
+  mutate (date = make_date (year, month))
+
+aut_ds <- read_csv ("../Data/autumnsurvey.csv",
+                    col_types = cols(
+                      sample_id = col_factor(),
+                      species = col_factor(),
+                      stat_sq = col_factor() # staves off trailing ch parsing error
+      
+                    ))%>%
+  mutate (date = make_date (year, month))
+
+comb_ds <- rbind (spr_ds, aut_ds) # don't need to make season column bc months don't overlap
+```
+
+```{r}
+skim (aut_ds)
+```
+
+Spring survey has 20297 samples (feb-apr), 1985-2020. 85 unique spp, top are cod(ID 1), haddock(2), redfish (5), long rough dab (28). Autumn has 8705, 1995-2019 (sep-nov), 82 spp, same top 5. 
+
+```{r}
+spr_ds %>%
+  group_by (year(date)) %>%
+  summarise (n_samples = length (unique (sample_id))) %>%
+  ggplot() +
+  geom_bar(aes(x = `year(date)`, y = n_samples), stat = 'identity')
+  
+                  
+
+```
+doesn't look like any particular trend over time
+
+plot on map
+```{r, spr_map}
+library (ggmap)
+
+isl_basemap <- get_map (location = c(-30, 60, -5, 70), source = "stamen", maptype = "terrain", crop = FALSE)
+
+# just get station point
+spr_samples <- spr_ds %>%
+distinct_at ("sample_id", .keep_all = TRUE)
+
+ggmap(isl_basemap) +
+  geom_point (aes (x = lon, y = lat), data = spr_samples) +
+  ggtitle ("Spring survey locations")
+```
+
+
+```{r, fall_map}
+aut_samples <- aut_ds %>%
+distinct_at ("sample_id", .keep_all = TRUE)
+
+ggmap(isl_basemap) +
+  geom_point (aes (x = lon, y = lat), data = aut_samples) +
+  ggtitle ("Fall survey locations")
+```
+how many surveys per month?
+```{r}
+all_samples %>%
+  ggplot()+
+  geom_histogram(aes(x = year, fill = season), bins = 36)
+```
+
+```{r temp_hist}
+
+all_samples <- rbind (spr_samples, aut_samples)
+all_samples$season = c(rep ("spring", nrow (spr_samples)), rep("autumn", nrow (aut_samples)))
+                       
+                       
+ggplot (all_samples) +
+  geom_density (aes (x = surface_temp, col = season))
+
+ggplot (all_samples) +
+  geom_boxplot (aes (x = season, y = surface_temp))
+
+ggplot (all_samples) +
+  geom_density (aes (x = bottom_temp, col = season))
+
+ggplot (all_samples) +
+  geom_boxplot (aes (x = season, y =bottom_temp))
+```
+```{r, temp_ts}
+ggplot (all_samples) +
+  geom_point (aes (x = date, y =bottom_temp))
+
+temp_month_ts <- all_samples %>%
+  group_by(date) %>%
+  summarise (
+    count = n(),
+    mn_sst = mean(surface_temp, na.rm = TRUE),
+    se_sst = sd (surface_temp, na.rm = TRUE)/sqrt(count),
+    mn_bt = mean (bottom_temp, na.rm = TRUE),
+    se_bt = sd (bottom_temp, na.rm = TRUE)/sqrt(count)
+  ) %>%
+  mutate (season = ifelse (month(date) %in% c(2:4), "spring", "fall"))
+
+sst_fall_fit <- lm (surface_temp ~ date, data = aut_samples)
+summary (sst_fall_fit) # y = 5.05 + 1.6e-04x, adj 42 = 0.035
+
+sst_spr_fit <- lm (surface_temp ~ date, data = spr_samples)
+summary (sst_spr_fit)
+
+temp_month_ts %>%
+  ggplot (aes (x = date, y = mn_sst, col = season)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm")
+
+temp_month_ts %>%
+  ggplot (aes (x = date, y = mn_bt, col = season)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm")
+```
+
+```{r}
+library (viridis)
+ggmap(isl_basemap) +
+  geom_point (aes (x = lon, y = lat, col = surface_temp), data = all_samples) +
+  scale_color_viridis(option ="inferno") +
+  ggtitle ("SST at all survey locations")
+```
+quick check about length biomass etc, might want to animate
+```{r}
+# cod_kg_ts <- all_samples %>%
+#   filter (species == 1) %>%
+#   group_by (season, year(date), length_cm) %>%
+#   summarise (mn_kg = mean (kg_per_nautmile, na.rm = TRUE))
+#   
+# ggplot (cod_kg_ts,
+#         aes (x = `year(date)`, y = mn_kg, col = as.factor(length_cm))) +
+#   geom_point() + 
+#   geom_line() +
+#     facet_wrap (~season)
+
+all_samples %>%
+  filter (species ==1) %>%
+  ggplot (aes (x = date, y = kg_per_nautmile)) +
+  geom_point()
+
+all_samples %>%
+  filter (species ==1) %>%
+  ggplot (aes (x = lat, y = kg_per_nautmile)) +
+  geom_point
+
+all_samples %>%
+  filter (species ==1) %>%
+  ggplot (aes (x = lon, y = kg_per_nautmile)) +
+  geom_point()
+
+```
+
+Which species can I cut out? any that have fewer than 10 in any month?
+```{r}
+comb_ds %>%
+  group_by (date, species) %>%
+  summarise (count = n(), 
+             mn_kg = mean (kg_per_nautmile, na.rm = TRUE), 
+             mn_n = mean(n_per_nautmile, na.rm = TRUE)
+             ) %>%
+  filter (count > 0) %>%
+  View()
+  
+```
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
