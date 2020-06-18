@@ -6,7 +6,7 @@ output: html_notebook
 
 Pamela Woods provided autumn and spring survey data on 6/16/20. Performing preliminary data exploration here. 
 
-```{r, setup}
+```{r setup}
 library(tidyverse)
 library (skimr)
 library (lubridate)
@@ -29,36 +29,95 @@ aut_ds <- read_csv ("../Data/autumnsurvey.csv",
                     ))%>%
   mutate (date = make_date (year, month))
 
-comb_ds <- rbind (spr_ds, aut_ds) # don't need to make season column bc months don't overlap
+# combined dataset
+comb_ds <- rbind (spr_ds, aut_ds) 
+comb_ds$season = c(rep ("spring", nrow (spr_ds)), rep("autumn", nrow (aut_ds)))
+
+# also create datasets with just station points, for temp and gear info
+spr_samples <- spr_ds %>%
+distinct_at ("sample_id", .keep_all = TRUE)
+
+comb_samples <- aut_ds %>%
+distinct_at ("sample_id", .keep_all = TRUE)
+
+#combine
+comb_samples <- rbind (spr_samples, aut_samples)
+comb_samples$season = c(rep ("spring", nrow (spr_samples)), rep("autumn", nrow (aut_samples)))
 ```
 
-```{r}
+```{r skim}
 skim (aut_ds)
+skim (spr_ds)
 ```
 
-Spring survey has 20297 samples (feb-apr), 1985-2020. 85 unique spp, top are cod(ID 1), haddock(2), redfish (5), long rough dab (28). Autumn has 8705, 1995-2019 (sep-nov), 82 spp, same top 5. 
+Spring survey has 20297 samples (feb-apr), 1985-2020. 85 unique spp, top are cod(ID 1), haddock(2), redfish (5), long rough dab (28). Autumn has 8705, 1995-2019 (sep-nov), 82 spp, same top 5. 29002 total samples, 465 stat_sq, 1094 stations. 
 
-```{r}
-spr_ds %>%
-  group_by (year(date)) %>%
-  summarise (n_samples = length (unique (sample_id))) %>%
-  ggplot() +
-  geom_bar(aes(x = `year(date)`, y = n_samples), stat = 'identity')
-  
-                  
+### Temporal extent
+```{r tow_months}
+comb_samples %>%
+  group_by (month(date)) %>%
+  summarize (count = n()) %>%
+  rename (month = `month(date)`) %>%
+  ggplot (aes (x = month, y = count)) +
+  geom_bar(stat = 'identity') +
+  geom_text (aes (label = count), vjust = 0.1)
+
+
+unique (comb_ds$year[which(comb_ds$month ==4)])
+unique (comb_ds$year[which(comb_ds$month ==)])
+unique (comb_ds$year[which(comb_ds$month ==11)])
 
 ```
-doesn't look like any particular trend over time
+Only 33 samples in april, really negligible. Only in 1998 and 2005. 
+
+```{r tow_years}
+comb_samples %>%
+  ggplot()+
+  geom_bar(aes(x = year, fill = season), bins = 36) +
+  ggtitle ("Tows per year")
+```
+doesn't look like any particular trend over time for spring. Autumn expanded sampling in 2001 and then fairly constant except for a very low year in 2011. 
+#### Temporal extent of sampling stations
+```{r station_duration}
+#start with stat_Sq
+
+#want a table with presence/absence of each stat sq, with years as columns?
+comb_samples %>%
+  group_by (stat_sq) %>%
+  summarize (first_yr =) %>%
+  ggplot (aes (x = year, y = factor(station))) +
+  geom_point()
+
+```
+
+### Spatial extent
+```{r tow_locations}
+
+comb_samples %>%
+  ggplot () +
+  geom_boxplot(aes (x = season, y = lat))
+
+comb_samples %>%
+  ggplot () +
+  geom_boxplot(aes (x = season, y = lon))
+
+```
+Lon looks the same, although autumn has a wider spread. Spring has a more northern median, autumn also wider spread. 
+```{r tow_loc_time}
+comb_samples %>%
+  ggplot () +
+  geom_violin(aes (x = factor(month(date)), y = lat))
+
+comb_samples %>%
+  ggplot () +
+  geom_violin(aes (x = factor(month(date)), y = lon))
+```
 
 plot on map
 ```{r, spr_map}
 library (ggmap)
 
 isl_basemap <- get_map (location = c(-30, 60, -5, 70), source = "stamen", maptype = "terrain", crop = FALSE)
-
-# just get station point
-spr_samples <- spr_ds %>%
-distinct_at ("sample_id", .keep_all = TRUE)
 
 ggmap(isl_basemap) +
   geom_point (aes (x = lon, y = lat), data = spr_samples) +
@@ -67,43 +126,34 @@ ggmap(isl_basemap) +
 
 
 ```{r, fall_map}
-aut_samples <- aut_ds %>%
-distinct_at ("sample_id", .keep_all = TRUE)
 
 ggmap(isl_basemap) +
   geom_point (aes (x = lon, y = lat), data = aut_samples) +
   ggtitle ("Fall survey locations")
-```
-how many surveys per month?
-```{r}
-all_samples %>%
-  ggplot()+
-  geom_histogram(aes(x = year, fill = season), bins = 36)
+
 ```
 
+### Temperature data
 ```{r temp_hist}
 
-all_samples <- rbind (spr_samples, aut_samples)
-all_samples$season = c(rep ("spring", nrow (spr_samples)), rep("autumn", nrow (aut_samples)))
-                       
-                       
-ggplot (all_samples) +
+ggplot (comb_samples) +
   geom_density (aes (x = surface_temp, col = season))
 
-ggplot (all_samples) +
+ggplot (comb_samples) +
   geom_boxplot (aes (x = season, y = surface_temp))
 
-ggplot (all_samples) +
+ggplot (comb_samples) +
   geom_density (aes (x = bottom_temp, col = season))
 
-ggplot (all_samples) +
+ggplot (comb_samples) +
   geom_boxplot (aes (x = season, y =bottom_temp))
 ```
+
 ```{r, temp_ts}
-ggplot (all_samples) +
+ggplot (comb_samples) +
   geom_point (aes (x = date, y =bottom_temp))
 
-temp_month_ts <- all_samples %>%
+temp_month_ts <- comb_samples %>%
   group_by(date) %>%
   summarise (
     count = n(),
@@ -133,16 +183,64 @@ temp_month_ts %>%
   geom_smooth (method = "lm")
 ```
 
-```{r}
+```{r sst_map}
 library (viridis)
 ggmap(isl_basemap) +
-  geom_point (aes (x = lon, y = lat, col = surface_temp), data = all_samples) +
+  geom_point (aes (x = lon, y = lat, col = surface_temp), data = comb_samples) +
   scale_color_viridis(option ="inferno") +
   ggtitle ("SST at all survey locations")
 ```
+
+### Gear variables
+```{r gear_boxplots}
+comb_samples %>%
+  pivot_longer (
+    cols = starts_with("tow"),
+    names_to = "tow_info",
+    values_to = "value"
+  ) %>%
+ggplot () +
+  geom_histogram(aes (x = value, fill = season)) +
+  facet_wrap (~tow_info, scales = "free")
+```
+Tow depth begin and end are left-skewed but that makes sense. Tow direction is a bit all over but probably fine. Tow-length has some weird patterns, there seems to be a few standard lengths and then some scatter. Tow speed and time look okay? Potentially different protocols for autumn and spring? Different depths, and peaks for length and time. 
+```{r gear_dotcharts}
+dotchart(comb_samples$tow_time, 
+         groups = factor(comb_samples$season), 
+         pch = comb_samples$season,
+         main = "Tow time")
+
+dotchart(comb_samples$tow_length, 
+         groups = factor(comb_samples$season), 
+         pch = comb_samples$season,
+         main = "Tow length")
+
+dotchart(comb_samples$tow_depth_begin, 
+         groups = factor(comb_samples$season), 
+         pch = comb_samples$season,
+         main = "Tow depth, start")
+```
+Autumn samples are much deeper. 
+
+```{r gear_depth_rltps}
+comb_samples %>%
+  ggplot (aes (x = tow_depth_begin, y = tow_length, col = season)) +
+  geom_point() +
+  ggtitle("Tow length vs tow depth")
+
+comb_samples %>%
+  ggplot (aes (x = tow_depth_begin, y = tow_time, col = season)) +
+  geom_point() +
+  ggtitle ("tow time vs tow depth")
+```
+Tow times are fairly standard. The longest one is the deepest and the shortest ones are fairly shallow, but there are some long shallow tows too. 
+
+
+### Species info
+
 quick check about length biomass etc, might want to animate
 ```{r}
-# cod_kg_ts <- all_samples %>%
+# cod_kg_ts <- comb_samples %>%
 #   filter (species == 1) %>%
 #   group_by (season, year(date), length_cm) %>%
 #   summarise (mn_kg = mean (kg_per_nautmile, na.rm = TRUE))
@@ -153,17 +251,17 @@ quick check about length biomass etc, might want to animate
 #   geom_line() +
 #     facet_wrap (~season)
 
-all_samples %>%
+comb_samples %>%
   filter (species ==1) %>%
   ggplot (aes (x = date, y = kg_per_nautmile)) +
   geom_point()
 
-all_samples %>%
+comb_samples %>%
   filter (species ==1) %>%
   ggplot (aes (x = lat, y = kg_per_nautmile)) +
   geom_point
 
-all_samples %>%
+comb_samples %>%
   filter (species ==1) %>%
   ggplot (aes (x = lon, y = kg_per_nautmile)) +
   geom_point()
@@ -171,9 +269,15 @@ all_samples %>%
 ```
 
 Which species can I cut out? any that have fewer than 10 in any month?
-```{r}
-comb_ds %>%
-  group_by (date, species) %>%
+```{r spp_tally}
+#tally samples 
+spp_tally <- comb_ds %>%
+  group_by (species) %>%
+  tally() %>%
+  arrange(desc(n))# %>%
+  #View()
+
+
   summarise (count = n(), 
              mn_kg = mean (kg_per_nautmile, na.rm = TRUE), 
              mn_n = mean(n_per_nautmile, na.rm = TRUE)
@@ -182,7 +286,4 @@ comb_ds %>%
   View()
   
 ```
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+91 total species. 6 with only one entry: 73 (Ciliata mustela fivebearded rockling), 46 (Iceland cyprine), 91 (lycodes rossi, threespot eelpout), 77 (mussel), 95 (psetta maxima turbot), 42 (spider crab)
