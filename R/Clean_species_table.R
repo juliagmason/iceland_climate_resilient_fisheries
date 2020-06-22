@@ -6,7 +6,7 @@
 library (tidyverse)
 library (stringr)
 
-spp_table <- read_csv ("Data/species.csv")
+spp_table <- read_csv ("Data/Raw_data/species.csv")
 
 #https://stackoverflow.com/questions/44689640/using-str-extract-all-to-extract-only-first-two-words-in-r
 # their command works for most scientific names, but not if there's only one word (Family etc.) need to do an if/else?
@@ -18,9 +18,11 @@ spp_table$Scientific_name <- ifelse (
   )
 
 spp_table_eng <- spp_table %>%
-  select (tegund, enskt_heiti, Scientific_name) %>%
+  dplyr::select (tegund, enskt_heiti, Scientific_name) %>%
   rename (Spp_ID = tegund,
-          Common_name = enskt_heiti)
+          Common_name = enskt_heiti) %>%
+  arrange (Spp_ID)
 
+# some have common name but not species name
 
 write.csv (spp_table_eng, file = "Data/species_eng.csv", row.names = FALSE)
