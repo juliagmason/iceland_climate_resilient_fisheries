@@ -25,6 +25,9 @@ aut_ds <- read_csv ("../Data/Raw_data/autumnsurvey.csv",
 comb_ds <- rbind (spr_ds, aut_ds) 
 comb_ds$season = c(rep ("spring", nrow (spr_ds)), rep("autumn", nrow (aut_ds)))
 
+# fix repeated sebastes mentella
+comb_ds$species[which (comb_ds$species == 11)] <- 61
+
 write.csv (comb_ds, file = "Data/MFRI_comb_survey.csv", row.names = FALSE)
 
 # also create datasets with just station points, for temp and gear info
@@ -35,7 +38,8 @@ aut_samples <- aut_ds %>%
   distinct_at ("sample_id", .keep_all = TRUE)
 
 #combine
-comb_samples <- rbind (spr_samples, aut_samples)
+comb_samples <- rbind (spr_samples, aut_samples) %>%
+  dplyr::select (-c(species, length_cm, n_per_nautmile, kg_per_nautmile)) # remove species info
 comb_samples$season = c(rep ("spring", nrow (spr_samples)), rep("autumn", nrow (aut_samples)))
 
 write.csv (comb_samples, file = "Data/MFRI_comb_survey_samples.csv", row.names = FALSE)
