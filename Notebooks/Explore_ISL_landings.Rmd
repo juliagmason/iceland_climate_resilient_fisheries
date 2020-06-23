@@ -1,0 +1,25 @@
+---
+title: "Explore Iceland landings data"
+date: 6-23-2020
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r setup}
+library (tidyverse)
+
+ldgs <- read_csv ("../Data/Landings_annual_all_sectors.csv")
+```
+
+What are the most important species for each sector?
+```{r}
+ldgs %>%
+  group_by (quota, species) %>%
+  summarize (tot_cat= sum(tonnes, na.rm = TRUE)) %>%
+  arrange(quota, desc(tot_cat)) %>%
+  top_n (5)
+```
+
