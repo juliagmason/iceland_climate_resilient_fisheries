@@ -1,0 +1,175 @@
+---
+title: "Explore temperature data"
+date: 06-22-2020
+output: html_notebook
+---
+
+I could do taylor diagrams for overall data and for each year? 
+
+Start with just an average time series
+
+Currently I have my resampled OISST data in a matlab form, monthly mean for all years. but I could grab daily ts in python?
+
+```{r setup}
+library (ncdf4)
+library (lubridate)
+library (raster)
+
+oisst_mfri <- nc_open ("../../Documents/Python Scripts/oisst_mfri_month_mean.nc")
+
+oisst_lat <- ncvar_get (oisst_mfri, "lat")
+oisst_lon <- ncvar_get (oisst_mfri, "lon")
+
+oisst <- ncvar_get (oisst_mfri, "sst")
+
+# oisst_date <- ncvar_get (oisst_mfri, "year_month") # doesn't work; no dimvar. but I know it goes from 1985-01 to 2020-06
+
+# set up a vector of dates
+oisst_date <- seq (ymd("1985-01-01"), ymd("2020-06-01"), by = "months")
+```
+
+26 lat by 84 lon by 426 months. 
+
+```{r}
+image(oisst_lon, oisst_lat, oisst[,,1])
+maps::map("world", add = TRUE)
+
+```
+
+Rasterize (and make into raster brick?)
+```{r rasterize}
+latlons <- expand.grid (lon = oisst_lon, lat = oisst_lat)
+coordinates (latlons) <- ~lon + lat
+projstring <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towsg84=0,0,0"
+proj4string(latlons) <- CRS(projstring)
+
+# transpose?
+#https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
+oisst_rot <- aperm(oisst, c(2, 1,3))
+oisst_rev <- apply (oisst_rot, c(2,3), rev)
+
+oisst_r <- brick(oisst_rev)
+projection(oisst_r) <- CRS(projstring)
+extent (oisst_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+
+# assign names as dates?
+#https://stackoverflow.com/questions/34294376/how-to-extract-data-from-a-rasterbrick
+names(oisst_r) <- oisst_date
+# this doesn't work well, adds an x and replaces hyphens with periods. better to use date_index
+
+plot (oisst_r, 1)
+```
+
+```{r extract_target_points}
+#http://geog.uoregon.edu/bartlein/courses/geog490/week06-geospatial.html#extract-data-from-a-raster
+
+mfri_pts <- read_csv("../Data/MFRI_comb_survey_samples.csv") %>%
+  dplyr::select (sample_id, date, lat, lon) %>%
+  arrange (date)  #not originally in date order
+
+
+# create an index of mfri dates to match with layers of raster brick?
+match_oisst_date <- function (x) {
+  date_index <-  which(oisst_date == x)
+  return(date_index)
+}
+
+date_index <- sapply(mfri_pts$date, match_oisst_date)
+
+mfri_pts$date_index <- date_index
+
+# turn into spatialpoints
+coordinates(mfri_pts) <- ~lon + lat
+
+# try just with first date?
+mfri_tmp <- mfri_pts[which (mfri_pts$date_index == 3),]
+
+oisst_tmp <- subset (oisst_r, 3)
+
+mfri_tmp_extract <- extract (oisst_tmp, mfri_tmp, method = "simple")
+
+mfri_tmp_df <- data.frame (mfri_tmp$lon, mfri_tmp$lat, mfri_tmp_extract) # this seems to work!
+
+# looks like need to do this in a loop anyway
+# https://stackoverflow.com/questions/34294376/how-to-extract-data-from-a-rasterbrick
+
+# I want to make a big dataframe, so makes more sense to build in a loop?
+mfri_dates_in <- unique (mfri_pts$date_index) # 106
+
+# make empty df
+mfri_oisst_df <- data.frame(sample_id = factor(),
+                            oisst = numeric())
+
+for (x in mfri_dates_in) {
+  # subset mfri data
+  mfri <- mfri_pts[which (mfri_pts$date_index == x),]
+  
+  # subset oisst brick
+  oisst_subset <- subset (oisst_r, x)
+  oisst_extract <- extract (oisst_subset, mfri, method = "simple")
+  
+  x_df <- data.frame (sample_id = mfri$sample_id, oisst = oisst_extract)
+  
+  mfri_oisst_df <- rbind (mfri_oisst_df, x_df)
+}
+
+mfri_oisst_df$sample_id <- as.factor(mfri_oisst_df$sample_id)
+```
+
+```{r}
+hist(mfri_oisst_df$oisst)
+summary (mfri_oisst_df$oisst)
+summary (comb_samples$surface_temp) # didn't read this in earlier
+```
+
+summaries look quite similar!
+
+compare samples and oisst
+```{r}
+comb_samples <- read_csv("../Data/MFRI_comb_survey_samples.csv",
+                          col_types = cols(
+                      sample_id = col_factor(),
+                      stat_sq = col_factor())
+) %>%
+  left_join (mfri_oisst_df, by = "sample_id")
+
+comb_samples %>%
+  ggplot (aes (x = surface_temp, y = oisst, col = season)) +
+  geom_point() +
+  geom_abline (slope = 1, intercept = 0)
+
+comb_samples %>%
+  mutate (sst_bias = surface_temp - oisst) %>%
+  ggplot (aes (x = date, y =sst_bias, col = season)) +
+  geom_point() +
+  geom_smooth (method = 'lm')
+
+comb_samples %>%
+  mutate (sst_bias = surface_temp - oisst) %>%
+  ggplot (aes (x = year, y =sst_bias, group = year)) +
+  geom_boxplot() 
+
+comb_samples %>%
+  mutate (sst_bias = surface_temp - oisst) %>%
+  ggplot (aes (x = lat, y =sst_bias, col = season)) +
+  geom_point() 
+```
+
+plot distributions?
+```{r}
+comb_samples %>%
+  dplyr::select (sample_id, surface_temp, oisst) %>%
+  pivot_longer (-sample_id, names_to = "source",
+                values_to = "temp") %>%
+  ggplot (aes (x = temp, col = source)) +
+  geom_density() 
+```
+
+## GINS
+```{r}
+load ("../Data/GINS_bottom_temp.RData") # gins_bt
+dim(gins_bt)
+
+# this is seasonal...only available seasonal at 1/4 degree?
+```
+
