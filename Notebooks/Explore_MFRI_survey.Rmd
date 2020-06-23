@@ -6,43 +6,29 @@ output: html_notebook
 
 Pamela Woods provided autumn and spring survey data on 6/16/20. Performing preliminary data exploration here. 
 
+Info on the survey, from 2020 survey manual:
+Covers the shelf to depths of 500m. 
+Stratification and allocation of stations is divided into Northern and Southern regions. Allocation based on pre-estimated cod density patterns. 
+
+Bottom trawl, 3.8knots for 4nm. several tows are shorter than 4nm? 2nm min. 
+
 ```{r setup}
 library(tidyverse)
 library (skimr)
 library (lubridate)
 
-spr_ds <- read_csv ("../Data/springsurvey.csv",
-                    col_types = cols(
+comb_ds <- read_csv ("../Data/MFRI_comb_survey.csv",
+                      col_types = cols(
                       sample_id = col_factor(),
                       species = col_factor(),
-                      stat_sq = col_factor() # staves off trailing ch parsing error
-      
-                    )) %>%
-  mutate (date = make_date (year, month))
+                      stat_sq = col_factor())
+)
 
-aut_ds <- read_csv ("../Data/autumnsurvey.csv",
-                    col_types = cols(
+comb_samples <- read_csv("../Data/MFRI_comb_survey_samples.csv",
+                          col_types = cols(
                       sample_id = col_factor(),
-                      species = col_factor(),
-                      stat_sq = col_factor() # staves off trailing ch parsing error
-      
-                    ))%>%
-  mutate (date = make_date (year, month))
-
-# combined dataset
-comb_ds <- rbind (spr_ds, aut_ds) 
-comb_ds$season = c(rep ("spring", nrow (spr_ds)), rep("autumn", nrow (aut_ds)))
-
-# also create datasets with just station points, for temp and gear info
-spr_samples <- spr_ds %>%
-distinct_at ("sample_id", .keep_all = TRUE)
-
-comb_samples <- aut_ds %>%
-distinct_at ("sample_id", .keep_all = TRUE)
-
-#combine
-comb_samples <- rbind (spr_samples, aut_samples)
-comb_samples$season = c(rep ("spring", nrow (spr_samples)), rep("autumn", nrow (aut_samples)))
+                      stat_sq = col_factor())
+)
 ```
 
 ```{r skim}
@@ -51,6 +37,11 @@ skim (spr_ds)
 ```
 
 Spring survey has 20297 samples (feb-apr), 1985-2020. 85 unique spp, top are cod(ID 1), haddock(2), redfish (5), long rough dab (28). Autumn has 8705, 1995-2019 (sep-nov), 82 spp, same top 5. 29002 total samples, 465 stat_sq, 1094 stations. 
+
+Briefly panicked because comb_ds has 91 unique species but comb_samples has only 79. This is expected; just took distinct samples, not distinct samples and species. In my full PA set, have full 91 species. 
+
+Discovered that sebasetes mentella (61, 11) is repeated. Majority of samples are 61; only 16 have 11. Will ask, but replace 11 with 61 for now. 
+
 
 ### Temporal extent
 ```{r tow_months}
@@ -77,19 +68,65 @@ comb_samples %>%
   ggtitle ("Tows per year")
 ```
 doesn't look like any particular trend over time for spring. Autumn expanded sampling in 2001 and then fairly constant except for a very low year in 2011. 
+
 #### Temporal extent of sampling stations
+I basically want a presence/absence table, but with stations
 ```{r station_duration}
+
+all_years <- data.frame (year = 1985:2020)
+
 #start with stat_Sq
+# separate fall and spring?
+stat_sq_ts_spr <- comb_samples %>%
+  filter (season == "spring") %>%
+  distinct_at (c("stat_sq", "year")) %>%
+  group_by (stat_sq) %>%
+  summarize (count = n())
+
+length (which (stat_sq_ts_spr$count == 36)) # 205
+length (which (stat_sq_ts_spr$count > 30)) # 255
+length (which (stat_sq_ts_spr$count < 5)) # 43 less than 5, 48 < 10
+
+stat_sq_ts_aut <- comb_samples %>%
+  filter (season == "autumn") %>%
+  distinct_at (c("stat_sq", "year")) %>%
+  group_by (stat_sq) %>%
+  summarize (count = n())  # 340
+
+length (stat_sq_ts_aut$stat_sq[which (stat_sq_ts_aut$stat_sq %in% stat_sq_ts_spr$stat_sq)]) # 211 shared
+
+length (which (stat_sq_ts_aut$count == 25))
+length (which (stat_sq_ts_aut$count > 24))
+
+length (stat_sq_ts_aut$stat_sq[which (stat_sq_ts_aut$stat_sq %in% stat_sq_ts_spr$stat_sq & stat_sq_ts_aut$count > 20)]) # 161
 
 #want a table with presence/absence of each stat sq, with years as columns?
-comb_samples %>%
-  group_by (stat_sq) %>%
-  summarize (first_yr =) %>%
-  ggplot (aes (x = year, y = factor(station))) +
-  geom_point()
+station_ts_spr <- comb_samples %>%
+  filter (season == "spring") %>%
+  distinct_at (c("station", "year")) %>%
+  group_by (station) %>%
+  summarize (count = n())
+
+hist (station_ts_spr$count)
+length (which (station_ts_spr$count ==36)) # 436
+length (which (station_ts_spr$count > 30)) # 518
+
+station_ts_aut <- comb_samples %>%
+  filter (season == "autumn") %>%
+  distinct_at (c("station", "year")) %>%
+  group_by (station) %>%
+  summarize (count = n())
+
+hist (station_ts_aut$count)
+
+length (which (station_ts_aut$count >20)) # 280
+
+length (which (station_ts_aut$station %in% station_ts_spr$station))
 
 ```
+336 stat_sq in spring; 205 sampled every year, 255 sampled in 30+ years. 340 stat_sq in autumn, 211 shared with spring. Only 34 sampled all years. 230 > 20 years. 211>22, 150>23. 
 
+680 stations in spring (still more than there are stations??); 436 in all years, 518 > 30. 414 in autumn, 280 above 20. No overlap?
 ### Spatial extent
 ```{r tow_locations}
 
@@ -148,7 +185,9 @@ ggplot (comb_samples) +
 ggplot (comb_samples) +
   geom_boxplot (aes (x = season, y =bottom_temp))
 ```
+SST: Warmer temps in the fall, peak around 9 degrees and another small peak at 6. Spring peak at 3 and 4-7. Autumn has more spread, some values go below spring it looks like. 
 
+Bottom temp: fall is bimodal,peak just below zero and at 7. Spring peak around 3 and 5. fall still warmer, with more spread. 
 ```{r, temp_ts}
 ggplot (comb_samples) +
   geom_point (aes (x = date, y =bottom_temp))
@@ -164,11 +203,11 @@ temp_month_ts <- comb_samples %>%
   ) %>%
   mutate (season = ifelse (month(date) %in% c(2:4), "spring", "fall"))
 
-sst_fall_fit <- lm (surface_temp ~ date, data = aut_samples)
-summary (sst_fall_fit) # y = 5.05 + 1.6e-04x, adj 42 = 0.035
+sst_fall_fit <- lm (surface_temp ~ date, data = filter (comb_samples, season == "autumn"))
+summary (sst_fall_fit) # y = 5.05 + 1.6e-04x, adj R2 = 0.035
 
-sst_spr_fit <- lm (surface_temp ~ date, data = spr_samples)
-summary (sst_spr_fit)
+sst_spr_fit <- lm (surface_temp ~ date, data = filter (comb_samples, season == "spring"))
+summary (sst_spr_fit) # y = 3.27 + 9.67e-05x, adj R2 = 0.028
 
 temp_month_ts %>%
   ggplot (aes (x = date, y = mn_sst, col = season)) +
@@ -182,13 +221,25 @@ temp_month_ts %>%
   geom_line() +
   geom_smooth (method = "lm")
 ```
-
+SST increasing in both seasons. BT too, much more variable. 
 ```{r sst_map}
 library (viridis)
 ggmap(isl_basemap) +
   geom_point (aes (x = lon, y = lat, col = surface_temp), data = comb_samples) +
   scale_color_viridis(option ="inferno") +
   ggtitle ("SST at all survey locations")
+```
+
+```{r temp_lat}
+ggplot (comb_samples, aes (x = lat, y = surface_temp, col = season)) +
+  geom_point(alpha= 0.5) +
+  geom_smooth (method ="lm")
+
+sst_fall_lat_fit <- lm (surface_temp ~ lat, data = filter (comb_samples, season == "autumn"))
+summary (sst_fall_lat_fit) # y = 71 -.98x, adj R2 = 0.43
+
+sst_spr_lat_fit <- lm (surface_temp ~ lat, data = filter (comb_samples, season == "spring"))
+summary (sst_spr_lat_fit) # y = 81.55 -1.18x, adj R2 = 0.45
 ```
 
 ### Gear variables
@@ -272,18 +323,91 @@ Which species can I cut out? any that have fewer than 10 in any month?
 ```{r spp_tally}
 #tally samples 
 spp_tally <- comb_ds %>%
+  distinct_at (c("sample_id", "species"), .keep_all = TRUE) %>%
   group_by (species) %>%
   tally() %>%
   arrange(desc(n))# %>%
   #View()
 
+hist (spp_tally$n, breaks = 30)
 
-  summarise (count = n(), 
-             mn_kg = mean (kg_per_nautmile, na.rm = TRUE), 
-             mn_n = mean(n_per_nautmile, na.rm = TRUE)
-             ) %>%
-  filter (count > 0) %>%
-  View()
+  
+  spp_tally_yr <- comb_ds %>%
+  distinct_at (c("sample_id", "species"), .keep_all = TRUE) %>%
+  group_by (species, year) %>% 
+    tally() 
+
+  # filter 28 top spp
+  major_spp <- filter (spp_list, Spp_ID %in% spp_tally_yr$species)
   
 ```
-91 total species. 6 with only one entry: 73 (Ciliata mustela fivebearded rockling), 46 (Iceland cyprine), 91 (lycodes rossi, threespot eelpout), 77 (mussel), 95 (psetta maxima turbot), 42 (spider crab)
+91 total species. 6 with only one entry: 73 (Ciliata mustela fivebearded rockling), 46 (Iceland cyprine), 91 (lycodes rossi, threespot eelpout), 77 (mussel), 95 (psetta maxima turbot), 42 (spider crab). Filtering for n>10 each year(wouldn't count no entries), get 76. n >100 each year, 60. n>500, 39. n>1000, 28.
+
+11 spp have more than 10k samples.23 have more than 5000. 49 have more than 1000. 14 have fewer than 10, 
+
+28 major spp: doesn't include monk or mackerel. 39 does have monkfish. 
+
+Looking through abundance TS:
+species with 2005-10 peak:
+lemon sole, haddock, lumpfish(autumn)
+
+downward trend:
+starry skate
+
+weird early 90s point, high blue whiting, arctic rockling
+
+Look at PA full colsums
+```{r PA_full_colsums}
+mfri_pa <- read_csv ("../Data/PA_MFRI.csv",
+                     col_types = cols(
+                       sample_id = col_factor()
+                     ))
+
+# this has 90 spp
+
+length (which (colSums (mfri_pa) > 5000)) # 24. 50 > 1000, 58 > 500
+
+sample_yrs <- comb_samples %>%
+  dplyr::select (sample_id, year, season)
+
+spp_pa_yr <- mfri_pa %>%
+  pivot_longer (-sample_id, 
+                names_to = "species",
+                values_to = "presence") %>%
+  left_join (sample_yrs, by = "sample_id") %>%
+  group_by (species, year, season) %>%
+  summarize (n_p = sum(presence))
+
+```
+how many species have samples every year?
+I can only think of how to do this separately for autumn and spring. spread by year and then take sum?
+```{r sampled_all_yrs}
+spp_yrs_sampled <- spp_pa_yr %>%
+  mutate (p = ifelse (n_p > 0, 1, 0)) %>%
+  group_by (species, season) %>%
+  summarize (n_yrs_sampled = sum(p))
+
+length(which (spp_yrs_sampled$season =="spring" & spp_yrs_sampled$n_yrs_sampled > 32)) # 27
+length(which (spp_yrs_sampled$season =="autumn" & spp_yrs_sampled$n_yrs_sampled > 20)) # 29, 61 > 20
+
+spring_spp <- unique(spp_yrs_sampled$species[which (spp_yrs_sampled$season =="spring" & spp_yrs_sampled$n_yrs_sampled ==36)])
+
+fall_spp <- unique(spp_yrs_sampled$species[which (spp_yrs_sampled$season =="autumn" & spp_yrs_sampled$n_yrs_sampled > 24)])
+
+
+fall_spp[which (fall_spp %in% spring_spp)]
+
+```
+27 spp sampled every spring, 29 every autumn. 37 have more than 30, 31 have more than 32 in spring. 25 in both
+
+# to get actual sample distributions for each species, would need to add the zeros back in for the samples with no catch. 
+```{r test_distributions}
+#https://aosmith.rbind.io/2019/03/06/lots-of-zeros/
+
+# library(HMMpa)
+# library (MASS)
+# 
+# cod_bm <- comb_ds %>%
+#   filter (species == 1)
+
+```
