@@ -70,7 +70,7 @@ comb_samples %>%
 doesn't look like any particular trend over time for spring. Autumn expanded sampling in 2001 and then fairly constant except for a very low year in 2011. 
 
 #### Temporal extent of sampling stations
-I basically want a presence/absence table, but with stations
+I basically want a presence/absence table, but with stations. There should be around 590 stations
 ```{r station_duration}
 
 all_years <- data.frame (year = 1985:2020)
@@ -123,10 +123,18 @@ length (which (station_ts_aut$count >20)) # 280
 
 length (which (station_ts_aut$station %in% station_ts_spr$station))
 
+comb_samples %>%
+  group_by(year, season) %>%
+  summarise (n_stations = length (unique(station))) %>%
+  ggplot (aes (x = year, y = n_stations, col = season)) +
+  geom_point() +
+  geom_line()
+
 ```
 336 stat_sq in spring; 205 sampled every year, 255 sampled in 30+ years. 340 stat_sq in autumn, 211 shared with spring. Only 34 sampled all years. 230 > 20 years. 211>22, 150>23. 
 
-680 stations in spring (still more than there are stations??); 436 in all years, 518 > 30. 414 in autumn, 280 above 20. No overlap?
+680 stations in spring; 436 in all years, 518 > 30. 414 in autumn, 280 above 20. No overlap between spring and fall.
+
 ### Spatial extent
 ```{r tow_locations}
 
@@ -151,7 +159,7 @@ comb_samples %>%
 ```
 
 plot on map
-```{r, spr_map}
+```{r spr_map}
 library (ggmap)
 
 isl_basemap <- get_map (location = c(-30, 60, -5, 70), source = "stamen", maptype = "terrain", crop = FALSE)
@@ -162,13 +170,23 @@ ggmap(isl_basemap) +
 ```
 
 
-```{r, fall_map}
+```{r fall_map}
 
 ggmap(isl_basemap) +
   geom_point (aes (x = lon, y = lat), data = aut_samples) +
   ggtitle ("Fall survey locations")
 
 ```
+
+```{r tow_depth}
+comb_samples %>% ggplot (aes (x = season, y = tow_depth_begin)) + geom_boxplot()
+comb_samples %>% ggplot (aes (x = season, y = tow_depth_end)) + geom_boxplot()
+
+comb_samples %>% ggplot (aes (x = tow_depth_begin, col = season)) + geom_density()
+
+comb_samples %>% ggplot (aes (x = tow_depth_end, col = season)) + geom_density()
+```
+Autumn has deeper samples, but just a much fatter tail. still has mostly shallower samples. Spring also has a few deep ones. 
 
 ### Temperature data
 ```{r temp_hist}
@@ -188,7 +206,7 @@ ggplot (comb_samples) +
 SST: Warmer temps in the fall, peak around 9 degrees and another small peak at 6. Spring peak at 3 and 4-7. Autumn has more spread, some values go below spring it looks like. 
 
 Bottom temp: fall is bimodal,peak just below zero and at 7. Spring peak around 3 and 5. fall still warmer, with more spread. 
-```{r, temp_ts}
+```{r temp_ts}
 ggplot (comb_samples) +
   geom_point (aes (x = date, y =bottom_temp))
 
@@ -290,7 +308,7 @@ Tow times are fairly standard. The longest one is the deepest and the shortest o
 ### Species info
 
 quick check about length biomass etc, might want to animate
-```{r}
+```{r biomass_check}
 # cod_kg_ts <- comb_samples %>%
 #   filter (species == 1) %>%
 #   group_by (season, year(date), length_cm) %>%
@@ -379,26 +397,100 @@ spp_pa_yr <- mfri_pa %>%
   summarize (n_p = sum(presence))
 
 ```
-how many species have samples every year?
-I can only think of how to do this separately for autumn and spring. spread by year and then take sum?
+
+How many species have samples every year?
+36 total years for spring, 25 total years for autumn. 
 ```{r sampled_all_yrs}
 spp_yrs_sampled <- spp_pa_yr %>%
   mutate (p = ifelse (n_p > 0, 1, 0)) %>%
   group_by (species, season) %>%
   summarize (n_yrs_sampled = sum(p))
 
-length(which (spp_yrs_sampled$season =="spring" & spp_yrs_sampled$n_yrs_sampled > 32)) # 27
-length(which (spp_yrs_sampled$season =="autumn" & spp_yrs_sampled$n_yrs_sampled > 20)) # 29, 61 > 20
+length(which (spp_yrs_sampled$season =="spring" & spp_yrs_sampled$n_yrs_sampled > 25)) 
+length(which (spp_yrs_sampled$season =="autumn" & spp_yrs_sampled$n_yrs_sampled > 14)) 
 
-spring_spp <- unique(spp_yrs_sampled$species[which (spp_yrs_sampled$season =="spring" & spp_yrs_sampled$n_yrs_sampled ==36)])
+# spring species consistently sampled
+spring_spp <- unique(spp_yrs_sampled$species[which (spp_yrs_sampled$season =="spring" & spp_yrs_sampled$n_yrs_sampled ==36)]) 
 
+# fall spp consistently sampled
 fall_spp <- unique(spp_yrs_sampled$species[which (spp_yrs_sampled$season =="autumn" & spp_yrs_sampled$n_yrs_sampled > 24)])
 
-
+#overlap in fall/spring consistent spp
 fall_spp[which (fall_spp %in% spring_spp)]
 
+
 ```
-27 spp sampled every spring, 29 every autumn. 37 have more than 30, 31 have more than 32 in spring. 25 in both
+27 spp sampled every spring, 29 every autumn. 25 in both. 37 have more than 30, 31 have more than 32 in spring. 
+
+52 have < 10 years missing in spring, 63 in fall. 
+
+#### Check anomalous points
+1990, big spike in blue whiting. Sample 44366 has unusually high numbers, just of blue whiting it seems. 
+```{r blue_whiting_1990}
+
+comb_ds %>% 
+  filter (species == 34 & year == 1990) %>%
+  View()
+
+comb_ds %>% 
+  filter (sample_id == 44366) %>%
+  group_by (species) %>%
+  summarize (tot_kg = sum(kg_per_nautmile)) %>%
+  ggplot (aes (y = tot_kg, x = species)) +
+  geom_boxplot()
+  View()
+
+```
+mid-90s rabbitfish 39. Looks like 73586 in 1996. no particular values jump out, just a high abundance of many size classes.
+```{r rabbitfish}
+comb_ds %>% 
+  filter (species == 39 & between(year, 1995, 1998) & kg_per_nautmile > 1) %>%
+  View()
+```
+
+
+#### Match landed and surveyed species
+```{r landings_spp}
+ldgs <- read_csv ("../Data/Landings_annual_all_sectors.csv")
+spp_list <- read_csv("../Data/species_eng.csv")
+match_spp <- read_csv("../Data/Match_spp_names.csv") %>% # this is only the 41 landed species. might be better to just add a column to spp_list?
+  mutate (sci_name_underscore = gsub(" ", "_", Scientific_name)) # add underscore to match PA table
+
+ld_spp <- sort (unique (ldgs$species))
+
+ldgs %>%
+  group_by (species) %>%
+  summarize (tot_cat = sum(tonnes, na.rm = TRUE)) %>%
+  arrange (desc (tot_cat))
+```
+41 landed species. Are any very rare in survey?
+```{r landed_spp_n_yrs}
+# just number of samples each year
+spp_yrs_sampled %>%
+  filter (species %in% match_spp$sci_name_underscore) %>%
+  filter (n_yrs_sampled < 10) %>%
+  View()
+
+spp_yrs_sampled %>%
+  filter (species %in% match_spp$sci_name_underscore) %>%
+  #filter (n_yrs_sampled < 10) %>%
+  View()
+  
+comb_ds %>%
+  filter (species %in% match_spp$Spp_ID) %>%
+  group_by (species, year) %>%
+  summarize (tot_biomass = sum(kg_per_nautmile, na.rm = TRUE))
+
+```
+Grenadier C. rupestris only sampled in the autumn, but present in 24 years. Norway lobster, shrimp, and greenland shark don't have many samples. Mackerel also not well represented (14 autumn; 11 spring)
+
+Are there commonly caught species that are NOT landed?
+```{r not_landed}
+spring_spp[which (!spring_spp %in% match_spp$sci_name_underscore)]
+fall_spp[which (!fall_spp %in% match_spp$sci_name_underscore)]
+```
+Spring: A denticulatus (Arctic wolffish), lumpfish, Norway haddock [perhaps in with haddock or redfish?], Norway pout
+Fall: Polar cod, lumpfish, gray gurnard, Norway haddock, Norway pout
 
 # to get actual sample distributions for each species, would need to add the zeros back in for the samples with no catch. 
 ```{r test_distributions}
