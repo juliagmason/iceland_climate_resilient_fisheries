@@ -77,14 +77,18 @@ spp_names_match <- prelim_names_match %>%
 
 spp_table_ldgs <- spp_table_eng %>%
   left_join (spp_names_match, by = "Common_name") %>%
-  mutate (sci_name_underscore = gsub(" ", "_", Scientific_name)) %>% # add underscore to match PA table
-  filter (! Spp_ID %in% c(11, 953, 613))
+  mutate (sci_name_underscore = ifelse (
+    is.na (Scientific_name), gsub (" ", "_", Common_name),
+           gsub(" ", "_", Scientific_name)
+  )
+    ) %>% # add underscore to match PA table. fill in with common name if no scientific name
+  filter (! Spp_ID %in% c(11, 953, 613, 913))
 
 # fix repeated spp
-# have identified 3 so far that are commonly caught: S. mentella (11, 61), monkfish (953, 14), seminudus (69, 613)
+# have identified 3 so far that are commonly caught: S. mentella (11, 61), monkfish (953, 14), seminudus (69, 613), a. minor (13, 913)
 
-# no instances of 953 or 613. 
+# no instances of 953 or 613, 913. 
 
-comb_ds %>% filter (species %in% c(69, 613)) %>% group_by (species) %>% summarize (tot = sum(kg_per_nautmile, na.rm = TRUE))
+#comb_ds %>% filter (species %in% c(69, 613)) %>% group_by (species) %>% summarize (tot = sum(kg_per_nautmile, na.rm = TRUE))
 
 write.csv (spp_table_ldgs, file = "Data/species_eng.csv", row.names = FALSE)
