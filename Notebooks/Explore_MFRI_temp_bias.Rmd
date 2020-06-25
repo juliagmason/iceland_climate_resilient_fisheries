@@ -30,7 +30,7 @@ oisst_date <- seq (ymd("1985-01-01"), ymd("2020-06-01"), by = "months")
 
 26 lat by 84 lon by 426 months. 
 
-```{r}
+```{r oisst_plot_check}
 image(oisst_lon, oisst_lat, oisst[,,1])
 maps::map("world", add = TRUE)
 
@@ -116,7 +116,7 @@ for (x in mfri_dates_in) {
 mfri_oisst_df$sample_id <- as.factor(mfri_oisst_df$sample_id)
 ```
 
-```{r}
+```{r oisst_hist}
 hist(mfri_oisst_df$oisst)
 summary (mfri_oisst_df$oisst)
 summary (comb_samples$surface_temp) # didn't read this in earlier
@@ -125,39 +125,39 @@ summary (comb_samples$surface_temp) # didn't read this in earlier
 summaries look quite similar!
 
 compare samples and oisst
-```{r}
-comb_samples <- read_csv("../Data/MFRI_comb_survey_samples.csv",
+```{r temp_bias_plots}
+comb_samples_sst <- read_csv("../Data/MFRI_comb_survey_samples.csv",
                           col_types = cols(
                       sample_id = col_factor(),
                       stat_sq = col_factor())
 ) %>%
   left_join (mfri_oisst_df, by = "sample_id")
 
-comb_samples %>%
+comb_samples_sst %>%
   ggplot (aes (x = surface_temp, y = oisst, col = season)) +
   geom_point() +
   geom_abline (slope = 1, intercept = 0)
 
-comb_samples %>%
+comb_samples_sst %>%
   mutate (sst_bias = surface_temp - oisst) %>%
   ggplot (aes (x = date, y =sst_bias, col = season)) +
   geom_point() +
   geom_smooth (method = 'lm')
 
-comb_samples %>%
+comb_samples_sst %>%
   mutate (sst_bias = surface_temp - oisst) %>%
   ggplot (aes (x = year, y =sst_bias, group = year)) +
   geom_boxplot() 
 
-comb_samples %>%
+comb_samples_sst %>%
   mutate (sst_bias = surface_temp - oisst) %>%
   ggplot (aes (x = lat, y =sst_bias, col = season)) +
   geom_point() 
 ```
 
 plot distributions?
-```{r}
-comb_samples %>%
+```{r compare_density_plot}
+comb_samples_sst %>%
   dplyr::select (sample_id, surface_temp, oisst) %>%
   pivot_longer (-sample_id, names_to = "source",
                 values_to = "temp") %>%
@@ -166,7 +166,7 @@ comb_samples %>%
 ```
 
 ## GINS
-```{r}
+```{r load_GINS}
 load ("../Data/GINS_bottom_temp.RData") # gins_bt
 dim(gins_bt)
 
