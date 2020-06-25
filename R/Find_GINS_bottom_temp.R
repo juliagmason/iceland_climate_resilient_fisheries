@@ -3,7 +3,12 @@
 # JGM
 
 library (ncdf4)
+library (raster)
 
+#=======================================
+### Bottom temperature for seasonal GINS ----
+#=======================================
+# Previously worked with this in MATLAB
 # messy folder with both .nc and converted ".nc.mat" files from matlab attempts, so extract just ".nc" filenames
 gins_files_all <- list.files (path = "../Documents/MATLAB/GINS", pattern = ".nc", full.names = T)
 gins_files_mat <- list.files (path = "../Documents/MATLAB/GINS", pattern = ".mat", full.names = T)
@@ -47,3 +52,76 @@ lon <- ncvar_get (gins_tmp, "lon")
 image (lon, lat, gins_bt$Summer)
 
 save (gins_bt, file = "Data/GINS_bottom_temp.RData")
+
+##############################################
+### Monthly GINS data ----
+#############################################
+# 6/25/2020
+
+# Downloaded via python xarray. Three netcdf files of each: 85-94, 95-04, 05-12. 
+
+# Salinity data---
+
+# salinity files by decade, downloaded in python notebook
+gins_sal_files <- list.files (path = "../Documents/Python Scripts/", pattern = "GINS_sal_", full.names = T)
+
+
+# edit function to take different variables
+find_bottom_gins <- function (filename, var){
+  gins <- nc_open(filename)
+  gins_t <- ncvar_get(gins, var) # 241 x 141 x 57 x 12
+  gins_bottom <- apply (gins_t, c(1,2,4), function(x) x[max(which(!is.na(x)))]) # find deepest non-NA value along 3rd (depth) dimension
+  nc_close (gins)
+}
+
+
+gins_bottom_sal <- lapply (gins_sal_files, find_bottom_sal, var = "s_an")
+# list with 3 elements
+
+# make into a raster brick ----
+
+# turn list into array
+gins_bottom_sal_array <- array (unlist (gins_bottom_sal), 
+                                c(241, 141,36))
+
+# open one nc to get lat and lon
+gins <- nc_open (gins_sal_files[1])
+lat <- ncvar_get (gins, "lat")
+lon <- ncvar_get (gins, "lon")
+nc_close(gins)
+
+image (lon, lat, gins_bottom_sal_array[,,1])
+
+latlons <- expand.grid (lon = lon, lat = lat)
+coordinates (latlons) <- ~lon + lat
+projstring <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towsg84=0,0,0"
+proj4string(latlons) <- CRS(projstring)
+
+# transpose
+#https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
+gins_sal_rot <- aperm(gins_bottom_sal_array, c(2, 1,3))
+gins_sal_rev <- apply (gins_sal_rot, c(2,3), rev)
+
+gins_sal_r <- brick(gins_sal_rev)
+projection(gins_sal_r) <- CRS(projstring)
+extent (gins_sal_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+
+# not assigning names for now, see what would be best
+
+plot (gins_sal_r, 10)
+
+# Write and save raster
+gins_sal <- writeRaster(gins_sal_r, filename = "Data/GINS_bottom_sal.grd")
+
+# Temperature data ----
+gins_temp_files <- list.files (path = "../Documents/Python Scripts/", pattern = "GINS_temp_", full.names = T)
+
+test <- find_bottom_gins (gins_temp_files[2], var = "t_an")
+
+gins_bottom_temp <- lapply (gins_temp_files, find_bottom_gins, var = "t_an")
+
+# make into array
+gins_bt_arr <- array (unlist (gins_bottom_temp), 
+                      c(241, 141, 36))
+
+image (lon, lat, gins_bt_arr[,,1])
