@@ -7,34 +7,20 @@
 library (tidyverse)
 library(lubridate)
 library (ggmap)
+library (gridExtra)
 
-spr_ds <- read_csv ("Data/springsurvey.csv",
-                    col_types = cols(
-                      sample_id = col_factor(),
-                      species = col_factor(),
-                      stat_sq = col_factor() # staves off trailing ch parsing error
-                      
-                    )) %>%
-  mutate (date = make_date (year, month))
-
-aut_ds <- read_csv ("Data/autumnsurvey.csv",
-                    col_types = cols(
-                      sample_id = col_factor(),
-                      species = col_factor(),
-                      stat_sq = col_factor() # staves off trailing ch parsing error
-                      
-                    ))%>%
-  mutate (date = make_date (year, month))
-
-# combined dataset
-comb_ds <- rbind (spr_ds, aut_ds) 
-comb_ds$season = c(rep ("spring", nrow (spr_ds)), rep("autumn", nrow (aut_ds)))
+comb_ds <- read_csv ("../Data/MFRI_comb_survey.csv",
+                     col_types = cols(
+                       sample_id = col_factor(),
+                       species = col_factor(),
+                       stat_sq = col_factor())
+)
 
 # species names and Ids
 spp_list <- read_csv ("Data/species_eng.csv")
 
 
-# dataset that just has sums for each species
+# dataset that just has sums for each species----
 
 spp_tot_ds <- comb_ds %>%
   group_by (sample_id, species) %>%
@@ -51,6 +37,16 @@ spp_tot_ds <- comb_ds %>%
 # list of species that have data
 sampled_spp <- sort(unique (spp_tot_ds$species))
 
+
+# also make table that designates years caught and if landed for each species
+# bringing in code from explore_mfri_survey species section
+spp_yrs_sampled <- spp_pa_yr %>%
+  mutate (p = ifelse (n_p > 0, 1, 0)) %>%
+  group_by (species, season) %>%
+  summarize (n_yrs_sampled = sum(p)) %>%
+  mutate (landed = ifelse (species %in% match_spp$sci_name_underscore, 1, 0)) %>%
+  rename ()
+
 # plot dotplot, histogram, bar graph for each species----
 cod_ds <- spp_tot_ds %>%
   filter (species == 1)
@@ -58,7 +54,7 @@ cod_ds <- spp_tot_ds %>%
 mf_ds <- spp_tot_ds %>%
   filter (species == 14)
 
-library (gridExtra)
+
 
 #grid.arrange ()
 
@@ -150,26 +146,38 @@ plot_spp_ts_fun <- function (spp) {
   spp_mns <- spp_subset %>%
     group_by (year, season) %>%
     summarize (mn_kg = mean (kg_tot),
-               mn_n = mean(n_tot))
+               se_kg = var(kg_tot)/sqrt (n()),
+               mn_n = mean(n_tot),
+               se_n = var (n_tot)/sqrt(n())
+               )
   
   
   p1 <- ggplot (spp_subset, aes (x = year, y= kg_tot, col = season)) +
     geom_point (alpha = 0.5) +
     geom_smooth (method = "lm") +
-    ggtitle ("Biomass jitter") 
+    ggtitle ("Biomass jitter")
   
   
   p2 <- ggplot (spp_mns, aes (x = year, y = mn_kg, col = season)) +
     geom_point() +
     geom_line() +
+    #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
     geom_smooth (method = "lm") +
     ggtitle("Biomass annual mean")+
     theme(legend.position = "none")
   
-  p3 <- ggplot (spp_subset, aes (x = year, y= n_tot, col = season)) +
-    geom_jitter (alpha = 0.5) +
+  ggplot (spp_mns, aes (x = year, y = se_kg, col = season)) +
+    geom_point() +
+    geom_line() +
+    #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
     geom_smooth (method = "lm") +
-    ggtitle ("Abundance jitter")
+    ggtitle("Biomass annual mean")+
+    theme(legend.position = "none")
+  
+  # p3 <- ggplot (spp_subset, aes (x = year, y= n_tot, col = season)) +
+  #   geom_jitter (alpha = 0.5) +
+  #   geom_smooth (method = "lm") +
+  #   ggtitle ("Abundance jitter")
   
   p4 <- ggplot (spp_mns, aes (x = year, y = mn_n, col = season)) +
     geom_point() +
@@ -274,3 +282,108 @@ plot_spp_samples_ts <- function(spp){
                                                         spp_list$Common_name[which(spp_list$Spp_ID == spp)], sep = "")) 
   )
 }
+
+# abundance and distribution for major caught spp ----
+
+# make bigger breaks, 1985-1995 and then five years
+yr_breaks <- c(1984, seq(1995, 2020, 5))
+
+plot_maj_spp_ts_distrb_fun <- function (spp){
+  
+
+
+spp_subset <- spp_tot_ds %>%
+  ungroup() %>%
+  filter (species == spp) %>%
+  dplyr::select (n_tot, kg_tot, year, season) %>%
+  full_join (all_yrs, by = c("year", "season")) %>%
+  mutate (kg_tot = replace(kg_tot, is.na(kg_tot) & (season == "spring" |  (season == "autumn" & year %in% 1995:2019)), 0),
+          n_tot = replace(n_tot, is.na(n_tot) & (season == "spring" |  (season == "autumn" & year %in% 1995:2019)), 0))
+
+spp_mns <- spp_subset %>%
+  group_by (year, season) %>%
+  summarize (mn_kg = mean (kg_tot),
+             se_kg = var(kg_tot)/sqrt (n()),
+             mn_n = mean(n_tot),
+             se_n = var (n_tot)/sqrt(n())
+  )
+
+
+spp_distr_blocks <- spp_tot_ds %>%
+  ungroup() %>%
+  filter (species == spp) %>%
+  full_join (all_yrs, by = c("year", "season")) %>%
+  mutate (kg_tot = replace(kg_tot, is.na(kg_tot) & (season == "spring" |  (season == "autumn" & year %in% 1995:2019)), 0),
+          year_bn = cut(year, breaks = yr_breaks)) %>%
+  filter (!is.na(year_bn)) #just cut out 1985 for now
+
+
+p2 <- ggplot (spp_mns, aes (x = year, y = mn_kg, col = season)) +
+  geom_point() +
+  geom_line() +
+  #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
+  geom_smooth (method = "lm") +
+  ggtitle("Biomass annual mean")+
+  theme(legend.position = "none")
+
+p4 <- ggplot (spp_mns, aes (x = year, y = mn_n, col = season)) +
+  geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm") +
+  ggtitle("Abundance annual mean")+
+  theme(legend.position = "none")
+
+plt <- ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point (aes (x = lon, y = lat, col = season, size = kg_tot),alpha = 0.7, data = spp_distr_blocks) +
+  facet_wrap (~year_bn, ncol = 6) +
+  #ggtitle (paste (spp_list$Scientific_name[which(spp_list$Spp_ID == spp)], ", ",
+                  #spp_list$Common_name[which(spp_list$Spp_ID == spp)], sep = "")
+  #) +
+  theme_bw() +
+  theme (axis.text = element_blank(),
+         legend.position = "bottom", 
+         legend.box = "horizontal")
+
+# match species to spp_yrs_sampled
+spp_names <- spp_list %>%
+  filter (Spp_ID == spp)
+
+spp_yrs <- spp_yrs_sampled %>%
+  filter (species == spp_names$sci_name_underscore)
+
+grid.arrange (p2, p4, plt, nrow = 2, # nicer to have mean ts larger
+              #widths = c (1,2),
+              layout_matrix = cbind (c (1,3), c (2, 3)),
+              top = paste (
+                # Scientific name
+                spp_list$Scientific_name[which(spp_list$Spp_ID == spp)], ", ",
+                # Common name
+                spp_list$Common_name[which(spp_list$Spp_ID == spp)], 
+                # N years sampled in spring
+                ", S:", spp_yrs$n_yrs_sampled[2],
+                # N yeras sampled in autumn
+                ", A:", spp_yrs$n_yrs_sampled[1],
+                ifelse (spp_yrs$landed == 1, 
+                        ", L",
+                        ""),
+                sep = "")
+              )
+
+}
+
+#print (spp_list$Common_name[which(spp_list$Spp_ID == spp)])
+
+# subset species with >= 10 years missing
+maj_spp <- spp_yrs_sampled %>%
+  filter ((season == "autumn" & n_yrs_sampled > 14) | (season == "spring" & n_yrs_sampled > 25) ) %>% # 64 spp
+  arrange (desc (n_yrs_sampled)) 
+
+maj_spp_list <- spp_list$Spp_ID[which (spp_list$sci_name_underscore %in% unique(maj_spp$species))]
+
+pdf (file = "Figures/Maj_spp_ts_dist.pdf")
+
+lapply (maj_spp_list, plot_maj_spp_ts_distrb_fun)
+
+dev.off()
