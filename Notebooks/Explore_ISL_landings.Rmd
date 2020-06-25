@@ -4,22 +4,54 @@ date: 6-23-2020
 output: html_notebook
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+Statistics Iceland fisheries landings data accessed 6/23/2020.
+https://px.hagstofa.is/pxen/pxweb/en/Atvinnuvegir/Atvinnuvegir__sjavarutvegur__aflatolur__afli_manudir/SJA01101.px
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+https://px.hagstofa.is/pxen/pxweb/en/Atvinnuvegir/Atvinnuvegir__sjavarutvegur__aflatolur__kvotaflokkar/SJA09021.px/table/tableViewLayout1/?rxid=13d69042-115a-4e17-a0ec-8d7578043c59
+
 
 ```{r setup}
 library (tidyverse)
 
 ldgs <- read_csv ("../Data/Landings_annual_all_sectors.csv")
 ```
+10 types of quota: trawlers, vessels with catch quota (large boat?), hook and line, hook and line with catch quota, hook boats limited fishing days; small boats cod catch quota, small boats catch quota, small boats limited fishing days, coastal fisheries, other. 
 
-What are the most important species for each sector?
-```{r}
+### What are the most important species for each sector?
+```{r top_spp}
+
+length (unique (ldgs$species)) # 41 species
+
 ldgs %>%
   group_by (quota, species) %>%
   summarize (tot_cat= sum(tonnes, na.rm = TRUE)) %>%
   arrange(quota, desc(tot_cat)) %>%
   top_n (5)
 ```
+41 species (includes some other and "miscellaneous catch"). Top in almost all sectors are cod, saithe, haddock, Atlantic catfish (wolffish in spp list). Small boats have shrimp and other demersals, other shellfish in addition to cod and haddock. Other has pelagics, cod, shrimp . Trawlers have capeline, blue whiting. Vessels with catch quota pelagics, blue whiting. 
 
+### Are all of these quota types relevant? How much is the relative catch?
+```{r volume_by_quota}
+sum(ldgs$tonnes, na.rm = TRUE) # 41637695
+
+ldgs %>%
+  group_by (quota) %>%
+  summarize (tot_cat = sum(tonnes, na.rm = TRUE),
+             perc_tot = tot_cat / 41637695 * 100) %>%
+  arrange (desc(tot_cat))
+               
+
+```
+Vessels with catch quota 47%, trawlers 27%, other is 21%. Should find out what other is...lumpfish? Lumpfish is not one of the species included?
+
+
+### Big blue whiting spike in 1990. is this seen in landings data?
+```{r blue_whiting}
+
+ldgs %>%
+  filter (species == "Blue whiting") %>% 
+  ggplot (aes (x = year, y = tonnes)) +
+  geom_line()
+
+```
+data only goes back to 1992. blue whiting only caught in 1992, only by trawlers??
