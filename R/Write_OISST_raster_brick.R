@@ -16,6 +16,12 @@ oisst <- ncvar_get (oisst_mfri, "sst")
 
 nc_close (oisst_mfri)
 
+# plot check
+
+image(oisst_lon, oisst_lat, oisst[,,1])
+maps::map("world", add = TRUE)
+
+
 # Set up raster extent
 latlons <- expand.grid (lon = oisst_lon, lat = oisst_lat)
 coordinates (latlons) <- ~lon + lat
