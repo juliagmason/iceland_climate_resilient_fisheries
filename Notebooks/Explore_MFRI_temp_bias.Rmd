@@ -11,61 +11,34 @@ Start with just an average time series
 Currently I have my resampled OISST data in a matlab form, monthly mean for all years. but I could grab daily ts in python?
 
 ```{r setup}
-library (ncdf4)
+
 library (lubridate)
 library (raster)
+library (tidyverse)
 
-oisst_mfri <- nc_open ("../../Documents/Python Scripts/oisst_mfri_month_mean.nc")
+# read in lat/lon sample points from MFRI
+mfri_pts <- read_csv("../Data/MFRI_comb_survey_samples.csv") %>%
+  dplyr::select (sample_id, date, lat, lon) %>%
+  arrange (date)  #not originally in date order
 
-oisst_lat <- ncvar_get (oisst_mfri, "lat")
-oisst_lon <- ncvar_get (oisst_mfri, "lon")
+# create spatialpoints dataframe
+coordinates(mfri_pts) <- ~lon + lat
 
-oisst <- ncvar_get (oisst_mfri, "sst")
+```
 
-# oisst_date <- ncvar_get (oisst_mfri, "year_month") # doesn't work; no dimvar. but I know it goes from 1985-01 to 2020-06
-
+### OISST 
+```{r oisst}
+# brick saved in data folder
+oisst_r <- brick ("../Data/OISST_MFRI.grd")
 # set up a vector of dates
 oisst_date <- seq (ymd("1985-01-01"), ymd("2020-06-01"), by = "months")
 ```
 
 26 lat by 84 lon by 426 months. 
 
-```{r oisst_plot_check}
-image(oisst_lon, oisst_lat, oisst[,,1])
-maps::map("world", add = TRUE)
-
-```
-
-Rasterize (and make into raster brick?)
-```{r rasterize}
-latlons <- expand.grid (lon = oisst_lon, lat = oisst_lat)
-coordinates (latlons) <- ~lon + lat
-projstring <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towsg84=0,0,0"
-proj4string(latlons) <- CRS(projstring)
-
-# transpose?
-#https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
-oisst_rot <- aperm(oisst, c(2, 1,3))
-oisst_rev <- apply (oisst_rot, c(2,3), rev)
-
-oisst_r <- brick(oisst_rev)
-projection(oisst_r) <- CRS(projstring)
-extent (oisst_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
-
-# assign names as dates?
-#https://stackoverflow.com/questions/34294376/how-to-extract-data-from-a-rasterbrick
-names(oisst_r) <- oisst_date
-# this doesn't work well, adds an x and replaces hyphens with periods. better to use date_index
-
-plot (oisst_r, 1)
-```
 
 ```{r extract_target_points}
 #http://geog.uoregon.edu/bartlein/courses/geog490/week06-geospatial.html#extract-data-from-a-raster
-
-mfri_pts <- read_csv("../Data/MFRI_comb_survey_samples.csv") %>%
-  dplyr::select (sample_id, date, lat, lon) %>%
-  arrange (date)  #not originally in date order
 
 
 # create an index of mfri dates to match with layers of raster brick?
@@ -167,9 +140,106 @@ comb_samples_sst %>%
 
 ## GINS
 ```{r load_GINS}
-load ("../Data/GINS_bottom_temp.RData") # gins_bt
+gins_bt <- brick ("../Data/GINS_bottom_temp.grd")
 dim(gins_bt)
 
-# this is seasonal...only available seasonal at 1/4 degree?
+# trickier to match dates because these are by decade. Make a vector of dates and use a series of case_when to match
+gins_dates <- paste (
+  rep (c(1985, 1995, 2005), each = 12),
+  sprintf ("%02d", 1:12),
+  "01",
+  sep = "-")
+
 ```
 
+```{r extract_gins}
+# try matching one date
+mfri_tmp <- mfri_pts[which (mfri_pts$date == "2000-03-01"),]
+
+which (gins_dates == "1995-03-01") # 15
+
+gins_tmp <- subset (gins_bt, 15)
+
+mfri_tmp_extract <- raster::extract (gins_tmp, mfri_tmp, method = "simple")
+
+mfri_tmp_df <- data.frame (mfri_tmp$lon, mfri_tmp$lat, mfri_tmp_extract) 
+
+
+# Build a loop
+mfri_dates_in <- unique (mfri_pts$date[which (mfri_pts$date < "2013-01-01")]) # 106 total dates; 73 before 2012
+
+# make empty df
+mfri_gins_df <- data.frame(sample_id = factor(),
+                            gins_bt = numeric())
+
+# doesn't like x in mfri_dates_in for some reason?
+for (i in 1:length(mfri_dates_in)) {
+  x <- mfri_dates_in[i]
+  # subset mfri data
+  mfri <- mfri_pts[which (mfri_pts$date == x),]
+  
+  # match date
+  y <- case_when (
+    between (year(x), 1985, 1994) ~ paste0 ("1985", substr(x, 5, 10)),
+    between (year(x), 1995, 2004) ~ paste0 ("1995", substr(x, 5, 10)),
+    between (year(x), 2005, 2012) ~ paste0 ("2005", substr(x, 5, 10))
+  )
+  
+  #index date
+  y_in <- which (gins_dates == y)
+  
+  # subset oisst brick
+  gins_subset <- subset (gins_bt, y_in)
+  gins_extract <- raster::extract (gins_subset, mfri, method = "simple")
+  
+  x_df <- data.frame (sample_id = mfri$sample_id, gins_bt = gins_extract)
+  
+  mfri_gins_df <- rbind (mfri_gins_df, x_df)
+}
+
+mfri_gins_df$sample_id <- as.factor(mfri_gins_df$sample_id)
+```
+
+```{r compare_bt}
+comb_samples_bt <- read_csv("../Data/MFRI_comb_survey_samples.csv",
+                          col_types = cols(
+                      sample_id = col_factor(),
+                      stat_sq = col_factor())
+) %>%
+  left_join (mfri_gins_df, by = "sample_id")
+
+comb_samples_bt %>%
+  dplyr::select (sample_id, bottom_temp, gins_bt) %>%
+  pivot_longer (-sample_id, names_to = "source",
+                values_to = "temp") %>%
+  ggplot (aes (x = temp, col = source)) +
+  geom_density() 
+```
+
+not as good match for density plot
+
+```{r gins_temp_bias_plots}
+summary (comb_samples_bt$bottom_temp)
+summary (mfri_gins_df$gins_bt)
+
+comb_samples_bt %>%
+  ggplot (aes (x = bottom_temp, y = gins_bt, col = season)) +
+  geom_point() +
+  geom_abline (slope = 1, intercept = 0)
+
+comb_samples_bt %>%
+  mutate (bt_bias = bottom_temp - gins_bt) %>%
+  ggplot (aes (x = date, y =bt_bias, col = season)) +
+  geom_point() +
+  geom_smooth (method = 'lm')
+
+comb_samples_bt %>%
+  mutate (bt_bias = bottom_temp - gins_bt) %>%
+  ggplot (aes (x = year, y =bt_bias, group = year)) +
+  geom_boxplot() 
+
+comb_samples_bt %>%
+  mutate (bt_bias = bottom_temp - gins_bt) %>%
+  ggplot (aes (x = lat, y =bt_bias, col = season)) +
+  geom_point() 
+```
