@@ -141,3 +141,67 @@ mfri_env_df <- mfri_samples %>%
   left_join (mfri_oisst_df, by = "sample_id") %>%
   left_join (mfri_bt_df, by = "sample_id") %>%
   left_join (mfri_sal_df, by = "sample_id")
+
+# write csv----
+write.csv (mfri_env_df, file = "Data/MFRI_predictor_df.csv", row.names = FALSE)
+
+# explore missing values ----
+# plot check for missing gins values
+library (ncdf4)
+gins_temp_files <- list.files (path = "../Documents/Python Scripts/", pattern = "GINS_temp_", full.names = T)
+
+gins <- nc_open (gins_temp_files[1])
+lat <- ncvar_get (gins, "lat")
+lon <- ncvar_get (gins, "lon")
+nc_close(gins)
+
+image(lat, lon, gins_bt[[1]])
+maps::map("world", add = TRUE)
+
+plot(gins_bt,1)
+
+# doesn't seem to be anything missing in here. 
+
+mfri_env_df <- read_csv("Data/MFRI_predictor_df.csv")
+
+# 8042 missing for both bottom and salinity, presumably the same ones?
+
+# 7261 points are after 2012, so that explains those ones. 
+bt_nas <- mfri_env_df$sample_id[which(is.na(mfri_env_df$gins_bt))]
+sal_nas <- mfri_env_df$sample_id[which(is.na(mfri_env_df$gins_sal))]
+
+which (! sal_nas %in% bt_nas) # 0; they're the same. 
+
+missing_bt <- mfri_env_df %>%
+  filter (is.na(gins_bt) & date < "2012-12-12")
+
+missing_bt_index <- which (is.na(mfri_env_df$gins_bt))
+
+# just do outline
+library (maps)
+library (mapdata)
+
+#https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html
+library (sf)
+library (rnaturalearth)
+library (rnaturalearthdata)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")  
+
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point (aes (x = lon, y = lat),alpha = 0.7, data = missing_bt) +
+  theme_bw() +
+  theme (axis.text = element_blank())
+
+# these ones are quite close to shore, so maybe not getting gins. try to plot?
+
+# make spatial
+coordinates(missing_bt) <- ~lon + lat
+
+plot (gins_bt, 1, xlim = c(-30, -8), ylim = c(62,70))
+points (missing_bt)
+
+# do any of these points not have their own bt
+length (which (is.na(missing_bt$bottom_temp))) # 53
