@@ -40,10 +40,51 @@ Spring survey has 20297 samples (feb-apr), 1985-2020. 85 unique spp, top are cod
 
 Briefly panicked because comb_ds has 91 unique species but comb_samples has only 79. This is expected; just took distinct samples, not distinct samples and species. In my full PA set, have full 91 species. 
 
-Discovered that sebasetes mentella (61, 11) is repeated. Majority of samples are 61; only 16 have 11. Will ask, but replace 11 with 61 for now. 
+Discovered that sebasetes mentella (61, 11) is repeated. Majority of samples are 61; only 16 have 11. Will ask, but replace 11 with 61 for now. Magnus confirmed that this is a separate subspecies, so shouldn't combine. 
 
+### Making sense of station, stat_sq, sample ID
+Pamela: The maps show the target tow locations (can vary a little from year to year), which may very slightly, but tow numbers overlap so the 7-digit identifier is calculated as: statisticalsquare*10000 + townumber*100 + gear to make sure that they are unique to each spot on the map.
+
+```{r station_sq_sample}
+length (unique (comb_ds$sample_id))
+length (unique (comb_ds$station))
+length (unique (comb_ds$stat_sq))
+
+comb_samples %>%
+  group_by (season) %>%
+  summarize (n_station = length (unique (station)),
+             n_stat_sq = length (unique (stat_sq)))
+
+comb_samples %>%
+  group_by (season, year) %>%
+  summarize (n_sample = length (unique (sample_id)),
+             n_station = length (unique (station)),
+             n_stat_sq = length (unique (stat_sq)))
+```
+29002 total sample_ID, 1094 station, 465 stat_sq. Autum: 414 stations, 340 squares. Spring, 680 stations, 336 stat sq. Same number of samples and stations each year. 
+
+```{r stat_sq_yrs_sampled}
+
+single_yr_sq <- comb_samples %>%
+  filter (season == "autumn", year != 2011) %>%
+  group_by (stat_sq) %>%
+  summarize (n_years = length (unique (year))) %>%
+  filter (n_years < 5)
+
+comb_samples %>%
+  filter (season == "autumn", stat_sq %in% single_yr_sq$stat_sq) %>%
+  dplyr:: select (stat_sq, year) %>%
+  View()
+
+```
+
+Actually quite a few stat_sqs only sampled once throughout the 2000s...
 
 ### Temporal extent
+
+Pamela: generally we only use autumn survey data from 2000 onwards to calculate survey indices due to station changes
+
+
 ```{r tow_months}
 comb_samples %>%
   group_by (month(date)) %>%
@@ -55,7 +96,7 @@ comb_samples %>%
 
 
 unique (comb_ds$year[which(comb_ds$month ==4)])
-unique (comb_ds$year[which(comb_ds$month ==)])
+unique (comb_ds$year[which(comb_ds$month == 2)])
 unique (comb_ds$year[which(comb_ds$month ==11)])
 
 ```
@@ -66,8 +107,33 @@ comb_samples %>%
   ggplot()+
   geom_bar(aes(x = year, fill = season), bins = 36) +
   ggtitle ("Tows per year")
+
+# n samples each year
+comb_samples %>%
+  group_by (season, year) %>%
+  summarize (count = n())
+
+# avg samples each year, not counting 2011
+comb_samples %>%
+  filter (season == "autumn", year >= 2000, year != 2011) %>%
+  group_by (year) %>%
+  summarize (count = n()) %>%
+  summarize (mean_samp = mean (count))
 ```
-doesn't look like any particular trend over time for spring. Autumn expanded sampling in 2001 and then fairly constant except for a very low year in 2011. 
+doesn't look like any particular trend over time for spring. Autumn expanded sampling in 2001 and then fairly constant except for a very low year in 2011. Pamela and Magnus explained that there was a labor strike in 2011, suggested just omitting that year. 
+```{r autumn_2011}
+
+comb_samples %>%
+  filter (year == 2011, season == "autumn") %>%
+  nrow()
+
+comb_samples %>%
+  filter (year == 2011, season == "autumn") %>%
+  summarize (n_stat_sq = length (unique (stat_sq)),
+             n_station = length (unique (station)))
+
+```
+131 tows in autumn 2011, vs mean 380 in other years since 2000.
 
 #### Temporal extent of sampling stations
 I basically want a presence/absence table, but with stations. There should be around 590 stations
@@ -135,6 +201,31 @@ comb_samples %>%
 
 680 stations in spring; 436 in all years, 518 > 30. 414 in autumn, 280 above 20. No overlap between spring and fall.
 
+From Pamela: The maps show the target tow locations (can vary a little from year to year), which may very slightly, but tow numbers overlap so the 7-digit identifier is calculated as: statisticalsquare*10000 + townumber*100 + gear to make sure that they are unique to each spot on the map.
+```{r gear}
+
+length (unique (comb_samples$gear)) #3
+comb_samples %>%
+  group_by (season, gear) %>%
+  summarize (count = n())
+
+comb_samples %>%
+  group_by (season, stat_sq) %>%
+  summarize (count = n())
+
+comb_samples %>%
+  filter (season == "autumn") %>%
+  group_by (year, gear) %>% 
+  summarize (count = n()) 
+
+comb_samples %>%
+  filter (season == "autumn") %>%
+  group_by (stat_sq, year) %>% 
+  summarize (count = n()) %>% View()
+
+```
+Spring is all 73. Autumn is half 77, 78, seems like they do about half and half each year except only 77 in 1995. Small number of both in 2011. 
+
 ### Spatial extent
 ```{r tow_locations}
 
@@ -189,6 +280,22 @@ comb_samples %>% ggplot (aes (x = tow_depth_end, col = season)) + geom_density()
 Autumn has deeper samples, but just a much fatter tail. still has mostly shallower samples. Spring also has a few deep ones. 
 
 ### Temperature data
+
+How extensive is temperature sampling?
+```{r n_temp_samples}
+
+length (which (is.na (comb_samples$surface_temp))) # 953 missing values;
+
+length (which (is.na (comb_samples$bottom_temp))) # 1240
+
+length (which (is.na (comb_samples$surface_temp) & is.na (comb_samples$bottom_temp))) # 151
+
+comb_samples %>%
+  filter (!is.na (surface_temp) & !is.na(bottom_temp)) %>%
+  nrow()
+
+```
+953 missing surface temp (leaves 28049), 1240 missing bottom temp (leaves 27762). 151 missing both, so not actually very much overlap--lose 2042 total. 26,960 have both surface and bottom. 
 ```{r temp_hist}
 
 ggplot (comb_samples) +
@@ -418,11 +525,14 @@ fall_spp <- unique(spp_yrs_sampled$species[which (spp_yrs_sampled$season =="autu
 #overlap in fall/spring consistent spp
 fall_spp[which (fall_spp %in% spring_spp)]
 
+spp_25 <- 
 
 ```
 27 spp sampled every spring, 29 every autumn. 25 in both. 37 have more than 30, 31 have more than 32 in spring. 
 
 52 have < 10 years missing in spring, 63 in fall. 
+
+Pamela and Magnus suggested on 6/29 that there might be some species for which it doesn't make sense to sample both fall and spring. Particularly if there's a big difference in length data. plotting those differences in the plot_spp_distribution script. 
 
 #### Check anomalous points
 1990, big spike in blue whiting. Sample 44366 has unusually high numbers, just of blue whiting it seems. 
@@ -492,14 +602,180 @@ fall_spp[which (!fall_spp %in% match_spp$sci_name_underscore)]
 Spring: A denticulatus (Arctic wolffish), lumpfish, Norway haddock [perhaps in with haddock or redfish?], Norway pout
 Fall: Polar cod, lumpfish, gray gurnard, Norway haddock, Norway pout
 
+Relationships btw species
+```{r cod_ts_friends}
+
+24
+mfri_pa %>%
+  dplyr::select (sample_id)
+
+```
+
+
 # to get actual sample distributions for each species, would need to add the zeros back in for the samples with no catch. 
 ```{r test_distributions}
 #https://aosmith.rbind.io/2019/03/06/lots-of-zeros/
 
-# library(HMMpa)
-# library (MASS)
+library(HMMpa)
+library (MASS)
 # 
 # cod_bm <- comb_ds %>%
 #   filter (species == 1)
 
+```
+### relationships btw predictor variables
+
+```{r survey_var_pairplots}
+library(lattice)
+spatial_vars <- comb_samples %>%
+  mutate(season_num = ifelse (season == "spring", 1, 2)) %>%
+  dplyr::select (lat, lon, month, year, tow_depth_begin, surface_temp, bottom_temp, season_num)
+
+# from the documentation...
+## put histograms on the diagonal
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = "cyan", ...)
+}
+
+
+## put (absolute) correlations on the upper panels,
+## with size proportional to the correlations.
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y, use = "na.or.complete"))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+pairs (spatial_vars, upper.panel = panel.cor, diag.panel = panel.hist)
+```
+See a 0.7 correlation between surface and bottom temp (pos), this makes sense. Also a negative relationship between lat and surface temp and bottom temp, this also makes sense--colder at higher latitudes. Would expect more of a relationship with depth and bottom temp. Year and depth makes sense, probably deeper corresponding with starting autumn surveys. 
+```{r salinity}
+mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
+                       col_types = cols(
+                      sample_id = col_factor(),
+
+                      stat_sq = col_factor())
+)
+
+
+mfri_pred_vars <- mfri_pred %>%
+  dplyr::select (year, month, lat, lon, oisst, gins_bt, gins_sal, bottom_temp, surface_temp)
+
+pairs (mfri_pred_vars)
+
+mfri_env <- mfri_pred %>%
+  dplyr::select(oisst, gins_bt, gins_sal, bottom_temp, surface_temp) 
+pairs (mfri_env)
+
+```
+Potential positive relationship between bottom time and salinity? 
+
+Actually missing quite a bit of data. 8042 points for GINS, 353 for oisst. For GINS, 7261 points are after 2012. The remaining missing points are too close to the coast and the GINS data don't register. 
+
+```{r corrplot_gins}
+library(ggcorrplot)
+
+mfri_comp <- mfri_pred_vars [ complete.cases (mfri_pred_vars),]
+cont.corr <- round (cor (mfri_comp), 1)
+
+ggcorrplot (cont.corr, hc.order = TRUE,
+            type = "lower",
+            lab = TRUE, 
+            lab_size = 3,
+            method = "circle",
+            ggtheme = theme_bw
+          ) 
+
+```
+
+Worrisome correlation between sst, bt, salinity, and lat. also month, salinity, bt and ssst. also salinity and bottom temp. 
+
+```{r corrplot_mfri}
+mfri_env <- mfri_pred %>%
+  dplyr::select(bottom_temp, surface_temp, lat, lon, year, month) 
+
+mfri_comp <- mfri_env [ complete.cases (mfri_env),]
+cont.corr <- round (cor (mfri_comp), 1)
+
+ggcorrplot (cont.corr, hc.order = TRUE,
+            type = "lower",
+            lab = TRUE, 
+            lab_size = 3,
+            method = "circle",
+            ggtheme = theme_bw
+          ) 
+
+```
+
+
+what is correlation between mfri temp and climatology temp
+```{r mfri_gins_corrplot}
+mfri_pred_vars <- mfri_pred %>%
+  dplyr::select (year, month, lat, lon, oisst, gins_bt, gins_sal, surface_temp, bottom_temp)
+
+mfri_comp <- mfri_pred_vars [ complete.cases (mfri_pred_vars),]
+cont.corr <- round (cor (mfri_comp), 1)
+
+ggcorrplot (cont.corr, hc.order = TRUE,
+            type = "lower",
+            lab = TRUE, 
+            lab_size = 3,
+            method = "circle",
+            ggtheme = theme_bw
+          )
+
+```
+surface temp and oisst very well correlated. bottom temp not as much, but still pretty good. 
+
+## Run linear models and look at residuals?
+
+start with cod
+```{r cod_prediction}
+# just do non-zero. 
+cod_pa <- mfri_pa %>%
+  dplyr::select (sample_id, Gadus_morhua) %>%
+  rename (Present = Gadus_morhua)
+
+cod_ab <- comb_ds %>%
+  filter (species == 1) %>%
+  group_by (sample_id) %>%
+  summarize (tot_n = sum(n_per_nautmile)) %>%
+  mutate (log_ab = log (tot_n)) %>%
+  # right_join (cod_pa, by = "sample_id") %>%
+  # replace_na (list (tot_n = 0)) %>%
+  left_join (mfri_pred, by = "sample_id")
+
+# fit simple linear model of non-zero cod abundance * surface temp
+sst_cc <- cod_ab %>%
+  filter (!is.na (surface_temp))
+
+M1_sst <- lm (log_ab ~ surface_temp, data = sst_cc)
+
+# model validation from zuur
+op <- par (mfrow = c (2,2), mar = c (5,4,1,2))
+plot (M1_sst, add.smooth = FALSE, which = 1)
+E <- resid (M1_sst)
+hist (E, xlab= "Residuals", main = "")
+plot (sst_cc$tot_n, E, xlab = "log abundance", ylab = "Residuals")
+plot (sst_cc$surface_temp, E, xlab = "SST", ylab = "Residuals")
+par (op)
+```
+
+try with poisson
+```{r cod_poisson}
+# Zuur ch 9 pg 216, 9.5.2
+plot (sst_cc$surface_temp, sst_cc$tot_n, xlab = "SST", ylab = "tot cod abundance")
+P1 <- glm (tot_n ~ surface_temp, family = poisson, data = sst_cc)
+summary (P1)
 ```
