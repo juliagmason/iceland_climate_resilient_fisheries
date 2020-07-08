@@ -2,6 +2,16 @@
 # 6/17/2020
 #JGM
 
+
+# Notes from Pamela: 
+# I see – those landings are from Hagstofa (Statistics Iceland) which are not always the same as Fiskistofa (Fisheries Directorate) and they lump all redfish together. You can try querying on the Fiskistofa database if you want, or just let me know what you want and we can pass landings data to you (ours should be on par with Fiskistofa, Hagstofa is less accurate).
+# 
+# I also checked with our redfish guy and he said the same as Magnús and that we don’t really track 11 with the surveys – the surveys don’t really cover its range. I also forgot to mention that the autumn survey is mainly for deeper water species, so we use it mainly to track Greenland halibut, redfish, blue ling, and greater silver smelt (and I’m probably forgetting some but you can check in the advice sheets on (https://www.hafogvatn.is/en/harvesting-advice), and most of the others are tracked using the spring survey. Many may have enough numbers to be tracked in both, but they sometimes have differing patterns. Many of the noncommercial species are never looked at.
+#                                                                                            The vast majority of grenadier landings are Coryphaenoides rupestrus, with a little Macrourus berglax. These are probably also lumped by Hagstofa.
+# 
+#                                                                                            All mackeral landings should be Scomber scombrus. T. trachurus is not caught around here as far as I know, but maybe incidentally in some pelagic surveys. 
+                                                                                                                                                                                                                                                                                                                                                    
+
 # Species table has parentheses, icelandic names. Clean up so I can match species ID to common name and scientific name. 
 library (tidyverse)
 library (stringr)
@@ -90,5 +100,7 @@ spp_table_ldgs <- spp_table_eng %>%
 # no instances of 953 or 613, 913. 
 
 #comb_ds %>% filter (species %in% c(69, 613)) %>% group_by (species) %>% summarize (tot = sum(kg_per_nautmile, na.rm = TRUE))
+
+# add columns with number of years sampled and whether landed
 
 write.csv (spp_table_ldgs, file = "Data/species_eng.csv", row.names = FALSE)
