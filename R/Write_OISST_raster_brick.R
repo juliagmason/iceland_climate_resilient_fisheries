@@ -7,7 +7,7 @@ library (ncdf4)
 library (raster)
 
 # Have monthly means from 1985-01 to 2020-06 calculated and subset for Iceland waters (MFRI survey extent) from python
-oisst_mfri <- nc_open ("../../Documents/Python Scripts/oisst_mfri_month_mean.nc")
+oisst_mfri <- nc_open ("../Documents/Python Scripts/oisst_mfri_month_mean.nc")
 
 oisst_lat <- ncvar_get (oisst_mfri, "lat")
 oisst_lon <- ncvar_get (oisst_mfri, "lon")
