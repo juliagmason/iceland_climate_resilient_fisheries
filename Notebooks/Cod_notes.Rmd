@@ -1,0 +1,193 @@
+---
+title: "Cod profile"
+date: "07-06-2020"
+output: html_notebook
+---
+
+I don't expect to see a big change in cod due to temperature--reports about it being more or less in the middle of its range. Changes might be more due to harvest regulations.
+
+Beaugrand et al. 2008 puts ideal cod "regime" as high Chl, low diversity but large copepods, annual SST < 10. 9-10C marks boundary between Atlantic Polar and Atlantic Westerly Winds biomes--southern edge of cod distribution. Drinkwater 2005 puts range at -1-20, ideal 0-12.Expects recruitment to increase until 5C bottom temp, and decrease after 8.5 bottom temp.
+
+MFRI advice report: https://www.hafogvatn.is/static/extras/images/01-cod1206941.pdf
+
+```{r setup_data}
+library(tidyverse)
+library(gridExtra)
+
+# sample ID of all cod presences and absences
+cod_pa <- read_csv ("../Data/PA_MFRI.csv",
+                     col_types = cols(
+                       sample_id = col_factor()
+                     )) %>%
+  select (sample_id, Gadus_morhua)
+
+# full MFRI info for all cod presences, retaining length data
+cod_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
+                      col_types = cols(
+                      sample_id = col_factor(),
+                      species = col_factor(),
+                      stat_sq = col_factor()
+                      )
+                      )%>%
+  filter (species == 1, !(year == 2011 & season == "autumn")) # remove autumn 2011
+  
+# all cod presences, grouped by sample_ID (lengths aggregated
+cod_samp <- cod_samp_full %>%
+  group_by (sample_id) %>%
+  summarize (n_tot = sum(n_per_nautmile, na.rm = TRUE),
+             kg_tot = sum(kg_per_nautmile, na.rm = TRUE),
+             station = first(station),
+             lat = first(lat),
+             lon = first(lon),
+             year = first(year),
+             date = first(date),
+             season = first(season)
+  ) %>%
+  mutate (n_log = log (n_tot),
+          kg_log = log(kg_tot))
+```
+### Histograms
+```{r}
+cod_samp_full %>%
+  ggplot (aes (y = length_cm, x = season), alpha = 0.5) +
+  geom_violin()
+
+cod_samp_full %>%
+  ggplot (aes (x = length_cm, y = n_per_nautmile, fill = season)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.9) 
+
+cod_samp %>%
+  ggplot (aes (x = n_tot, fill = season), alpha = 0.2) +
+  geom_histogram()
+```
+
+Fishbase puts age at maturity at 30-74cm. Quartiles for length are 37, 55 mean/median, 72, 170, so that actually works nicely. 
+
+### Trends in abundance and biomass over time
+```{r time_series, warning = FALSE}
+biomass_ts <- cod_samp %>%
+  group_by (year, season) %>%
+  summarize (mn_kg = mean (kg_tot),
+             se_kg = var(kg_tot)/sqrt (n()),
+             mn_n = mean(n_tot),
+             se_n = var (n_tot)/sqrt(n())
+  ) %>%
+  ggplot (aes (x = year, y = mn_kg, col = season)) +
+    geom_point() +
+    geom_line() +
+    #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
+    geom_smooth (method = "lm") +
+    ggtitle("Biomass annual mean")+
+    theme(legend.position = "none")
+
+
+ab_ts <- cod_samp %>%
+  group_by (year, season) %>%
+  summarize (mn_kg = mean (kg_tot),
+             se_kg = var(kg_tot)/sqrt (n()),
+             mn_n = mean(n_tot),
+             se_n = var (n_tot)/sqrt(n())
+  ) %>%
+  ggplot (aes (x = year, y = mn_n, col = season)) +
+    geom_point() +
+    geom_line() +
+    #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
+    geom_smooth (method = "lm") +
+    ggtitle("Abundance annual mean")+
+    theme(legend.position = "none")
+
+grid.arrange (biomass_ts, ab_ts, nrow = 1)
+```
+### One possible outlier. 379179 sample ID
+```{r}
+cod_samp_full %>%
+  filter (sample_id == 379179) %>% View()
+```
+
+```{r}
+
+# https://trucvietle.me/r/tutorial/2017/01/18/spatial-heat-map-plotting-using-r.html
+
+# this one seems closer:
+# https://stackoverflow.com/questions/18285415/density2d-plot-using-another-variable-for-the-fill-similar-to-geom-tile
+library (maps)
+library (mapdata)
+library (sf)
+library (rnaturalearth)
+library (rnaturalearthdata)
+library (rgeos)
+library (viridis)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+  ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point(data = cod_samp, aes (x = lon, y = lat, col = n_tot)) +
+    scale_fill_viridis_c()
+  
+  ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  stat_summary_2d(data = cod_samp, aes (x = lon, y = lat, z = n_tot), fun = mean, binwidth = c (.25, .25)) +
+    scale_fill_viridis_c(name = "Mean abundance") +
+    theme_bw()
+  
+  ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  stat_summary_2d(data = cod_samp, aes (x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.25, .25)) +
+    scale_fill_viridis_c(name = "Mean abundance") +
+    theme_bw() +
+    facet_wrap (~season)
+  
+```
+Look at spatial distribution by length class
+```{r}
+length_bins = quantile (cod_samp_full$length_cm)
+length_bins[1] <- 0 # include smallest ones
+
+cod_length_bins <- cod_samp_full %>%
+  mutate (length_bin = cut(length_cm, breaks = length_bins),
+          n_log = log(n_per_nautmile),
+          n_tot = sum(n_per_nautmile))
+  
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  stat_summary_2d(data = cod_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
+    scale_fill_viridis_c(name = "Mean log abundance") +
+    theme_bw() +
+  theme (axis.text = element_blank()) +
+    facet_grid (season ~ length_bin)
+
+# facet grid for double facet 
+# http://zevross.com/blog/2019/04/02/easy-multi-panel-plots-in-r-using-facet_wrap-and-facet_grid-from-ggplot2/#specify-a-grid-of-plots-by-row-and-column-with-facet_grid
+  
+```
+not reallt enough resolution in the fall to tell if there's a difference. 
+
+### spatial distribution over time
+```{r}
+
+all_yrs = data.frame (year = rep(1985:2020, each = 2),
+                      season = rep (c("spring", "autumn"), length(1985:2020))
+                      )
+
+yr_breaks <- seq(1985, 2020, 5) 
+yr_breaks[1] <- 0 # include 1985
+
+cod_samp_yr_bn <- cod_samp %>%
+      mutate (year_bn = cut(year, breaks = yr_breaks)) 
+
+ggplot(data = world) +
+      geom_sf() +
+      coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+      stat_summary_2d(data = cod_samp_yr_bn, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
+      scale_fill_viridis_c(name = "Mean log abundance") +
+      facet_wrap (~year_bn) +
+      theme_bw() +
+      theme (axis.text = element_blank())
+
+```
+### Plot abundance vs. predictor variables
