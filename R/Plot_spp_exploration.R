@@ -233,6 +233,7 @@ dev.off()
 # blocks of five years?
 #https://stackoverflow.com/questions/54884478/how-to-group-by-variable-and-cut-time-into-10s-bins-starting-at-132400-exactly
 yr_breaks <- seq(1985, 2020, 5) # this cuts out 1985, going to say that's ok for now
+yr_breaks[1] <- 0 # would include 1985
 
 #ggmap basemap
 #isl_basemap <- get_stamenmap (bbox = c(-30, 62, -8, 70), maptype = "toner-lite")
@@ -263,7 +264,7 @@ plt <- ggplot(data = world) +
   geom_sf() +
   coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
   geom_point (aes (x = lon, y = lat, col = season, size = kg_tot),alpha = 0.7, data = spp_distr_blocks) +
-  facet_wrap (~year_bn) +
+  facet_wrap (~ <- ) +
   ggtitle (paste (spp_list$Scientific_name[which(spp_list$Spp_ID == spp)], ", ",
                   spp_list$Common_name[which(spp_list$Spp_ID == spp)], sep = "")
            ) +
@@ -282,17 +283,42 @@ lapply (sampled_spp, plot_spp_distr_fun)
 
 dev.off()
 
-# species distribution, try heatmap instead
-
-# geom_tile?
-
-# try with cod
-comb_ds %>%
-  filter (species == 1) %>%
-  group_by (sample_id) %>%
-  summarize (tot_n = sum(n_per_nautmile)) %>%
-  left_join (comb_samples, by = "sample_id") %>%
-  ggplot (aes (x))
+# species distribution, try heatmap instead----
+  
+  ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  stat_summary_2d(data = cod_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
+  scale_fill_viridis_c(name = "Mean log abundance") +
+  
+  
+  plot_spp_heatmap_fun <- function (spp) {
+    
+    spp_distr_blocks <- spp_tot_ds %>%
+      ungroup() %>%
+      filter (species == spp) %>%
+      full_join (all_yrs, by = c("year", "season")) %>%
+      mutate (kg_tot = replace(kg_tot, is.na(kg_tot) & (season == "spring" |  (season == "autumn" & year %in% 1995:2019)), 0),
+              year_bn = cut(year, breaks = yr_breaks)) %>%
+      filter (!is.na(year_bn)) #just cut out 1985 for now
+    
+    plt <- ggplot(data = world) +
+      geom_sf() +
+      coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+      stat_summary_2d(data = spp_distr_blocks, aes(x = lon, y = lat, z = log(kg_tot)), fun = mean, binwidth = c (.5, .5)) +
+      scale_fill_viridis_c(name = "Mean log biomass") +
+      facet_wrap (~year_bn) +
+      ggtitle (paste (spp_list$Scientific_name[which(spp_list$Spp_ID == spp)], ", ",
+                      spp_list$Common_name[which(spp_list$Spp_ID == spp)], sep = "")
+      ) +
+      theme_bw() +
+      theme (axis.text = element_blank())
+    
+    print(plt)
+    
+    #print (spp_list$Common_name[which(spp_list$Spp_ID == spp)])
+    
+  }
                
 
 
