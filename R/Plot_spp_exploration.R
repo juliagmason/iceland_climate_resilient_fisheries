@@ -9,7 +9,7 @@ library(lubridate)
 library (ggmap)
 library (gridExtra)
 
-comb_ds <- read_csv ("../Data/MFRI_comb_survey.csv",
+comb_ds <- read_csv ("Data/MFRI_comb_survey.csv",
                      col_types = cols(
                        sample_id = col_factor(),
                        species = col_factor(),
@@ -18,6 +18,12 @@ comb_ds <- read_csv ("../Data/MFRI_comb_survey.csv",
 
 # species names and Ids
 spp_list <- read_csv ("Data/species_eng.csv")
+
+# P/A table
+mfri_pa <- read_csv ("Data/PA_MFRI.csv",
+                     col_types = cols(
+                       sample_id = col_factor()
+                     ))
 
 
 # dataset that just has sums for each species----
@@ -38,14 +44,35 @@ spp_tot_ds <- comb_ds %>%
 sampled_spp <- sort(unique (spp_tot_ds$species))
 
 
-# also make table that designates years caught and if landed for each species
+# table that designates years caught and if landed for each species----
 # bringing in code from explore_mfri_survey species section
+
+# abbreviated table to match which samples happened in what year/season
+sample_yrs <- comb_samples %>%
+  dplyr::select (sample_id, year, season)
+
+# attach years to species p/a to determine how many times each species sampled per season/yr
+spp_pa_yr <- mfri_pa %>%
+  pivot_longer (-sample_id, 
+                names_to = "species",
+                values_to = "presence") %>%
+  left_join (sample_yrs, by = "sample_id") %>%
+  group_by (species, year, season) %>%
+  summarize (n_p = sum(presence))
+
+# indicate if present in a given year and if landed
 spp_yrs_sampled <- spp_pa_yr %>%
   mutate (p = ifelse (n_p > 0, 1, 0)) %>%
   group_by (species, season) %>%
   summarize (n_yrs_sampled = sum(p)) %>%
-  mutate (landed = ifelse (species %in% match_spp$sci_name_underscore, 1, 0)) %>%
-  rename ()
+  mutate (landed = ifelse (species %in% spp_list$sci_name_underscore, 1, 0)) 
+
+# subset species with >= 10 years missing ----
+maj_spp <- spp_yrs_sampled %>%
+  filter ((season == "autumn" & n_yrs_sampled > 14) | (season == "spring" & n_yrs_sampled > 25) ) %>% # 64 spp
+  arrange (desc (n_yrs_sampled)) 
+
+maj_spp_list <- spp_list$Spp_ID[which (spp_list$sci_name_underscore %in% unique(maj_spp$species))]
 
 # plot dotplot, histogram, bar graph for each species----
 cod_ds <- spp_tot_ds %>%
@@ -255,7 +282,21 @@ lapply (sampled_spp, plot_spp_distr_fun)
 
 dev.off()
 
-# just plot number of samples each year for eacn species
+# species distribution, try heatmap instead
+
+# geom_tile?
+
+# try with cod
+comb_ds %>%
+  filter (species == 1) %>%
+  group_by (sample_id) %>%
+  summarize (tot_n = sum(n_per_nautmile)) %>%
+  left_join (comb_samples, by = "sample_id") %>%
+  ggplot (aes (x))
+               
+
+
+# just plot number of samples each year for eacn species----
 
 # plot check n samples over time
 n_samples <- comb_samples %>%
@@ -375,15 +416,27 @@ grid.arrange (p2, p4, plt, nrow = 2, # nicer to have mean ts larger
 
 #print (spp_list$Common_name[which(spp_list$Spp_ID == spp)])
 
-# subset species with >= 10 years missing
-maj_spp <- spp_yrs_sampled %>%
-  filter ((season == "autumn" & n_yrs_sampled > 14) | (season == "spring" & n_yrs_sampled > 25) ) %>% # 64 spp
-  arrange (desc (n_yrs_sampled)) 
 
-maj_spp_list <- spp_list$Spp_ID[which (spp_list$sci_name_underscore %in% unique(maj_spp$species))]
 
 pdf (file = "Figures/Maj_spp_ts_dist.pdf")
 
 lapply (maj_spp_list, plot_maj_spp_ts_distrb_fun)
 
+dev.off()
+
+# plot difference in length distributions autumn and spring for major species ----
+plot_season_length_dist_fun <- function (spp) {
+  print (
+  comb_ds %>%
+    filter (species == spp) %>%
+    ggplot (aes (x = length_cm, y = n_per_nautmile, fill = season)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    ggtitle (paste (spp_list$Scientific_name[which(spp_list$Spp_ID == spp)], ", ",
+                   spp_list$Common_name[which(spp_list$Spp_ID == spp)], sep = "")
+    )
+    )
+}
+
+pdf (file = "Figures/Maj_spp_length_season_dist.pdf")
+lapply (maj_spp_list, plot_season_length_dist_fun)
 dev.off()
