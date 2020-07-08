@@ -558,6 +558,26 @@ comb_ds %>%
   View()
 ```
 
+##### repeated lengths
+noticed 7/8/20 several repeat lengths for cod. How would I best find which samples have repeated lengths? nrow (distinct) by sample ID and species and length vs nrow?
+```{r}
+check_length_repeats <- comb_ds %>%
+  distinct_at (c("sample_id", "species", "length_cm"))
+
+nrow (check_length_repeats) # 3597803
+
+
+tmp <- comb_ds %>%
+  group_by (sample_id, species, length_cm) %>%
+  summarize (count = n()) %>%
+  filter (count > 2) #%>%
+  #summarize (samples = length (unique(sample_id)))
+  
+
+#nrow() #67926
+
+
+```
 
 #### Match landed and surveyed species
 ```{r landings_spp}
