@@ -13,6 +13,7 @@ MFRI advice report: https://www.hafogvatn.is/static/extras/images/01-cod1206941.
 ```{r setup_data}
 library(tidyverse)
 library(gridExtra)
+library (rfishbase)
 
 # sample ID of all cod presences and absences
 cod_pa <- read_csv ("../Data/PA_MFRI.csv",
@@ -46,6 +47,17 @@ cod_samp <- cod_samp_full %>%
   mutate (n_log = log (n_tot),
           kg_log = log(kg_tot))
 ```
+
+### Fishbase stats
+```{r fishbase}
+species("Gadus morhua")
+
+# temperature data
+# https://github.com/ropensci/rfishbase/issues/47
+stocks("Gadus morhua",  c("TempMin", "TempMax", "StockDefs")) #%>%
+  filter (StockCode == 56739	)
+```
+Not a lot of info for iceland stock. temperature only there for north atlantic Canada/NA stock, 0-15 C
 ### Histograms
 ```{r}
 cod_samp_full %>%
@@ -191,3 +203,87 @@ ggplot(data = world) +
 
 ```
 ### Plot abundance vs. predictor variables
+```{r cod_preds}
+cod_ab_pred <- cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  right_join (mfri_pred, by = "sample_id")
+
+  ggplot (cod_ab_pred, aes (x = bottom_temp, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = surface_temp, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = gins_sal, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = lat, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = lon, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = tow_depth_begin, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = tow_depth_end, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+cod_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  ggplot (aes (x = oisst, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")
+
+
+```
+slightly negative rltp with surface and bottom temp. slightly positive lat and lon--makes sense, highest density in ne corner. slightly negative with depth but a little suspect since fewer deep tows. 
+
+salinity for sample 358554 is unusually high. 
+```{r}
+summary (lm (kg_log ~ gins_sal, data = cod_ab_pred))
+
+tmp_sal <- cod_ab_pred %>%
+  filter (! sample_id == 358554) 
+summary (lm (kg_log ~ gins_sal, data = tmp_sal))
+```
+doesn't change it all that much
+
+satellite vs in situ temp
+```{r}
+summary (lm (kg_log ~ oisst, data = cod_ab_pred))
+summary (lm (kg_log ~ surface_temp, data = cod_ab_pred))
+
+summary (lm (kg_log ~ gins_bt, data = cod_ab_pred))
+summary (lm (kg_log ~ bottom_temp, data = cod_ab_pred))
+```
+
+
+
+lil better with oisst and gins_bt. but many more missing observations for gins
