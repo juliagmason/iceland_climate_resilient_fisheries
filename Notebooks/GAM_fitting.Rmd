@@ -41,6 +41,9 @@ mfri_abun <- read_csv ("../Data/MFRI_comb_survey.csv",
   summarize (n_tot = sum(n_per_nautmile),
              kg_tot = sum(kg_per_nautmile))
 
+
+# https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv.pdf
+
 ```
 
 ### Cod
@@ -134,5 +137,14 @@ cod_full_2 <- gam (Presence ~ lon*lat + year + season + s(surface_temp) + s(bott
                  data = cod_pred)
 
 summary (cod_full_2)
+```
+```{r}
+# satellite instead of in situ
+cod_full_sat <- gam (Presence ~ te(lon, lat) + year + season + s(oisst) + s(gins_bt) + s(gins_sal) +s(tow_depth_begin),
+                 family = "binomial", 
+                 data = cod_pred)
+
+summary (cod_full_sat)
+
 ```
 
