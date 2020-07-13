@@ -18,6 +18,7 @@ library (tidyverse)
 library (stringr)
 
 spp_table <- read_csv ("Data/Raw_data/species.csv")
+# keep spp_ID as a number so I can arrange
 
 # The scientific names column ('visindaheiti') has notes on classification source and year. In some cases, there are sub-species names. I want to try to just take the first two words, or just one word if it's at the genus/family level. 
 
@@ -110,8 +111,8 @@ spp_table_ldgs <- spp_table_eng %>%
 
 comb_ds <- read_csv ("Data/MFRI_comb_survey.csv",
                      col_types = cols(
-                       sample_id = col_factor(),
-                       species = col_factor(),
+                       sample_id = col_factor(), 
+                       #species = col_factor(), # let it interp species as a number so can join
                        stat_sq = col_factor())
 )
 
@@ -129,11 +130,11 @@ spp_yrs_sampled <- comb_ds %>%
           n_spring = spring) %>%
   replace_na (list(n_autumn = 0, n_spring = 0))
 
-# not sure if it would be better to make spp_ID a factor for both, but switching to numeric so they're compatible
-spp_yrs_sampled$Spp_ID <- as.numeric(spp_yrs_sampled$Spp_ID)
+
 
 # join to spp_table by species
 spp_table_nyrs <- spp_table_ldgs %>%
-  left_join (spp_yrs_sampled, by = "Spp_ID")
+  left_join (spp_yrs_sampled, by = "Spp_ID") %>%
+  arrange (Spp_ID)
 
 write.csv (spp_table_nyrs, file = "Data/species_eng.csv", row.names = FALSE)
