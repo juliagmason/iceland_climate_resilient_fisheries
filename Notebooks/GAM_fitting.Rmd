@@ -39,11 +39,89 @@ mfri_abun <- read_csv ("../Data/MFRI_comb_survey.csv",
   filter (!(year == 2011 & season == "autumn")) %>% # remove autumn 2011
   group_by (sample_id, species) %>%
   summarize (n_tot = sum(n_per_nautmile),
-             kg_tot = sum(kg_per_nautmile))
+             kg_tot = sum(kg_per_nautmile)) %>%
+  mutate (n_log = log(n_tot),
+          kg_log = log(kg_tot))
 
 
 # https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv.pdf
 
+# species list
+spp <- read_csv ("../Data/species_eng.csv",
+                 col_types = cols(
+                       Spp_ID = col_factor()
+                     ))
+
+spp_25 <- spp %>%
+  filter (n_autumn > 24 & n_spring > 35)
+
+```
+### Fit for all species
+```{r}
+
+# build folders to hold models
+dir.create ("../Models")
+dir.create("../Models/PresAbs")
+dir.create("../Models/Biomass")
+
+# build data frame to hold gam results
+maj_spp_gam_summary <- data.frame ()
+
+for (spp in spp_25$Spp_ID) {
+  
+  # match species ID to scientific name
+  sci_name <- spp_25$sci_name_underscore[which (spp_25$Spp_ID == spp)]
+  
+  #grab presence/absence data and attach to predictor frame
+  spp_PA <- mfri_pa %>%
+    dplyr::select (sample_id, sci_name) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # don't know how to do this elegantly within a pipe, but change colname to presence
+  colnames(spp_PA)[2] <- "Presence"
+  
+  
+  # biomass data; this will have variable size
+  spp_B <- mfri_abun %>%
+    filter (species == spp) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # fit gams
+  gam_PA <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal) +s(tow_depth_begin),
+                 family = "binomial", 
+                 data = spp_PA)
+  
+  gam_LB <- gam (kg_log ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal) +s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = spp_B)
+  
+  
+  # populate table
+  summary <- cbind (sci_name, 
+                    summary (gam_PA)[14], # dev expl
+                    summary (gam_PA)[10], # r2
+                    summary (gam_PA)[26], # ubre? GCV?
+                    AIC(gam_PA),
+                    summary (gam_LB)[14],
+                    summary (gam_LB)[10],
+                    summary (gam_LB)[26],
+                    AIC(gam_LB),
+                    summary (gam_LB)[13] #n
+                    )
+  
+  
+  maj_spp_gam_summary <- rbind (maj_spp_gam_summary, summary)
+  
+  save (gam_PA, file = paste0("../Models/PresAbs/", sci_name, "_PA_full.Rdata"))
+  save (gam_LB, file = paste0("../Models/Biomass/", sci_name, "_LB_full.Rdata"))
+    
+}
+
+colnames (maj_spp_gam_summary) <- c("Species",
+                                    "PA_dev_exp", "PA_adj_r2", "PA_UBRE","PA_AIC",
+                                    "LB_dev_exp", "LB_adj_r2", "LB_UBRE", "LB_AIC","LB_n" )
+
+save (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table.RData")
 ```
 
 ### Cod
@@ -126,7 +204,8 @@ for (x in full.terms){
   single.var.comp <- rbind (single.var.comp, df)
   
 }
-dir.create ("Data/PA_model_tables")
+
+dir.create ("../Models/PresAbs_summary_tables")
 save (single.var.comp, file = "../Data/PA_model_tables/Cod_single_var_comp.RData")
 ```
 Lat/lon has biggest signal -- 13%, driving 50% of the signal. . season is the next, 4. Salinity makes worse. 
