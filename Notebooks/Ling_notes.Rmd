@@ -387,7 +387,7 @@ for (x in full.terms){
 
 single.var.comp
 
-save (single.var.comp, file = "../Models/PresAbs_summary_tables/ling_single_var_comp.RData")
+save (single.var.comp, file = "../Models/Biomass_summary_tables/ling_single_var_comp.RData")
 
 ```
 Mostly lat/lon. dropping depth makes the biggest difference, temp has biggest single r2, even though bottom temp not significant. dropping bottom depth makes a bigger difference than dropping year or salinity. 

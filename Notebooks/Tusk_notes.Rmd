@@ -1,22 +1,23 @@
 ---
-title: "Saithe notes"
-date: "07-13-2020"
+title: "Tusk notes"
+date: "07-15-2020"
 output: html_notebook
 ---
-Pollachius virens
+Brosme_brosme
+
+brosme comes from breek bibrosko, to devour
+
 
 Fishbase: 
-Depth range 30-360m. 
-Temp: 0.5-10.2
-39cm at maturity, common 60, max 130, max 32kg
+Depth range 18-1000m, usually 18-549 (esp for northeast atlantic). 
+Temp: 0.5-7.7
+53 cm at maturity, max 120, max 30kg
 
-inshore spring, deeper in winter
+Northwest atlantic, northeast atlantic, "off iceland"
+rough rock, gravel bottoms, far from the shore, near the bottom. 
+crustaceans and shellfishes, benthic fishes, starfishes. predators are seals. 
+spawning grounds btw scotland and iceland, 200-500m
 
-Rock, sandy bottoms. 
-Diet: small copepods, euphausiids small fish when small; bigger eat other fish
-
-
-Might expect to be more like cod?
 
 
 ```{r setup}
@@ -34,25 +35,25 @@ library (viridis)
 
 world <- ne_countries(scale = "medium", returnclass = "sf")
 
-# sample ID of all saithe presences and absences
-saithe_pa <- read_csv ("../Data/PA_MFRI.csv",
+# sample ID of all tusk presences and absences
+tusk_pa <- read_csv ("../Data/PA_MFRI.csv",
                      col_types = cols(
                        sample_id = col_factor()
                      )) %>%
-  select (sample_id, Pollachius_virens)
+  select (sample_id, Brosme_brosme)
 
-# full MFRI info for all saithe presences, retaining length data
-saithe_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
+# full MFRI info for all tusk presences, retaining length data
+tusk_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
                       col_types = cols(
                       sample_id = col_factor(),
                       species = col_factor(),
                       stat_sq = col_factor()
                       )
                       )%>%
-  filter (species == 3, !(year == 2011 & season == "autumn")) # remove autumn 2011
+  filter (species == 8, !(year == 2011 & season == "autumn")) # remove autumn 2011
   
-# all saithe presences, grouped by sample_ID (lengths aggregated
-saithe_samp <- saithe_samp_full %>%
+# all tusk presences, grouped by sample_ID (lengths aggregated
+tusk_samp <- tusk_samp_full %>%
   group_by (sample_id) %>%
   summarize (n_tot = sum(n_per_nautmile, na.rm = TRUE),
              kg_tot = sum(kg_per_nautmile, na.rm = TRUE),
@@ -75,63 +76,48 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
                       stat_sq = col_factor())
 )
 ```
-Present in `r nrow (saithe_samp)` samples (`r nrow(saithe_samp)/29002 * 100`%).
+Present in `r nrow (tusk_samp)` samples (`r nrow(tusk_samp)/29002 * 100`%). Middling
 
 ### Histograms
 
 ```{r length_season}
-saithe_samp_full %>%
+tusk_samp_full %>%
   ggplot (aes (y = length_cm, x = season), alpha = 0.5) +
   geom_violin()
 
-saithe_samp_full %>%
+tusk_samp_full %>%
   ggplot (aes (x = length_cm, y = n_per_nautmile, fill = season)) +
   geom_bar(stat = "identity", position = "dodge", width = 0.9) 
 
-saithe_samp %>%
-  ggplot (aes (x = n_tot, fill = season), alpha = 0.2) +
-  geom_histogram()
 ```
-Larger individuals in the spring. somewhat bimodal in fall. 
+Similar spread but more small individuals in spring. 
 
 ## biomass and abundance dotcharts
 ```{r dotcharts}
-dotchart(saithe_samp$n_tot, 
-         groups = factor(saithe_samp$season), 
+dotchart(tusk_samp$n_tot, 
+         groups = factor(tusk_samp$season), 
          main = "Abundance")
 
-dotchart(saithe_samp$n_log, 
-         #groups = factor(saithe_samp$season), 
+dotchart(tusk_samp$n_log, 
+         #groups = factor(tusk_samp$season), 
          main = "log abundance")
 
-saithe_samp %>%
-  filter (n_tot > 300)
-
-saithe_samp %>%
-  filter (year == 1986) %>%
-  summarize (mean_n = mean (n_tot)) # 2.22
-
-saithe_samp %>%
-  filter (year == 1986, ! sample_id == 31881) %>%
-  summarize (mean_n = mean(n_tot)) # 0.37
-
-saithe_samp_full %>%
-  filter (sample_id == 31881) %>%
-  View()
 ```
-One quite high value in spring-- sampl_ie 31881, 1986. Makes a big difference in the mean abundance for that year (2.22 vs 0.37). But doesn't look out of the ordinary for log abundance. 
-```{r}
-saithe_samp_rm <- saithe_samp %>%
-  filter (! sample_id == 31881)
+A handful above 2, 3 in 2006, probably same square--281092, 281080, 281093. actually stat square is in station id, but 361 stands out, 4 of the 6 are there. 
+```{r outlier_check}
 
-summary (lm (n_tot ~ year, data = saithe_samp))
-summary (lm (n_tot ~ year, data = saithe_samp_rm))
+tusk_samp %>%
+  filter (n_tot > 2)
+
+tusk_samp$n_tot[which (tusk_samp$n_tot > 2)] > quantile (tusk_samp$n_tot, 0.75) + 1.5 * (quantile (tusk_samp$n_tot, 0.75) - quantile (tusk_samp$n_tot, 0.25)) # yes
+
 ```
+
 
 
 ### Trends in abundance and biomass over time
 ```{r time_series, warning = FALSE}
-biomass_ts <- saithe_samp %>%
+biomass_ts <- tusk_samp %>%
   #filter (!sample_id == 31881) %>%
   group_by (year, season) %>%
   summarize (mn_kg = mean (kg_tot),
@@ -148,7 +134,7 @@ biomass_ts <- saithe_samp %>%
     theme(legend.position = "none")
 
 
-ab_ts <- saithe_samp %>%
+ab_ts <- tusk_samp %>%
  # filter (!sample_id == 31881) %>%
   group_by (year, season) %>%
   summarize (mn_kg = mean (kg_tot),
@@ -166,31 +152,27 @@ ab_ts <- saithe_samp %>%
 
 grid.arrange (biomass_ts, ab_ts, nrow = 1)
 ```
-Looks to me like rising trend of both. If we just looked at the spring from 2000 onward, it would be an upward trend I think. And although there wasn't a big difference in the lms with the abundance outlier, removing that point does flip the direction of the spring trend. 
+Biomass and abundance look pretty different, maybe they've been getting bigger in the fall? or big spike in abundance 2004-2012ish was mostly small spring individuals? lower catch 1990-2003ish seems shared.  
 
 ### Spatial distribution
 
 ```{r season_distrib, warning = FALSE}
-
-  
-  ggplot(data = world) +
+ggplot(data = world) +
   geom_sf() +
   coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
-  stat_summary_2d(data = saithe_samp, aes (x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.25, .25)) +
+  stat_summary_2d(data = tusk_samp, aes (x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.25, .25)) +
     scale_fill_viridis_c(name = "Mean log abundance") +
     theme_bw() +
     facet_wrap (~season)
 ```
-Patchier, and maybe not found as much inshore. Southeast in spring, and potentially deeper in fall. 
+Further offshore, especially in autumn. concentrated in southeast and reykjanes in spring. hotspot spring looks like square 361 
 
 
-
-
-```{r space_by_length}
-length_bins = quantile (saithe_samp_full$length_cm)
+```{r space_by_length, warning = FALSE}
+length_bins = quantile (tusk_samp_full$length_cm)
 length_bins[1] <- 0 # include smallest ones
 
-saithe_length_bins <- saithe_samp_full %>%
+tusk_length_bins <- tusk_samp_full %>%
   mutate (length_bin = cut(length_cm, breaks = length_bins),
           n_log = log(n_per_nautmile),
           n_tot = sum(n_per_nautmile))
@@ -198,47 +180,47 @@ saithe_length_bins <- saithe_samp_full %>%
 ggplot(data = world) +
   geom_sf() +
   coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
-  stat_summary_2d(data = saithe_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
+  stat_summary_2d(data = tusk_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
     scale_fill_viridis_c(name = "Mean log abundance") +
     theme_bw() +
   theme (axis.text = element_blank()) +
     facet_grid (season ~ length_bin)
 ```
-Not sure I see a clear spatial pattern. Larger are further offshore? 
+Not sure I see a pattern here. possibly larger move further offshore in autumn, but might just be that there are fewer small individuals in autumn. 
 
 ### Plot abundance vs. predictor variables
-```{r saithe_preds}
-saithe_ab_pred <- saithe_samp %>%
+```{r tusk_preds, warning = FALSE}
+tusk_ab_pred <- tusk_samp %>%
   dplyr::select (sample_id, n_log, kg_log) %>%
   right_join (mfri_pred, by = "sample_id")
 
-bt_p <- ggplot (saithe_ab_pred, aes (x = bottom_temp, y = kg_log)) +
+bt_p <- ggplot (tusk_ab_pred, aes (x = bottom_temp, y = kg_log)) +
   geom_point(alpha = 0.5) +
   geom_smooth (method = "lm") +
   ggtitle ("Bottom temp")
   
 
-sst_p <- ggplot (saithe_ab_pred, aes (x = surface_temp, y = kg_log)) +
+sst_p <- ggplot (tusk_ab_pred, aes (x = surface_temp, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Surface temp")
 
-sal_p <- ggplot (saithe_ab_pred, aes (x = gins_sal, y = kg_log)) +
+sal_p <- ggplot (tusk_ab_pred, aes (x = gins_sal, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Salinity")
 
-lat_p <- ggplot (saithe_ab_pred, aes (x = lat, y = kg_log)) +
+lat_p <- ggplot (tusk_ab_pred, aes (x = lat, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Latitude")
 
-lon_p <- ggplot (saithe_ab_pred, aes (x = lon, y = kg_log)) +
+lon_p <- ggplot (tusk_ab_pred, aes (x = lon, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Longitude")
 
-depth_p <-  ggplot (saithe_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
+depth_p <-  ggplot (tusk_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Depth")
@@ -247,16 +229,16 @@ depth_p <-  ggplot (saithe_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
 grid.arrange (sst_p, bt_p, sal_p, lat_p, lon_p, depth_p, nrow = 2)
 
 ```
-See a positive relationship with temperature, stronger positive with salinity and negative with lat. Positive relationship with depth. 
+Pos with temp, sal, depth. negative with latitude and longitude, similar to blue ling. would have expected different lat/lon pattern with southwest cluster, but maybe lon trend isn't that strong or nonlinear. 
 
 ### Model results
 ```{r model_explore}
 library (mgcv)
-load ("../Models/PresAbs/Pollachius_virens_PA_full.Rdata")
+load ("../Models/PresAbs/Brosme_brosme_PA_full.Rdata")
 summary (gam_PA)
 
 ```
-Only 25% dev explained. 
+not so great, only 30%. year not significant. 
 
 Partial plots
 ```{r partial_plots_PA, warning = FALSE}
@@ -283,30 +265,30 @@ plot (gam_PA, residuals = TRUE,
       main = paste ("s(sal)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
 plot (gam_PA, residuals = TRUE, 
       select = 5, 
-      #ylim = c (-10, 15), 
+      ylim = c (-10, 25), 
       ylab = "", xlab = "", 
       main = paste ("s(depth)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
 
 
 ```
+really weird depth. bottom temp optimal 2-7ish. 
 
-Nothing too interesting? Weird high residual with depth. Very defined circular lat/lon. SST dips down around 2-4, slightly higher 6-8, doesn't like it too cold. bottom optimal ~2-10. Sal is lowest at middle values?
-```{r single_var_drop_PA}
+```{r single_Var_drop_PA}
 full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
 
-saithe_pred_PA <- saithe_pa %>%
+tusk_pred_PA <- tusk_pa %>%
   left_join (mfri_pred, by = "sample_id") %>%
-  rename ("Presence" = Pollachius_virens)
+  rename ("Presence" = Brosme_brosme)
 
 single.var.comp <- data.frame()
 for (x in full.terms){
   # single variable model
   formula <- as.formula (paste0 ("Presence ~", x))
-  G <- gam (formula, family = binomial, data = saithe_pred_PA)
+  G <- gam (formula, family = binomial, data = tusk_pred_PA)
   
   # full model without that variable
  formula_drop <- as.formula (paste0 ("Presence ~", (paste (full.terms[! full.terms %in% x], collapse = " + "))))
- G_drop <- gam (formula_drop, family = binomial, data = filter (saithe_pred_PA, !is.na (x)))
+ G_drop <- gam (formula_drop, family = binomial, data = filter (tusk_pred_PA, !is.na (x)))
  
 
   # extract summaries, put together in temporary df
@@ -326,21 +308,21 @@ for (x in full.terms){
   
 }
 
-save (single.var.comp, file = "../Models/PresAbs_summary_tables/Saithe_single_var_comp.RData")
-
 
 single.var.comp
+
+save (single.var.comp, file = "../Models/PresAbs_summary_tables/tusk_single_var_comp.RData")
+
 ```
 
-Lat/lon and depth are the most important here. year and season make model worse. sal doesn't add much, but higher end of r2 single
+Year makes model worse. lat/lon doing the most here, and depth. sst not adding much. 
 
-### Biomass model
 ```{r biomass_gam}
 
-load ("../Models/Biomass/Pollachius_virens_LB_full.Rdata")
+load ("../Models/Biomass/Brosme_brosme_LB_full.Rdata")
 summary (gam_LB)
 ```
-year not significant. 
+bottom temp not significant. very low dev explained.  
 
 ```{r partial_plots_lb, warning = FALSE}
 
@@ -371,20 +353,20 @@ plot (gam_LB, residuals = TRUE,
       main = paste ("s(depth)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
 
 ```
-idk
+higher at 6-10 sst
 
 ```{r single_Var_drop_lb}
-full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
+#full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
 
 single.var.comp <- data.frame()
 for (x in full.terms){
   # single variable model
   formula <- as.formula (paste0 ("kg_log ~", x))
-  G <- gam (formula, family = gaussian, data = saithe_ab_pred)
+  G <- gam (formula, family = gaussian, data = tusk_ab_pred)
   
   # full model without that variable
  formula_drop <- as.formula (paste0 ("kg_log ~", (paste (full.terms[! full.terms %in% x], collapse = " + "))))
- G_drop <- gam (formula_drop, family = gaussian, data = filter (saithe_ab_pred, !is.na (x)))
+ G_drop <- gam (formula_drop, family = gaussian, data = filter (tusk_ab_pred, !is.na (x)))
  
 
   # extract summaries, put together in temporary df
@@ -407,7 +389,7 @@ for (x in full.terms){
 
 single.var.comp
 
-save (single.var.comp, file = "../Models/Biomass_summary_tables/saithe_single_var_comp.RData")
+save (single.var.comp, file = "../Models/Biomass_summary_tables/tusk_single_var_comp.RData")
 
 ```
-lat and lon the only one worth noting, temperature has good r2 single but not a big difference when dropping, especially surface. year not a big difference. 
+bottom temp makes worse. lat/lon the only thing really doing anything here, then maybe depth.  

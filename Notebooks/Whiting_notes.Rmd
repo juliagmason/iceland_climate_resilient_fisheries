@@ -383,7 +383,7 @@ for (x in full.terms){
 
 single.var.comp
 
-save (single.var.comp, file = "../Models/PresAbs_summary_tables/whit_single_var_comp.RData")
+save (single.var.comp, file = "../Models/Biomass_summary_tables/whit_single_var_comp.RData")
 
 ```
 Lat/lon most important, than salinity. surface and bottom temp temp has big single r2 but dropping doesn't make big difference. season wasn't significant in the model, makes very little difference for r2 drop but has a bigger single r2 than year or depth. 
