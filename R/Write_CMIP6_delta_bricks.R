@@ -1,33 +1,54 @@
-# GFDL delta test
+# Write interpolated matlab CMIP6 projections into raster bricks
+
+# 7/20/2020 
 
 library (R.matlab)
 
-g245_sst_delta <- readMat("../Documents/MATLAB/CMIP6/gfdl_245_sst_deltas.mat")
+# Lat and lon from OISST
+lon.m <- readMat("../Documents/MATLAB/CMIP6/oisst_lon.mat")
+lat.m <- readMat("../Documents/MATLAB/CMIP6/oisst_lat.mat")
 
-lon <- readMat("../Documents/MATLAB/CMIP6/oisst_lon.mat")
-lat <- readMat("../Documents/MATLAB/CMIP6/oisst_lat.mat")
+# actually get data from matlab file
+lon <- lon.m$oisst.lon
+lat <- lat.m$oisst.lat
 
-lon <- lon$oisst.lon
-lat <- lat$oisst.lat
-
-g245 <- g245_sst_delta$gfdl.245.sst.delta
-
-image(lon, lat, g245[,,1])
-maps::map("world", add = TRUE)
-
-latlons <- expand.grid (lon = lon, lat = lat)
+# Set up raster extent
+latlons <- expand.grid (lon = oisst_lon, lat = oisst_lat)
 coordinates (latlons) <- ~lon + lat
 projstring <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towsg84=0,0,0"
 proj4string(latlons) <- CRS(projstring)
 
-# transpose
-#https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
-rot <- aperm(g245, c(2, 1,3))
-rev <- apply (g245, c(2,3), rev)
+# create folder to hold deltas
+dir.create ("Data/CMIP6_deltas")
 
-g245_r <- brick(rev)
-projection(g245_r) <- CRS(projstring)
-extent (g245_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+# SST files in CMIP6 folder
+base_path <- "../Documents/MATLAB/CMIP6/"
+sst_list <- list.files (path = base_path, pattern = "deltas.mat")
 
-# Write and save raster
-g245_r <- writeRaster(oisst_r, filename = "Data/GFDL_245_sst_deltas.grd")
+# now doing bt [if redoing, can do all at once]
+bt_list <- list.files (path = base_path, pattern = "bt_deltas.mat")
+
+for (file in bt_list) {
+  
+  #open matlab file
+  mat <- readMat(paste0(base_path, file))
+  
+  # in list format, so get actual data
+  deltas <- mat[[1]]
+  
+  #rotate and reverse so matches lat/lon
+  #https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
+  rot <- aperm(deltas, c(2, 1,3))
+  rev <- apply (deltas, c(2,3), rev)
+  
+  # rasterize and set extent
+  deltas_r <- brick(rev)
+  projection(deltas_r) <- CRS(projstring)
+  extent (deltas_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+  
+  # Write and save raster
+  fname <- str_sub (file, end = -5) # take off .mat
+  
+  deltas_r <- writeRaster(deltas_r, filename = paste0 ("Data/CMIP6_deltas/", fname, ".grd")) # add overwrite = TRUE if redoing
+  
+}
