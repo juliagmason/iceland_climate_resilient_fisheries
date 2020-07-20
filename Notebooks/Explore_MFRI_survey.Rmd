@@ -17,6 +17,7 @@ library(tidyverse)
 library (skimr)
 library (lubridate)
 
+# combined autumn and spring survey data. Each row is a length observation of a species. 
 comb_ds <- read_csv ("../Data/MFRI_comb_survey.csv",
                       col_types = cols(
                       sample_id = col_factor(),
@@ -24,6 +25,7 @@ comb_ds <- read_csv ("../Data/MFRI_comb_survey.csv",
                       stat_sq = col_factor())
 )
 
+# combined autumn and spring survey data, with each sample tow as a row
 comb_samples <- read_csv("../Data/MFRI_comb_survey_samples.csv",
                           col_types = cols(
                       sample_id = col_factor(),
@@ -32,8 +34,10 @@ comb_samples <- read_csv("../Data/MFRI_comb_survey_samples.csv",
 ```
 
 ```{r skim}
-skim (aut_ds)
-skim (spr_ds)
+
+# quick check of data contents
+skim (comb_ds)
+
 ```
 
 Spring survey has 20297 samples (feb-apr), 1985-2020. 85 unique spp, top are cod(ID 1), haddock(2), redfish (5), long rough dab (28). Autumn has 8705, 1995-2019 (sep-nov), 82 spp, same top 5. 29002 total samples, 465 stat_sq, 1094 stations. 
@@ -63,6 +67,7 @@ comb_samples %>%
 ```
 29002 total sample_ID, 1094 station, 465 stat_sq. Autum: 414 stations, 340 squares. Spring, 680 stations, 336 stat sq. Same number of samples and stations each year. 
 
+Over how many years were the stat_sqs sampled? Pamela mentioned that autumn is only consistently sampled after 2000, so might expect some stat_sqs in the 1990s that are only sampled a few times. 
 ```{r stat_sq_yrs_sampled}
 
 single_yr_sq <- comb_samples %>%
@@ -649,7 +654,7 @@ library (MASS)
 library(lattice)
 spatial_vars <- comb_samples %>%
   mutate(season_num = ifelse (season == "spring", 1, 2)) %>%
-  dplyr::select (lat, lon, month, year, tow_depth_begin, surface_temp, bottom_temp, season_num)
+  dplyr::select (lat, lon, year, tow_depth_begin, surface_temp, bottom_temp, season_num)
 
 # from the documentation...
 ## put histograms on the diagonal
@@ -692,12 +697,22 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
 mfri_pred_vars <- mfri_pred %>%
   dplyr::select (year, month, lat, lon, oisst, gins_bt, gins_sal, bottom_temp, surface_temp)
 
-pairs (mfri_pred_vars)
+pairs (mfri_pred_vars, upper.panel = panel.cor, diag.panel = panel.hist)
 
+# just look at satellite vs in situ 
 mfri_env <- mfri_pred %>%
   dplyr::select(oisst, gins_bt, gins_sal, bottom_temp, surface_temp) 
-pairs (mfri_env)
+pairs (mfri_env, upper.panel = panel.cor, diag.panel = panel.hist)
 
+# just look at the variables I put in my gam
+gam_env <- mfri_pred %>%
+  mutate(season_num = ifelse (season == "spring", 1, 2)) %>%
+  dplyr::select(lat, lon, year, season_num, surface_temp, bottom_temp, gins_sal, tow_depth_begin)
+
+png (filename = "../Figures/JM_GAM_pairplot.png", width = 11, height = 8.5, unit = "in", res = 72)
+pairs (gam_env, upper.panel = panel.cor, diag.panel = panel.hist,
+       main = "Pairplot, environmental variables used in full GAM")
+dev.off()
 ```
 Potential positive relationship between bottom time and salinity? 
 
