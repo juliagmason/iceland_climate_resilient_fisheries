@@ -1,19 +1,24 @@
 ---
-title: "Haddock notes"
-date: "07-13-2020"
+title: "Plaice notes"
+date: "07-22-2020"
 output: html_notebook
 ---
-Melanogrammus aeglefinus 
+Pleuronectes_platessa
+
 
 Fishbase: 
-Depth range 80-200m. 
-Temp: 4-10 C; 1.4-12.1
-35cm at maturity (but also most common length...), up to 112. 
+Depth range 0-200m, usually 10-50, prefers 182-255
+Temp: 2-15; preferred 6.8-12.4, mean 10.2
+31cm maturity, common 40, max 100, max wekght 7
 
-Rock, sandy bottoms. 
-Diet: benthic crustaceans, mollusks, echinoderms, worms, sand lance, capelin, silver hake, eels, herring, argentines. 
-Predators: had, pollock, white hake, seals
-"extensive migrations in the Barents Sea and Iceland"
+north sea/continental northern europe and iceland
+older are deeper. sometimes estuaries. 
+major europe flatfish
+thin-shelled mollusks and polychates. 
+"changes in the environmental conditions have been disadvantageous"
+spawn at 6C
+
+
 
 ```{r setup}
 
@@ -30,26 +35,25 @@ library (viridis)
 
 world <- ne_countries(scale = "medium", returnclass = "sf")
 
-# sample ID of all had presences and absences
-had_pa <- read_csv ("../Data/PA_MFRI.csv",
+# sample ID of all plaice presences and absences
+plaice_pa <- read_csv ("../Data/PA_MFRI.csv",
                      col_types = cols(
                        sample_id = col_factor()
                      )) %>%
-  select (sample_id, Melanogrammus_aeglefinus) %>%
-  rename ("Presence" = Melanogrammus_aeglefinus)
+  dplyr::select (sample_id, Pleuronectes_platessa)
 
-# full MFRI info for all had presences, retaining length data
-had_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
+# full MFRI info for all plaice presences, retaining length data
+plaice_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
                       col_types = cols(
                       sample_id = col_factor(),
                       species = col_factor(),
                       stat_sq = col_factor()
                       )
                       )%>%
-  filter (species == 2, !(year == 2011 & season == "autumn")) # remove autumn 2011
+  filter (species == 23, !(year == 2011 & season == "autumn")) # remove autumn 2011
   
-# all had presences, grouped by sample_ID (lengths aggregated
-had_samp <- had_samp_full %>%
+# all plaice presences, grouped by sample_ID (lengths aggregated
+plaice_samp <- plaice_samp_full %>%
   group_by (sample_id) %>%
   summarize (n_tot = sum(n_per_nautmile, na.rm = TRUE),
              kg_tot = sum(kg_per_nautmile, na.rm = TRUE),
@@ -72,37 +76,49 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
                       stat_sq = col_factor())
 )
 ```
+Present in `r nrow (plaice_samp)` samples (`r nrow(plaice_samp)/29002 * 100`%).
+
 ### Histograms
 
 ```{r length_season}
-had_samp_full %>%
+plaice_samp_full %>%
   ggplot (aes (y = length_cm, x = season), alpha = 0.5) +
   geom_violin()
 
-had_samp_full %>%
+plaice_samp_full %>%
   ggplot (aes (x = length_cm, y = n_per_nautmile, fill = season)) +
   geom_bar(stat = "identity", position = "dodge", width = 0.9) 
 
-had_samp %>%
-  ggplot (aes (x = n_tot, fill = season), alpha = 0.2) +
-  geom_histogram()
 ```
-Length distribution looks the same for the season. perhaps more small individuals in the fall, and fatter larger tail in the spring. 
-biomass and abundance dotcharts
-```{r biomass_dotchart}
-dotchart(had_samp$n_tot, 
-         groups = factor(had_samp$season), 
+quite similar, fairly normal. more common inspring, maybe slightly smaller in spring, or just a wider peak. 
+
+## biomass and abundance dotcharts
+```{r dotcharts}
+dotchart(plaice_samp$n_tot, 
+         groups = factor(plaice_samp$season), 
          main = "Abundance")
 
-dotchart(had_samp_full$length_cm, 
-         #groups = factor(had_samp$season), 
-         main = "length")
+dotchart(plaice_samp$n_log, 
+         #groups = factor(plaice_samp$season), 
+         main = "log abundance")
+
 ```
-Nothing looks too out of the ordinary for n_tot or lengths. 
+2 above 80
+
+```{r outlier_check}
+
+plaice_samp %>%
+  filter (n_tot > 80)
+
+plaice_samp$n_tot[which (plaice_samp$n_tot > 10)] > quantile (plaice_samp$n_tot, 0.75) + 1.5 * (quantile (plaice_samp$n_tot, 0.75) - quantile (plaice_samp$n_tot, 0.25)) # yes
+
+```
+one in 1992 and one in 2014
 
 ### Trends in abundance and biomass over time
 ```{r time_series, warning = FALSE}
-biomass_ts <- had_samp %>%
+biomass_ts <- plaice_samp %>%
+  #filter (!sample_id == 31881) %>%
   group_by (year, season) %>%
   summarize (mn_kg = mean (kg_tot),
              se_kg = var(kg_tot)/sqrt (n()),
@@ -118,7 +134,8 @@ biomass_ts <- had_samp %>%
     theme(legend.position = "none")
 
 
-ab_ts <- had_samp %>%
+ab_ts <- plaice_samp %>%
+ # filter (!sample_id == 31881) %>%
   group_by (year, season) %>%
   summarize (mn_kg = mean (kg_tot),
              se_kg = var(kg_tot)/sqrt (n()),
@@ -135,28 +152,27 @@ ab_ts <- had_samp %>%
 
 grid.arrange (biomass_ts, ab_ts, nrow = 1)
 ```
-Big influx in mid-2000s (2000-2010, peak around 2005). Patterns of biomass and abundance look quite similar. Possible exception is a more drastic dip in fall abundance after 2010. also spring abundance. abundance seems to dip below pre-2000 levels before leveling off, whereas biomass is slightly higher. 
+definitley rising since 2000. more visible in spring: a dip in the 1990s-2010, then rising. autumn is more variable.    
 
 ### Spatial distribution
 
-```{r season_distrib}
-
-  
-  ggplot(data = world) +
+```{r season_distrib, warning = FALSE}
+ggplot(data = world) +
   geom_sf() +
   coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
-  stat_summary_2d(data = had_samp, aes (x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.25, .25)) +
+  stat_summary_2d(data = plaice_samp, aes (x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.25, .25)) +
     scale_fill_viridis_c(name = "Mean log abundance") +
     theme_bw() +
     facet_wrap (~season)
 ```
-Found all around the island. looks like concentrated in Southwest in spring, and more northwest in fall. 
+inshore, north west and reykjanes.  
 
-```{r space_by_length}
-length_bins = quantile (had_samp_full$length_cm)
+
+```{r space_by_length, warning = FALSE}
+length_bins = quantile (plaice_samp_full$length_cm)
 length_bins[1] <- 0 # include smallest ones
 
-had_length_bins <- had_samp_full %>%
+plaice_length_bins <- plaice_samp_full %>%
   mutate (length_bin = cut(length_cm, breaks = length_bins),
           n_log = log(n_per_nautmile),
           n_tot = sum(n_per_nautmile))
@@ -164,47 +180,47 @@ had_length_bins <- had_samp_full %>%
 ggplot(data = world) +
   geom_sf() +
   coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
-  stat_summary_2d(data = had_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
+  stat_summary_2d(data = plaice_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
     scale_fill_viridis_c(name = "Mean log abundance") +
     theme_bw() +
   theme (axis.text = element_blank()) +
     facet_grid (season ~ length_bin)
 ```
-Not sure I see a clear spatial pattern. Smaller are more concentrated than larger, and pattern is clearer in the fall than in spring. smallest concentrated in southeast in fall, south and north in spring. 
+don't see spatial/age pattern
 
 ### Plot abundance vs. predictor variables
-```{r had_preds}
-had_ab_pred <- had_samp %>%
+```{r plaice_preds, warning = FALSE}
+plaice_ab_pred <- plaice_samp %>%
   dplyr::select (sample_id, n_log, kg_log) %>%
   right_join (mfri_pred, by = "sample_id")
 
-bt_p <- ggplot (had_ab_pred, aes (x = bottom_temp, y = kg_log)) +
+bt_p <- ggplot (plaice_ab_pred, aes (x = bottom_temp, y = kg_log)) +
   geom_point(alpha = 0.5) +
   geom_smooth (method = "lm") +
   ggtitle ("Bottom temp")
   
 
-sst_p <- ggplot (had_ab_pred, aes (x = surface_temp, y = kg_log)) +
+sst_p <- ggplot (plaice_ab_pred, aes (x = surface_temp, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Surface temp")
 
-sal_p <- ggplot (had_ab_pred, aes (x = gins_sal, y = kg_log)) +
+sal_p <- ggplot (plaice_ab_pred, aes (x = gins_sal, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Salinity")
 
-lat_p <- ggplot (had_ab_pred, aes (x = lat, y = kg_log)) +
+lat_p <- ggplot (plaice_ab_pred, aes (x = lat, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Latitude")
 
-lon_p <- ggplot (had_ab_pred, aes (x = lon, y = kg_log)) +
+lon_p <- ggplot (plaice_ab_pred, aes (x = lon, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Longitude")
 
-depth_p <-  ggplot (had_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
+depth_p <-  ggplot (plaice_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
   geom_point() +
   geom_smooth (method = "lm")+
   ggtitle ("Depth")
@@ -213,19 +229,18 @@ depth_p <-  ggplot (had_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
 grid.arrange (sst_p, bt_p, sal_p, lat_p, lon_p, depth_p, nrow = 2)
 
 ```
-See a positive relationship with temperature (and sal) and negative with lat--this makes sense, expect to be a warmer water species.
-
-### Model specs
+pos temp, sal, very neg depth. somewhat neg lat/lon
+### Model results
 ```{r model_explore}
-
-load ("../Models/PresAbs/Melanogrammus_aeglefinus_PA_full.Rdata")
+library (mgcv)
+load ("../Models/PresAbs/Pleuronectes_platessa_PA_full.Rdata")
 summary (gam_PA)
 
 ```
-65% deviance explained, 69 r2. All variables significant. 
+ bottom temp not significant
 
-PArtial plots
-```{r partial_plots_PA}
+Partial plots
+```{r partial_plots_PA, warning = FALSE}
 
 par (mfrow = c (2, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
 plot (gam_PA, residuals = TRUE, 
@@ -249,27 +264,30 @@ plot (gam_PA, residuals = TRUE,
       main = paste ("s(sal)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
 plot (gam_PA, residuals = TRUE, 
       select = 5, 
-      #ylim = c (-10, 15), 
+      ylim = c (-10, 25), 
       ylab = "", xlab = "", 
       main = paste ("s(depth)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
 
+
 ```
-Potentially higher at really cold SST, optimal around 0-1, and then drops off after ~7. Opposite pattern for bottom temp, positive relationship. Really drops off after depth of ~1000 but not sure how meaningful that is. 
+depth and sal super weird
+
 ```{r single_Var_drop_PA}
 full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
 
-had_pred_PA <- had_pa %>%
-  left_join (mfri_pred, by = "sample_id")
+plaice_pred_PA <- plaice_pa %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  rename ("Presence" = Pleuronectes_platessa)
 
 single.var.comp <- data.frame()
 for (x in full.terms){
   # single variable model
   formula <- as.formula (paste0 ("Presence ~", x))
-  G <- gam (formula, family = binomial, data = had_pred_PA)
+  G <- gam (formula, family = binomial, data = plaice_pred_PA)
   
   # full model without that variable
  formula_drop <- as.formula (paste0 ("Presence ~", (paste (full.terms[! full.terms %in% x], collapse = " + "))))
- G_drop <- gam (formula_drop, family = binomial, data = filter (had_pred_PA, !is.na (x)))
+ G_drop <- gam (formula_drop, family = binomial, data = filter (plaice_pred_PA, !is.na (x)))
  
 
   # extract summaries, put together in temporary df
@@ -289,26 +307,23 @@ for (x in full.terms){
   
 }
 
-save (single.var.comp, file = "../Models/PresAbs_summary_tables/Had_single_var_comp.RData")
-
 
 single.var.comp
+
+save (single.var.comp, file = "../Models/PresAbs_summary_tables/plaice_single_var_comp.RData")
+
 ```
-```{r}
-load("../Models/PresAbs_summary_tables/Had_single_var_comp.RData")
-single.var.comp
-```
+might be a no convergence model. 
+salinity makes 2.5 ponts worse. lat does the most, then depth quite a big effect. bottom temp next biggest r2 single, bt surface temp the next biggest diff_full. 
 
-Depth makes the biggest difference in deviance explained (6). Lat/lon has largest single variable dev explained, 2nd biggest drop (5.7). bottom temp is more important than surface temp. season has a high single variable r2 but doesn't make as big of a difference in dropping. salinity hardly makes a difference in dropping but doesn't make model worse, actually more single dev expl than sst. 
-
-
-###log biomass model
 ```{r biomass_gam}
 
-load ("../Models/Biomass/Melanogrammus_aeglefinus_LB_full.Rdata")
+load ("../Models/Biomass/Pleuronectes_platessa_LB_full.Rdata")
 summary (gam_LB)
 ```
-```{r partial_plots_lb}
+season not significant
+
+```{r partial_plots_lb, warning = FALSE}
 
 par (mfrow = c (2, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
 plot (gam_LB, residuals = TRUE, 
@@ -337,7 +352,7 @@ plot (gam_LB, residuals = TRUE,
       main = paste ("s(depth)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
 
 ```
-Similar looking patterns to PA, although weird things going on with depth. 
+
 
 ```{r single_Var_drop_lb}
 #full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
@@ -346,11 +361,11 @@ single.var.comp <- data.frame()
 for (x in full.terms){
   # single variable model
   formula <- as.formula (paste0 ("kg_log ~", x))
-  G <- gam (formula, family = gaussian, data = had_ab_pred)
+  G <- gam (formula, family = gaussian, data = plaice_ab_pred)
   
   # full model without that variable
  formula_drop <- as.formula (paste0 ("kg_log ~", (paste (full.terms[! full.terms %in% x], collapse = " + "))))
- G_drop <- gam (formula_drop, family = gaussian, data = filter (had_ab_pred, !is.na (x)))
+ G_drop <- gam (formula_drop, family = gaussian, data = filter (plaice_ab_pred, !is.na (x)))
  
 
   # extract summaries, put together in temporary df
@@ -373,7 +388,7 @@ for (x in full.terms){
 
 single.var.comp
 
-save (single.var.comp, file = "../Models/Biomass_summary_tables/Had_single_var_comp.RData")
+save (single.var.comp, file = "../Models/Biomass_summary_tables/plaice_single_var_comp.RData")
 
 ```
-All variables help, biggest is lat/lon, then depth, then salinity. bottom temp also big single r2 but not as important as year for drop. 
+all contribute, monstly lat/lon and depth, an dsalinity actually the next biggest contributer to diff_full 
