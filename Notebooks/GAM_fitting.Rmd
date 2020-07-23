@@ -12,7 +12,13 @@ Try executing this chunk by clicking the *Run* button within the chunk or by pla
 library (mgcv)
 library (tidyverse)
 
-# predictor dataframe
+# package for formatting tables
+library (kableExtra)
+# prevent text from running off PDF:
+library (knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff = 60), tidy = TRUE)
+
+# predictor dataframe with environmental variables
 mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
                        col_types = cols(
                       sample_id = col_factor(),
@@ -20,9 +26,10 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
                       stat_sq = col_factor()
                       )
                       ) %>%
-  filter (!(year == 2011 & season == "autumn"))  # remove autumn 2011, 131 samples
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn"))  # remove autumn 2011, 131 samples. Also cutting out autumn pre-2000 (as of 7/23/2020. so did this with MASE fitting, but not with original run through of full gams)
 
-# presence absence data
+# presence absence data. this would still have 2011 and pre-2000 autumn samples
 mfri_pa <- read_csv ("../Data/PA_MFRI.csv",
                      col_types = cols(
                        sample_id = col_factor()
@@ -36,7 +43,8 @@ mfri_abun <- read_csv ("../Data/MFRI_comb_survey.csv",
                       stat_sq = col_factor()
                       )
                       )%>%
-  filter (!(year == 2011 & season == "autumn")) %>% # remove autumn 2011
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn")) %>% # remove autumn 2011
   group_by (sample_id, species) %>%
   summarize (n_tot = sum(n_per_nautmile),
              kg_tot = sum(kg_per_nautmile)) %>%
@@ -47,17 +55,20 @@ mfri_abun <- read_csv ("../Data/MFRI_comb_survey.csv",
 # https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv.pdf
 
 # species list
-spp <- read_csv ("../Data/species_eng.csv",
+spp_list <- read_csv ("../Data/species_eng.csv",
                  col_types = cols(
                        Spp_ID = col_factor()
                      ))
 
-spp_25 <- spp %>%
+# "major" species, defined as those caught in all 25 years of autumm survey and 36 of spring
+spp_25 <- spp_list %>%
   filter (n_autumn > 24 & n_spring > 35)
 
 ```
-### Fit for all species
-```{r}
+
+### Fit individual full GAM for all species
+Note: these were fit with pre-2000 fall data, but 2011 excluded. 
+```{r fit_full_gam}
 
 # build folders to hold models
 dir.create ("../Models")
@@ -72,7 +83,7 @@ for (spp in spp_25$Spp_ID) {
   # match species ID to scientific name
   sci_name <- spp_25$sci_name_underscore[which (spp_25$Spp_ID == spp)]
   
-  #grab presence/absence data and attach to predictor frame
+  #grab presence/absence data for that species and attach to predictor data
   spp_PA <- mfri_pa %>%
     dplyr::select (sample_id, sci_name) %>%
     left_join (mfri_pred, by = "sample_id")
@@ -81,7 +92,7 @@ for (spp in spp_25$Spp_ID) {
   colnames(spp_PA)[2] <- "Presence"
   
   
-  # biomass data; this will have variable size
+  # non-zero biomass data; this will have variable size. 
   spp_B <- mfri_abun %>%
     filter (species == spp) %>%
     left_join (mfri_pred, by = "sample_id")
@@ -124,6 +135,160 @@ colnames (maj_spp_gam_summary) <- c("Species",
 save (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table.RData")
 ```
 
+### Display model table
+```{r gam_table}
+load ("../Models/Major_spp_summary_table.RData")
+
+sum_round <- maj_spp_gam_summary %>%
+  mutate_if(is.numeric, round, 2) # doesn't seem to work
+
+kable (sum_round, caption = "GAM outputs", align = "l", row.names = FALSE, digits = 2) %>% # digits also doesn't seem to work
+  row_spec(0, bold = T) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+### Compare GAM vs random walk for biomass model
+
+I'm going to divide into testing and training data. KK did approximately 80/20 with most recent data as training set. It looks from KK code that she's using one dataset for both PA and biomass, so giving the biomass GAM all the zeroes. does bring the dev expl down. with haddock, was 38%, now 23. Decided after call on 7/22 that it really should be presence-only data for the biomass model, that's the point of separating PA vs. biomass. 
+
+Still figuring out how to deal with zero biomass in the test set, however. 
+
+I'm also dropping salinity here. Doesn't seem to be contributing enough for enough species, and since it's a climatology through 2012 I lose a lot of data, plus my whole testing set. 
+```{r rwf_test}
+library (forecast)
+
+quantile (mfri_pred$year, 0.8) # 2013 os 75%, 2014 is 80%. If IU include 2013 in training, it's 77%, if I don't, it's 73.6%. Other papers used 80/20, so will include
+
+# try with all species. arrange by most to least common. need to have more observations than model coefficients (6), starting with 10
+spp_totals <- mfri_abun %>% 
+  group_by (species) %>% 
+  summarize (count = n()) %>% 
+  filter (count > 50) %>% # need to have enough observations for the model
+  filter (!species %in% c(72, 97, 89, 35, 92, 10, 49)) # just manually removing the ones that give errors. e.g. 72 only has spring post 2013 so model gets mad. 
+
+#calculate_MASE_fun <- function (spp) {
+
+## build dataframe, do for loop instead
+MASE_all_spp <- data.frame()
+
+for (spp in spp_totals$species) {
+
+# link species code to scientific name in PA dataset
+sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
+
+#P/A data for species
+PA_spp <- mfri_pa %>%
+  # https://tidyselect.r-lib.org/reference/faq-external-vector.html need to use all_of for externally named variable
+  dplyr::select (sample_id, all_of(sci_name)) 
+colnames (PA_spp)[2] <- "Presence"
+
+# biomass data--need presence-only training set and presence/absence testing set
+LB_spp <- mfri_abun %>%
+  filter (species == spp)
+
+full_data_spp <- PA_spp %>%
+  left_join (LB_spp, by = "sample_id") %>% # add abundance data
+  replace_na (list(n_tot = 0, kg_tot = 0, n_log = 0, kg_log = 0)) %>% # replace all NAs (absences) with zero. what about biomass of 1? none have
+  right_join (mfri_pred_cut, by = "sample_id") # add predictor variables and cut out faulty autumn samples. should have 27524 
+  
+# divide into testing and training
+train_spp <-  full_data_spp %>% 
+    filter (year <= 2013)
+
+# presence-only data for training
+train_spp_B <- train_spp %>%
+  filter (n_tot > 0)
+
+test_spp <-  full_data_spp %>%
+  filter (year > 2013)
+
+## Random walk forecast
+
+Naive_forecast_lambda <-rwf(train_spp$kg_tot, drift=T, h= nrow (test_spp), lambda = -0.5, biasadj=T) 
+# with drift = F, this is just the last value observed, repeated h times. with drift = T, random walk based on the last value, but seems totally dependent on the last value. 
+
+# try with and without biasadj = T
+Naive_forecast <- rwf (train_spp$kg_tot, drift = T, h = nrow (test_spp), lambda = NULL, biasadj = F) 
+
+# don't see any difference with biasadj = T, with either log or total biomass. when I have both biasadj and lambda = -0.5, it does make a difference. much larger drift with biasadj = T
+
+## Naive GAM (no environmental variables)
+gam_LB_naive <- gam (kg_log ~ te(lon, lat) + year + season + s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = train_spp_B)
+
+gam_PA_naive <- gam (kg_log ~ te(lon, lat) + year + season + s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = train_spp)
+
+gampred_LB_naive <- predict.gam (gam_LB_naive, test_spp, type = "response")
+gampred_PA_naive <- predict.gam (gam_PA_naive, test_spp, type = "response")
+
+Eresid_naive <- mean (exp (residuals.gam (gam_LB_naive)))
+
+ThermPred_spp_naive <- gampred_PA_naive * (exp (gampred_LB_naive)) * Eresid_naive
+
+## Full GAM 
+
+gam_LB <- gam (kg_log ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = train_spp_B)
+
+gam_PA <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+                 family = "binomial", 
+                 data = train_spp)
+
+gampred_LB <- predict.gam (gam_LB, test_spp, type = "response")
+gampred_PA <- predict.gam (gam_PA, test_spp, type = "response")
+
+# KK took inverse log of LB residuals, and then one mean value for each species
+Eresid <- mean (exp (residuals.gam (gam_LB)))
+
+# ThermPred is PA prediction * log (LB prediction) * log (LB residual). MAE is absolute value of thermPred - observed biomass.
+ThermPred_spp <- gampred_PA * (exp (gampred_LB)) * Eresid
+
+
+## Calculate MAE
+MAE_gam <- abs(ThermPred_spp - test_spp$kg_tot) # seems like having many more zeros in the training data throws it off
+
+MAE_gam_naive <- abs (ThermPred_spp_naive - test_spp$kg_tot)
+
+MAE_rwf <- abs (Naive_forecast$mean - test_spp$kg_tot)
+
+MAE_rwf_lambda <- abs (Naive_forecast_lambda$mean - test_spp$kg_tot)
+
+## Build df
+
+MASE_spp <- data.frame (
+  Species = sci_name, 
+  RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE),
+  RWF_lambda = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf_lambda, na.rm = TRUE),
+  Naive_GAM = mean (MAE_gam, na.rm = TRUE) / mean (MAE_gam_naive, na.rm = TRUE)
+)
+ 
+
+MASE_all_spp <- rbind (MASE_all_spp, MASE_spp)
+
+}
+
+write.csv (MASE_all_spp, file = "../Models/MASE_table_all_spp.csv", row.names = FALSE)
+
+# calculate_MASE_fun(2)
+# 
+# spp_25_MASE <- lapply (as.vector(spp_25$Spp_ID), calculate_MASE_fun)
+# names (spp_25_MASE) <- spp_25$Scientific_name
+```
+With bias = T and lambda = -0.5, GAM is way better for all species. mean is 0.01, median is 1.12e05, max is 0.15 (silver smelt)
+Without biasadj = T, 7 are > 1.mean is 0.68, median 0.72, max 3.17. Per email from Charles Perretti on 7/22/2020, he suggested using neither lambda nor biasadj. 
+
+"That sounds like an interesting project. It's been a while but if I remember correctly we used the random walk model as a sort of null model to compare against the GAM. I don't remember using the Box-Cox transformation, but it's basically just a way to make the data look closer to a normal distribution. In general I would vote against using it because the choice of the lambda parameter is somewhat arbitrary, and it's just a bit more difficult to explain. If you did use it though you would want to use the bias-correction to return unbiased estimates of the mean prediction. So basically I would turn it off by setting lambda = NULL, and biasadj = FALSE. But if you do use it I would set biasadj = TRUE."
+
+For MASE table, full gam outperforms naive gam for all species for which the model worked (65) except mackerel. Did way better than rwf with lambda and biasadj. But for regular rwf, did worse in the majority of cases. Some are kind of crazy--Eutrigla_gurnardus (99) ratio is in the hundred millions, PAndalus is infinite, L. reticulatus is 6500. 
+
+
+
+
 ### Cod
 ```{r cod_data}
 #subset cod presence and absence
@@ -133,11 +298,61 @@ cod_pa <- mfri_pa %>%
 
 # append to sample info
 cod_pred <- cod_pa %>%
-  right_join (mfri_pred, by = "sample_id")
+  right_join (mfri_pred, by = "sample_id")  # use right_join to cut out faulty fall samples
 
 # start with lat, lon, year, season, mfri temp, and salinity
 ```
 
+```{r cod_limit_knots}
+set.seed(10)
+cod_gcv <- gam (Presence ~ te(lon, lat, k = -1) + year + season + s(surface_temp, k = -1) + s(bottom_temp, k = -1) + s(tow_depth_begin, k = -1),
+                 family = "binomial", 
+                 data = cod_pred)
+
+summary (cod_gcv)
+
+gam.check(cod_gcv) # don't use for PA
+
+```
+"one or more supplied k too small - reset to default." This is identical to the model without doing k = -1. 
+```{r limit_knots}
+
+set.seed(10)
+cod_k3 <- gam (Presence ~ te(lon, lat, k = 3) + year + season + s(surface_temp, k = 3) + s(bottom_temp, k = 3) + s(tow_depth_begin, k = 3),
+                 family = "binomial", 
+                 data = cod_pred)
+
+summary (cod_k3) # 66%
+
+gam.check(cod_k3)
+
+set.seed(10)
+cod_k4 <- gam (Presence ~ te(lon, lat, k = 4) + year + season + s(surface_temp, k = 4) + s(bottom_temp, k = 4) + s(tow_depth_begin, k = 4),
+                 family = "binomial", 
+                 data = cod_pred)
+
+summary (cod_k4) # 68%
+
+gam.check(cod_k4)
+
+```
+```{r cod_set_gamma}
+# used in Morely et al. 2018 https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R; cites https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv-advanced.pdf
+
+# penalize wiggliness by including EDF in GCV score
+
+gamma_PA <- log (nrow (cod_pa)) / 2
+
+set.seed(10)
+cod_gamma <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+                 family = "binomial", 
+                 gamma = gamma_PA,
+                 data = cod_pred)
+
+summary (cod_gamma)
+
+```
+This has everything below 5 (except tensor spline) and still good dev explained. year isn't significant
 ```{r cod_full}
 
 cod_full <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal) +s(tow_depth_begin),
