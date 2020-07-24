@@ -169,15 +169,19 @@ spp_totals <- mfri_abun %>%
 
 #calculate_MASE_fun <- function (spp) {
 
-## build dataframe, do for loop instead
+## build dataframe, do for loop instead of function
 MASE_all_spp <- data.frame()
 
 for (spp in spp_totals$species) {
+  
 
 # link species code to scientific name in PA dataset
 sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
 
-#P/A data for species
+# signal where we are in the process
+print(paste(sci_name, Sys.time()))
+
+#Presence/absence data for species
 PA_spp <- mfri_pa %>%
   # https://tidyselect.r-lib.org/reference/faq-external-vector.html need to use all_of for externally named variable
   dplyr::select (sample_id, all_of(sci_name)) 
@@ -190,7 +194,7 @@ LB_spp <- mfri_abun %>%
 full_data_spp <- PA_spp %>%
   left_join (LB_spp, by = "sample_id") %>% # add abundance data
   replace_na (list(n_tot = 0, kg_tot = 0, n_log = 0, kg_log = 0)) %>% # replace all NAs (absences) with zero. what about biomass of 1? none have
-  right_join (mfri_pred_cut, by = "sample_id") # add predictor variables and cut out faulty autumn samples. should have 27524 
+  right_join (mfri_pred, by = "sample_id") # add predictor variables and cut out faulty autumn samples. should have 27524 
   
 # divide into testing and training
 train_spp <-  full_data_spp %>% 
@@ -218,8 +222,8 @@ gam_LB_naive <- gam (kg_log ~ te(lon, lat) + year + season + s(tow_depth_begin),
                  family = "gaussian", 
                  data = train_spp_B)
 
-gam_PA_naive <- gam (kg_log ~ te(lon, lat) + year + season + s(tow_depth_begin),
-                 family = "gaussian", 
+gam_PA_naive <- gam (Presence ~ te(lon, lat) + year + season + s(tow_depth_begin),
+                 family = "binomial", 
                  data = train_spp)
 
 gampred_LB_naive <- predict.gam (gam_LB_naive, test_spp, type = "response")
@@ -250,19 +254,19 @@ ThermPred_spp <- gampred_PA * (exp (gampred_LB)) * Eresid
 
 
 ## Calculate MAE
-MAE_gam <- abs(ThermPred_spp - test_spp$kg_tot) # seems like having many more zeros in the training data throws it off
+MAE_gam <- abs(ThermPred_spp - test_spp$kg_tot) 
 
 MAE_gam_naive <- abs (ThermPred_spp_naive - test_spp$kg_tot)
 
 MAE_rwf <- abs (Naive_forecast$mean - test_spp$kg_tot)
 
-MAE_rwf_lambda <- abs (Naive_forecast_lambda$mean - test_spp$kg_tot)
+MAE_rwf_lambda <- abs (Naive_forecast_lambda$mean^-0.5 - test_spp$kg_tot) # should it be transformed? abs (Naive_forecast_lambda$mean^-0.5 - test_spp$kg_tot)
 
 ## Build df
 
 MASE_spp <- data.frame (
   Species = sci_name, 
-  RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE),
+  RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE), # why mean instead of median? 
   RWF_lambda = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf_lambda, na.rm = TRUE),
   Naive_GAM = mean (MAE_gam, na.rm = TRUE) / mean (MAE_gam_naive, na.rm = TRUE)
 )
@@ -286,8 +290,91 @@ Without biasadj = T, 7 are > 1.mean is 0.68, median 0.72, max 3.17. Per email fr
 
 For MASE table, full gam outperforms naive gam for all species for which the model worked (65) except mackerel. Did way better than rwf with lambda and biasadj. But for regular rwf, did worse in the majority of cases. Some are kind of crazy--Eutrigla_gurnardus (99) ratio is in the hundred millions, PAndalus is infinite, L. reticulatus is 6500. 
 
+S. acanthius (dogfish) has only 251 presences in training set. It's caught most years, but looks like in the single digits of sets. 
+
+E. gurnardus has 1386 presences. 891 in training set. It's something about very small and very large numbers. The normal rwf predictions are all very tiny numbers, median e=16. Whereas the gams are predicting some quite large numbers, log biomass up around 28. Last value of biomass training is 1.48, but last value of whole training set is 0. 
+Lumpfish had good scores for everything. It has 9325 presences, 7534 in training set. 
 
 
+Is the performance of rwf vs. gam dependent on having presence or absence as the last value in the training set? also seeing very few non-NA values for rwf-Lambda. only 90 /6300 for monkfish for example. 
+
+Scomber scombrus atl mackerel, env gam performed worse than naive gam. Only 350 presences, and 211 in test set. 
+
+
+Setting test set kg_log to 0 vs. -18 or something like that doesn't make a difference, because the test set kg_log actual values don't come into play for error measurement. using just kg_tot and exp(prediction). 
+
+
+### DISMo model evaluations
+Morely et al takes preds1 (fitted.values/gampred for PA). makes vector of presences and absences. evaluate acts on a column of predicted values at observed presences and ovserved absences
+
+for kappa and TSS, for the full model he doesn't use a threshold. modeldiag$tssmax is max tss for full model. tssmax.tt is max from test. tss is with e.ind, prevalence threshold from full model. tss.tt is with e.ind.tt, which is the minimum difference between test evaluation and training prevalence threshold. 
+
+takes the threshold from training data that best matches testing data--minimum absolute difference between model diag.thres.tr [prevalence] and e.tt@t
+```{r dismo_PA}
+
+
+library(dismo)
+p <- as.vector(gampred_PA[which (test_spp$Presence == 1)])
+a <- as.vector(gampred_PA[which (test_spp$Presence == 0)])
+
+e <- evaluate (p, a)
+plot (e, "ROC") # want closer to 1
+e@auc
+
+threshold(e, stat = "kappa") # 0.89
+prev_th <- threshold (e, stat = "prevalence")
+e.ind <- which (e@t == prev_th)
+
+conf <- as.data.frame (e@confusion) # 4 columns, tp, fp, fn, tn
+
+sens <- with (conf, tp/(tp + fn))
+
+tss_max <- max (with (conf, (tp/(tp + fn) + (tn)/(tn+fp) - 1)))
+tss_th <- with (conf[e.ind,], (tp/(tp + fn) + (tn)/(tn+fp) - 1))
+
+kap_max <- max (e@kappa)
+kap_th <- e@kappa[e.ind]
+
+# find min th from training data
+
+# fitted values from training data
+p.train <- gam_PA$fitted.values[which(train_spp$Presence == 1)]
+a.train <- gam_PA$fitted.values[which(train_spp$Presence == 0)]
+
+e.train <- evaluate(p.train, a.train)
+
+prev.th.train <- threshold (e.train, stat = "prevalence")
+
+diff <- abs (e@t - prev.th.train)
+e.ind.train <- which (diff == min(diff))
+
+
+kap_tr <- e@kappa[e.ind.train]
+tss_tr <- with (conf[e.ind.train,], (tp/(tp + fn) + (tn)/(tn+fp) - 1))
+```
+
+for biomass, he looked at dev explained but als opredicted vs observed biomass when present==correlation cor^2
+```{r morely_Biomass_Cor}
+
+cor_B <- cor (gampred_LB[which (test_spp$Presence ==1 & !is.na(gampred_LB))], test_spp$kg_log[which (test_spp$Presence == 1 & !is.na(gampred_LB))])^2
+
+```
+
+Kristin also did the diebold mariano test in forecast library. E1 is naive gam thermpred minus maive gam observed biomass. E2 is gampreds full thermpred minus biomass. 
+```{r dm_test}
+
+# doesn't accept nas. also looks like shouldn't be absolute
+
+E1 <- ThermPred_spp_naive - test_spp$kg_tot
+E2 <- ThermPred_spp - test_spp$kg_tot
+
+E1_cc <- E1 [ which (!is.na(E1) & !is.na(E2))]
+E2_cc <- E2 [ which (!is.na(E1) & !is.na(E2))]
+
+dm_gam <- dm.test (E1_cc, E2_cc, h = 1, power = 1, alternative = "greater")
+dm_gam
+
+```
 
 ### Cod
 ```{r cod_data}
@@ -324,7 +411,7 @@ cod_k3 <- gam (Presence ~ te(lon, lat, k = 3) + year + season + s(surface_temp, 
 
 summary (cod_k3) # 66%
 
-gam.check(cod_k3)
+
 
 set.seed(10)
 cod_k4 <- gam (Presence ~ te(lon, lat, k = 4) + year + season + s(surface_temp, k = 4) + s(bottom_temp, k = 4) + s(tow_depth_begin, k = 4),
@@ -333,8 +420,8 @@ cod_k4 <- gam (Presence ~ te(lon, lat, k = 4) + year + season + s(surface_temp, 
 
 summary (cod_k4) # 68%
 
-gam.check(cod_k4)
 
+AIC (cod_k3, cod_k4)
 ```
 ```{r cod_set_gamma}
 # used in Morely et al. 2018 https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R; cites https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv-advanced.pdf
@@ -350,6 +437,43 @@ cod_gamma <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_te
                  data = cod_pred)
 
 summary (cod_gamma)
+
+
+# test with biomass, so can look at gam.check
+cod_B <- mfri_abun %>%
+    filter (species == 1) %>%
+    left_join (mfri_pred, by = "sample_id")
+
+gamma_B <- log (nrow (cod_B)) / 2
+  
+  # fit gam
+  cod_gam1_B <- gam (kg_log ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = cod_B)
+  
+  cod_gamma1_B <- gam (kg_log ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+                 family = "gaussian", 
+                 gamma = gamma_B,
+                 data = cod_B)
+  
+  AIC (cod_gam1_B, cod_gamma1_B)
+  
+  summary (cod_gam1_B) # 20.1 % exp (vs 20.6 with other terms). 7.4, 7.8, 8.8
+  summary (cod_gamma1_B) # 19.8, 3.4, 6.3, 5.7
+  
+  gam.check (cod_gam1_B)
+  gam.check (cod_gamma1_B) # neither looks great tbh
+  
+  plot (cod_gam1_B, residuals = TRUE, 
+      select = 2, 
+      #ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst)", round (summary (cod_gam1_B)$edf[2], 2), sep = ", "))
+    plot (cod_gamma1_B, residuals = TRUE, 
+      select = 2, 
+      #ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("gamma s(sst)", round (summary (cod_gamma1_B)$edf[2], 2), sep = ", "))
 
 ```
 This has everything below 5 (except tensor spline) and still good dev explained. year isn't significant
