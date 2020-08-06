@@ -1,0 +1,383 @@
+---
+title: "Witch notes"
+date: "07-22-2020"
+output: html_notebook
+---
+Glyptocephalus_cynoglossus
+
+
+Fishbase: 
+Depth range 18-1570m, usually  45-360
+Temp: 2-6 preferred 06-11.4, mean 7
+31cm maturity, max 360, max wekght 2.5
+
+us ne and europe, greenland
+soft mud bottoms, deep
+crustaceans, polychaetse, brittle stars, fishes
+
+
+
+```{r setup}
+
+library(tidyverse)
+library(gridExtra)
+
+library (maps)
+library (mapdata)
+library (sf)
+library (rnaturalearth)
+library (rnaturalearthdata)
+library (rgeos)
+library (viridis)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# sample ID of all witch presences and absences
+witch_pa <- read_csv ("../Data/PA_MFRI.csv",
+                     col_types = cols(
+                       sample_id = col_factor()
+                     )) %>%
+  dplyr::select (sample_id, Glyptocephalus_cynoglossus)
+
+# full MFRI info for all witch presences, retaining length data
+witch_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
+                      col_types = cols(
+                      sample_id = col_factor(),
+                      species = col_factor(),
+                      stat_sq = col_factor()
+                      )
+                      )%>%
+  filter (species == 25, !(year == 2011 & season == "autumn")) # remove autumn 2011
+  
+# all witch presences, grouped by sample_ID (lengths aggregated
+witch_samp <- witch_samp_full %>%
+  group_by (sample_id) %>%
+  summarize (n_tot = sum(n_per_nautmile, na.rm = TRUE),
+             kg_tot = sum(kg_per_nautmile, na.rm = TRUE),
+             station = first(station),
+             lat = first(lat),
+             lon = first(lon),
+             year = first(year),
+             date = first(date),
+             season = first(season)
+  ) %>%
+  mutate (n_log = log (n_tot),
+          kg_log = log(kg_tot))
+
+
+# predictor variables
+mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
+                       col_types = cols(
+                      sample_id = col_factor(),
+
+                      stat_sq = col_factor())
+)
+```
+Present in `r nrow (witch_samp)` samples (`r nrow(witch_samp)/29002 * 100`%).
+
+### Histograms
+
+```{r length_season}
+witch_samp_full %>%
+  ggplot (aes (y = length_cm, x = season), alpha = 0.5) +
+  geom_violin()
+
+witch_samp_full %>%
+  ggplot (aes (x = length_cm, y = n_per_nautmile, fill = season)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.9) 
+
+```
+fairly normal and similar, wider in spring, maybe skews smaller
+
+## biomass and abundance dotcharts
+```{r dotcharts}
+dotchart(witch_samp$n_tot, 
+         groups = factor(witch_samp$season), 
+         main = "Abundance")
+
+dotchart(witch_samp$n_log, 
+         #groups = factor(witch_samp$season), 
+         main = "log abundance")
+
+```
+Nothing too concerning
+
+
+### Trends in abundance and biomass over time
+```{r time_series, warning = FALSE}
+biomass_ts <- witch_samp %>%
+  #filter (!sample_id == 31881) %>%
+  group_by (year, season) %>%
+  summarize (mn_kg = mean (kg_tot),
+             se_kg = var(kg_tot)/sqrt (n()),
+             mn_n = mean(n_tot),
+             se_n = var (n_tot)/sqrt(n())
+  ) %>%
+  ggplot (aes (x = year, y = mn_kg, col = season)) +
+    geom_point() +
+    geom_line() +
+    #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
+    geom_smooth (method = "lm") +
+    ggtitle("Biomass annual mean")+
+    theme(legend.position = "none")
+
+
+ab_ts <- witch_samp %>%
+ # filter (!sample_id == 31881) %>%
+  group_by (year, season) %>%
+  summarize (mn_kg = mean (kg_tot),
+             se_kg = var(kg_tot)/sqrt (n()),
+             mn_n = mean(n_tot),
+             se_n = var (n_tot)/sqrt(n())
+  ) %>%
+  ggplot (aes (x = year, y = mn_n, col = season)) +
+    geom_point() +
+    geom_line() +
+    #geom_pointrange (aes (ymin = mn_kg - se_kg, ymax = mn_kg + se_kg)) +
+    geom_smooth (method = "lm") +
+    ggtitle("Abundance annual mean")+
+    theme(legend.position = "none")
+
+grid.arrange (biomass_ts, ab_ts, nrow = 1)
+```
+kind of sawtooth pattern, declining until 2000, then increase through late 2000s, decresing/stable from 2010  
+
+### Spatial distribution
+
+```{r season_distrib, warning = FALSE}
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  stat_summary_2d(data = witch_samp, aes (x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.25, .25)) +
+    scale_fill_viridis_c(name = "Mean log abundance") +
+    theme_bw() +
+    facet_wrap (~season)
+```
+southwest and south
+
+
+```{r space_by_length, warning = FALSE}
+length_bins = quantile (witch_samp_full$length_cm)
+length_bins[1] <- 0 # include smallest ones
+
+witch_length_bins <- witch_samp_full %>%
+  mutate (length_bin = cut(length_cm, breaks = length_bins),
+          n_log = log(n_per_nautmile),
+          n_tot = sum(n_per_nautmile))
+  
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  stat_summary_2d(data = witch_length_bins, aes(x = lon, y = lat, z = n_log), fun = mean, binwidth = c (.5, .5)) +
+    scale_fill_viridis_c(name = "Mean log abundance") +
+    theme_bw() +
+  theme (axis.text = element_blank()) +
+    facet_grid (season ~ length_bin)
+```
+maybe more north in fall?
+
+### Plot abundance vs. predictor variables
+```{r witch_preds, warning = FALSE}
+witch_ab_pred <- witch_samp %>%
+  dplyr::select (sample_id, n_log, kg_log) %>%
+  right_join (mfri_pred, by = "sample_id")
+
+bt_p <- ggplot (witch_ab_pred, aes (x = bottom_temp, y = kg_log)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth (method = "lm") +
+  ggtitle ("Bottom temp")
+  
+
+sst_p <- ggplot (witch_ab_pred, aes (x = surface_temp, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")+
+  ggtitle ("Surface temp")
+
+sal_p <- ggplot (witch_ab_pred, aes (x = gins_sal, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")+
+  ggtitle ("Salinity")
+
+lat_p <- ggplot (witch_ab_pred, aes (x = lat, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")+
+  ggtitle ("Latitude")
+
+lon_p <- ggplot (witch_ab_pred, aes (x = lon, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")+
+  ggtitle ("Longitude")
+
+depth_p <-  ggplot (witch_ab_pred, aes (x = tow_depth_begin, y = kg_log)) +
+  geom_point() +
+  geom_smooth (method = "lm")+
+  ggtitle ("Depth")
+
+
+grid.arrange (sst_p, bt_p, sal_p, lat_p, lon_p, depth_p, nrow = 2)
+
+```
+u pup up down down down
+
+### Model results
+```{r model_explore}
+library (mgcv)
+load ("../Models/PresAbs/Glyptocephalus_cynoglossus_PA_full.Rdata")
+summary (gam_PA)
+
+```
+ surface temp barely
+
+Partial plots
+```{r partial_plots_PA, warning = FALSE}
+
+par (mfrow = c (2, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, residuals = TRUE, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      main = paste ("te(Lon, Lat)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA, residuals = TRUE, 
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA, residuals = TRUE, 
+      select = 3, 
+      ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA, residuals = TRUE, 
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sal)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, residuals = TRUE, 
+      select = 5, 
+      ylim = c (-10, 25), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+
+
+```
+
+
+```{r single_Var_drop_PA}
+full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
+
+witch_pred_PA <- witch_pa %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  rename ("Presence" = Glyptocephalus_cynoglossus)
+
+single.var.comp <- data.frame()
+for (x in full.terms){
+  # single variable model
+  formula <- as.formula (paste0 ("Presence ~", x))
+  G <- gam (formula, family = binomial, data = witch_pred_PA)
+  
+  # full model without that variable
+ formula_drop <- as.formula (paste0 ("Presence ~", (paste (full.terms[! full.terms %in% x], collapse = " + "))))
+ G_drop <- gam (formula_drop, family = binomial, data = filter (witch_pred_PA, !is.na (x)))
+ 
+
+  # extract summaries, put together in temporary df
+  df <- data.frame (Var = x, 
+                    R2_full = round (summary (gam_PA)$dev.expl * 100, 2), # gam_PA is full model
+                
+                    R2_s = round (summary(G)$dev.expl * 100, digits = 2),
+                   
+                    R2_d =  round (summary(G_drop)$dev.expl * 100, digits = 2),
+                    #N_full = length (G_full$y),
+                    
+                    Diff_full = round (summary(G_drop)$dev.expl * 100 - summary (gam_PA)$dev.expl * 100, 2)
+  )
+  
+  # rbind to full data frame
+  single.var.comp <- rbind (single.var.comp, df)
+  
+}
+
+
+single.var.comp
+
+save (single.var.comp, file = "../Models/PresAbs_summary_tables/witch_single_var_comp.RData")
+
+```
+algorithm did not converge
+bottom temp makes worse. lat/lon is basically everything. depth next most, although bottom temp and sal had bigger r2 single 
+
+```{r biomass_gam}
+
+load ("../Models/Biomass/Glyptocephalus_cynoglossus_LB_full.Rdata")
+summary (gam_LB)
+```
+salinity not significant. pretty small sample, 7731
+
+```{r partial_plots_lb, warning = FALSE}
+
+par (mfrow = c (2, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_LB, residuals = TRUE, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      main = paste ("te(Lon, Lat)", round (summary (gam_LB)$edf[1], 2), sep = ", "))
+plot (gam_LB, residuals = TRUE, 
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst)", round (summary (gam_LB)$edf[2], 2), sep = ", "))
+plot (gam_LB, residuals = TRUE, 
+      select = 3, 
+      ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_LB)$edf[3], 2), sep = ", "))
+plot (gam_LB, residuals = TRUE, 
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sal)", round (summary (gam_LB)$edf[4], 2), sep = ", "))
+plot (gam_LB, residuals = TRUE, 
+      select = 5, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
+
+```
+
+
+```{r single_Var_drop_lb}
+#full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)", "s(tow_depth_begin)")
+
+single.var.comp <- data.frame()
+for (x in full.terms){
+  # single variable model
+  formula <- as.formula (paste0 ("kg_log ~", x))
+  G <- gam (formula, family = gaussian, data = witch_ab_pred)
+  
+  # full model without that variable
+ formula_drop <- as.formula (paste0 ("kg_log ~", (paste (full.terms[! full.terms %in% x], collapse = " + "))))
+ G_drop <- gam (formula_drop, family = gaussian, data = filter (witch_ab_pred, !is.na (x)))
+ 
+
+  # extract summaries, put together in temporary df
+  df <- data.frame (Var = x, 
+                    R2_full = round (summary (gam_LB)$dev.expl * 100, 2), # gam_PA is full model
+                
+                    R2_s = round (summary(G)$dev.expl * 100, digits = 2),
+                   
+                    R2_d =  round (summary(G_drop)$dev.expl * 100, digits = 2),
+                    #N_full = length (G_full$y),
+                    
+                    Diff_full = round (summary(G_drop)$dev.expl * 100 - summary (gam_LB)$dev.expl * 100, 2)
+  )
+  
+  # rbind to full data frame
+  single.var.comp <- rbind (single.var.comp, df)
+  
+}
+
+
+single.var.comp
+
+save (single.var.comp, file = "../Models/Biomass_summary_tables/witch_single_var_comp.RData")
+
+```
+everything contributes. mostly lat/lon. then depth, then sal. 
