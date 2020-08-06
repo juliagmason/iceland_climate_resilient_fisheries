@@ -287,3 +287,19 @@ summary (lm (kg_log ~ bottom_temp, data = cod_ab_pred))
 
 
 lil better with oisst and gins_bt. but many more missing observations for gins
+
+```{r gam_results_explore}
+load ("../Models/PresAbs/Gadus_morhua_PA_full.Rdata")
+summary (gam_PA)
+
+```
+```{r gam_drop_sal}
+
+cod_full_dropsal <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+                 family = "binomial", 
+                 data = cod_pred)
+
+summary (cod_full_dropsal)
+
+```
+
