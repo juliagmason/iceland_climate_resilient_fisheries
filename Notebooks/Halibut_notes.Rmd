@@ -15,6 +15,10 @@ widespread n atlantic, down to virginia, up in arctic ocean
 benthic, pelagic. eat other fishes--cod, haddock, sand eels, capelin, cephs, crustaceans
 
 
+MFRI tech report--ban in 2011 led to spatial shift in fishery
+https://www.hafogvatn.is/static/extras/images/21-atlantichalibut_tr1206889.pdf
+
+
 
 ```{r setup}
 
