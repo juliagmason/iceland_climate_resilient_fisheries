@@ -75,6 +75,11 @@ dir.create ("../Models")
 dir.create("../Models/PresAbs")
 dir.create("../Models/Biomass")
 
+
+# do this again without season (or salinity)
+dir.create("../Models/PresAbs_dropSeason")
+dir.create("../Models/Biomass_dropSeason")
+
 # build data frame to hold gam results
 maj_spp_gam_summary <- data.frame ()
 
@@ -98,11 +103,11 @@ for (spp in spp_25$Spp_ID) {
     left_join (mfri_pred, by = "sample_id")
   
   # fit gams
-  gam_PA <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal) +s(tow_depth_begin),
+  gam_PA <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
                  family = "binomial", 
                  data = spp_PA)
   
-  gam_LB <- gam (kg_log ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal) +s(tow_depth_begin),
+  gam_LB <- gam (kg_log ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
                  family = "gaussian", 
                  data = spp_B)
   
@@ -123,8 +128,8 @@ for (spp in spp_25$Spp_ID) {
   
   maj_spp_gam_summary <- rbind (maj_spp_gam_summary, summary)
   
-  save (gam_PA, file = paste0("../Models/PresAbs/", sci_name, "_PA_full.Rdata"))
-  save (gam_LB, file = paste0("../Models/Biomass/", sci_name, "_LB_full.Rdata"))
+  save (gam_PA, file = paste0("../Models/PresAbs_dropSeason/", sci_name, "_PA_full.Rdata"))
+  save (gam_LB, file = paste0("../Models/Biomass_dropSeason/", sci_name, "_LB_full.Rdata"))
     
 }
 
@@ -132,7 +137,7 @@ colnames (maj_spp_gam_summary) <- c("Species",
                                     "PA_dev_exp", "PA_adj_r2", "PA_UBRE","PA_AIC",
                                     "LB_dev_exp", "LB_adj_r2", "LB_UBRE", "LB_AIC","LB_n" )
 
-save (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table.RData")
+save (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table_dropSeason.RData")
 ```
 
 ### Display model table
@@ -375,7 +380,16 @@ dm_gam <- dm.test (E1_cc, E2_cc, h = 1, power = 1, alternative = "greater")
 dm_gam
 
 ```
+### interpret results from gam diagnostics 7/35
+```{r gam_diag}
 
+gam_diag <- read_csv ("../Models/GAM_diagnostics_all_spp.csv")
+
+suitable_spp <- gam_diag %>%
+  filter (MASE_GAM < 1 & DM_GAM_p < 0.05)
+
+```
+28 species, doesn't include cod?? really very few species out perform random walk. 
 ### Cod
 ```{r cod_data}
 #subset cod presence and absence
