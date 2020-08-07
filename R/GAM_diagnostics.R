@@ -1,3 +1,9 @@
+# GAM diagnostic tests
+# 7/27/20
+# JGM
+
+# Run GAMs for each species on training data. Perform diagnostic tests with predictions on test data and save model summaries and tests in a table
+
 library (tidyverse)
 library (mgcv)
 library (forecast)
@@ -62,6 +68,7 @@ GAM_diag <- data.frame(
   Species = n,
   N_Presences = n,
   PA_dev = n,
+  AUC = n,
   TSS_mx = n,
   TSS_th = n,
   Kap_mx = n,
@@ -81,7 +88,7 @@ GAM_diag <- data.frame(
 )
 
 
-for (i in 64:length(spp_totals$species)) {
+for (i in 1:length(spp_totals$species)) {
   
   # link to spp code
   spp <- as.numeric(as.character(spp_totals$species[i])) # no idea why this is suddenly necessary
@@ -161,12 +168,15 @@ for (i in 64:length(spp_totals$species)) {
   
   e_test <- evaluate (p_test, a_test)
   
+  GAM_diag$AUC[i] <- round(e_test@auc, 2)
+  
   conf <- as.data.frame (e_test@confusion)
   
   p_train <- gam_PA$fitted.values[which(train_spp$Presence == 1)]
   a_train <- gam_PA$fitted.values[which(train_spp$Presence == 0)]
   
   e_train <- evaluate(p_train, a_train)
+  
   
   # find prevalence threshold for training data, and then threshold from testing data that's closest to it (from Morely code)
   prev_th_train <- threshold (e_train, stat = "prevalence")
@@ -285,6 +295,5 @@ for (i in 64:length(spp_totals$species)) {
 
 }
 
-GAM_diag <- GAM_diag[1:67,]
 
 write.csv (GAM_diag, file = "Models/GAM_diagnostics_all_spp.csv", row.names = FALSE)
