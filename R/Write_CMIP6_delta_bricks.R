@@ -3,6 +3,8 @@
 # 7/20/2020 
 
 library (R.matlab)
+library (stringr)
+library (raster)
 
 # Lat and lon from OISST
 lon.m <- readMat("../Documents/MATLAB/CMIP6/oisst_lon.mat")
@@ -13,22 +15,25 @@ lon <- lon.m$oisst.lon
 lat <- lat.m$oisst.lat
 
 # Set up raster extent
-latlons <- expand.grid (lon = oisst_lon, lat = oisst_lat)
+latlons <- expand.grid (lon = lon, lat = lat)
 coordinates (latlons) <- ~lon + lat
 projstring <- "+proj=longlat +datum=WGS84 +ellps=WGS84 +towsg84=0,0,0"
 proj4string(latlons) <- CRS(projstring)
 
 # create folder to hold deltas
-dir.create ("Data/CMIP6_deltas")
+#dir.create ("Data/CMIP6_deltas")
+dir.create ("Data/CMIP6_delta_projections")
+
 
 # SST files in CMIP6 folder
 base_path <- "../Documents/MATLAB/CMIP6/"
-sst_list <- list.files (path = base_path, pattern = "deltas.mat")
+file_list <- list.files (path = base_path, pattern = "projection.mat")
+#file_list2 <- file_list[which (grepl("projection", file_list))]
 
 # now doing bt [if redoing, can do all at once]
-bt_list <- list.files (path = base_path, pattern = "bt_deltas.mat")
+#bt_list <- list.files (path = base_path, pattern = "bt_deltas.mat")
 
-for (file in bt_list) {
+for (file in file_list) {
   
   #open matlab file
   mat <- readMat(paste0(base_path, file))
@@ -49,6 +54,6 @@ for (file in bt_list) {
   # Write and save raster
   fname <- str_sub (file, end = -5) # take off .mat
   
-  deltas_r <- writeRaster(deltas_r, filename = paste0 ("Data/CMIP6_deltas/", fname, ".grd")) # add overwrite = TRUE if redoing
+  deltas_r <- writeRaster(deltas_r, filename = paste0 ("Data/CMIP6_delta_projections/", fname, ".grd"), overwrite = TRUE) # add overwrite = TRUE if redoing
   
 }
