@@ -7,11 +7,11 @@
 # I have a raster brick for each model's deltas, all interpolated to OISST. 
 
 # I want to subset the brick for the values that correspond to the mfri survey/Iceland's waters (especially for MOHC which has some suspect cropping). This code makes a box with the boundaries of Iceland's EEZ; may want to eventually clip to the actual shapefile, or decide on a bounding box. 
-
+library (tidyverse)
 library (raster)
 library (lubridate)
 library (sf)
-library (stringr)
+
 
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
@@ -26,17 +26,17 @@ ggplot() +
 projected_dates <- seq (ymd("2015-01-01"), ymd("2100-12-12"), by = "months")
 
 # list of my saved raster bricks
-brick_files <- list.files ("Data/CMIP6_deltas/", pattern = "deltas.grd")
+brick_files <- list.files ("Data/CMIP6_delta_projections/", pattern = "projection.grd")
 
 # make empty data frame
 projected_deltas <- data.frame()
 
 for (file in brick_files) {
   
-  deltas <- brick(paste0("Data/CMIP6_deltas/", file))
-  
+  projections <- brick(paste0("Data/CMIP6_delta_projections/", file))
+
   # crop raster to EEZ extent
-  delta_crop <- crop (deltas, eez) # it's doing a box, not the shapefile
+  delta_crop <- crop (projections, eez) # it's doing a box, not the shapefile
   
   # grab mean and sd values, and create tidy data frame
   # https://gis.stackexchange.com/questions/200394/calculate-mean-value-for-each-raster-and-convert-output-array-to-data-frame
@@ -53,8 +53,19 @@ for (file in brick_files) {
   
 }
 
-save (projected_deltas, file = "Data/CMIP6_deltas/deltas_mn_sd_table.RData")
+save (projected_deltas, file = "Data/CMIP6_delta_projections/projection_mn_sd_table.RData")
 
+
+delta_df %>%
+  #group_by(ssp, var) %>%
+  #summarize(annual_mn = mean(mean)) %>%
+  #rename (year = `year(date)`) %>% 
+  ggplot (aes (x = date, y =mean), alpha = 0.4) +
+  geom_point() +
+  geom_line() +
+  #stat_summary(aes(group=var), fun.y=mean, geom="line", colour="black", lwd = 2) +
+  facet_grid (ssp ~ var)+
+  theme_bw()
 
 # plot monthly values (hard to see)
 projected_deltas %>%
@@ -69,14 +80,15 @@ projected_deltas %>%
 # plot annual values 
 png ("Figures/CMIP_temp_deltas_ts.png")
 projected_deltas %>%
+  #filter (model == "gfdl") %>%
   group_by(year(date), model, ssp, var) %>%
   summarize(annual_mn = mean(mean)) %>%
   rename (year = `year(date)`) %>% 
-  ggplot (aes (x = year, y =annual_mn, col = model), alpha = 0.4) +
+  ggplot (aes (x = year, y =annual_mn, col = model, shape = var), alpha = 0.4) +
   geom_point() +
   geom_line() +
   stat_summary(aes(group=var), fun.y=mean, geom="line", colour="black", lwd = 2) +
-  facet_grid (ssp ~ var)+
+  facet_wrap (~ssp)+
   theme_bw()
 dev.off()
 
