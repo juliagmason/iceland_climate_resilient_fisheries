@@ -71,14 +71,18 @@ Note: these were fit with pre-2000 fall data, but 2011 excluded.
 ```{r fit_full_gam}
 
 # build folders to hold models
-dir.create ("../Models")
-dir.create("../Models/PresAbs")
-dir.create("../Models/Biomass")
-
-
-# do this again without season (or salinity)
-dir.create("../Models/PresAbs_dropSeason")
-dir.create("../Models/Biomass_dropSeason")
+# dir.create ("../Models")
+# dir.create("../Models/PresAbs")
+# dir.create("../Models/Biomass")
+# 
+# 
+# # do this again without season (or salinity)
+# dir.create("../Models/PresAbs/Tensor_drop_season")
+# dir.create("../Models/Biomass/Tensor_drop_season")
+# 
+# # again, with gamma, with smoothed lat/lon s(lat,lon) 8/10/2020
+# dir.create ("../Models/PresAbs/Smooth_latlon")
+# dir.create ("../Models/Biomass/Smooth_latlon")
 
 # build data frame to hold gam results
 maj_spp_gam_summary <- data.frame ()
@@ -90,7 +94,7 @@ for (spp in spp_25$Spp_ID) {
   
   #grab presence/absence data for that species and attach to predictor data
   spp_PA <- mfri_pa %>%
-    dplyr::select (sample_id, sci_name) %>%
+    dplyr::select (sample_id, all_of(sci_name)) %>%
     left_join (mfri_pred, by = "sample_id")
   
   # don't know how to do this elegantly within a pipe, but change colname to presence
@@ -102,34 +106,41 @@ for (spp in spp_25$Spp_ID) {
     filter (species == spp) %>%
     left_join (mfri_pred, by = "sample_id")
   
-  # fit gams
-  gam_PA <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
-                 family = "binomial", 
-                 data = spp_PA)
+  # set gamma
+  set.seed (10)
+  gamma_PA <- log (nrow (spp_PA)) / 2
+  gamma_B <- log (nrow (spp_B)) / 2
   
-  gam_LB <- gam (kg_log ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+  # fit gams
+  gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+  
+  gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
                  family = "gaussian", 
-                 data = spp_B)
+                 data = spp_B,
+                 gamma = gamma_B)
   
   
   # populate table
   summary <- cbind (sci_name, 
-                    summary (gam_PA)[14], # dev expl
-                    summary (gam_PA)[10], # r2
-                    summary (gam_PA)[26], # ubre? GCV?
-                    AIC(gam_PA),
-                    summary (gam_LB)[14],
-                    summary (gam_LB)[10],
-                    summary (gam_LB)[26],
-                    AIC(gam_LB),
+                    round(summary (gam_PA)$dev.expl, 2), # dev expl
+                    round(summary (gam_PA)$r.sq, 2), # r2
+                    round(summary (gam_PA)$sp.criterion, 2), # ubre? GCV?
+                    round(AIC(gam_PA), 2),
+                    round(summary (gam_LB)$dev.expl, 2),
+                    round(summary (gam_LB)$r.sq, 2),
+                    round(summary (gam_LB)$sp.criterion, 2),
+                    round(AIC(gam_LB), 2),
                     summary (gam_LB)[13] #n
                     )
   
   
   maj_spp_gam_summary <- rbind (maj_spp_gam_summary, summary)
   
-  save (gam_PA, file = paste0("../Models/PresAbs_dropSeason/", sci_name, "_PA_full.Rdata"))
-  save (gam_LB, file = paste0("../Models/Biomass_dropSeason/", sci_name, "_LB_full.Rdata"))
+  save (gam_PA, file = paste0("../Models/PresAbs/Smooth_latlon/", sci_name, "_PA_full.Rdata"))
+  save (gam_LB, file = paste0("../Models/Biomass/Smooth_latlon/", sci_name, "_LB_full.Rdata"))
     
 }
 
@@ -137,7 +148,11 @@ colnames (maj_spp_gam_summary) <- c("Species",
                                     "PA_dev_exp", "PA_adj_r2", "PA_UBRE","PA_AIC",
                                     "LB_dev_exp", "LB_adj_r2", "LB_UBRE", "LB_AIC","LB_n" )
 
-save (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table_dropSeason.RData")
+#https://stackoverflow.com/questions/24829027/unimplemented-type-list-when-trying-to-write-table
+# weird error about list 
+maj_spp_gam_summary <- apply(maj_spp_gam_summary,2,as.character)
+write.csv (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table_slatlon.csv", row.names = FALSE)
+write.csv (MASE_all_spp, file = "../Models/MASE_table_all_spp.csv", row.names = FALSE)
 ```
 
 ### Display model table
@@ -434,9 +449,16 @@ cod_k4 <- gam (Presence ~ te(lon, lat, k = 4) + year + season + s(surface_temp, 
 
 summary (cod_k4) # 68%
 
+set.seed(10)
+cod_unlim <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+                 family = "binomial", 
+                 data = cod_pred)
 
-AIC (cod_k3, cod_k4)
+
+AIC (cod_k3, cod_k4, cod_unlim) # 6374, 6056. having more knots significantly better. 
 ```
+AIC is substantially better with 4 knots instead of 3, and substantially better with unlimited knots. 
+
 ```{r cod_set_gamma}
 # used in Morely et al. 2018 https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R; cites https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv-advanced.pdf
 
@@ -470,7 +492,7 @@ gamma_B <- log (nrow (cod_B)) / 2
                  gamma = gamma_B,
                  data = cod_B)
   
-  AIC (cod_gam1_B, cod_gamma1_B)
+  AIC (cod_gam1_B, cod_gamma1_B) # 79825 vs 79871
   
   summary (cod_gam1_B) # 20.1 % exp (vs 20.6 with other terms). 7.4, 7.8, 8.8
   summary (cod_gamma1_B) # 19.8, 3.4, 6.3, 5.7
@@ -490,7 +512,9 @@ gamma_B <- log (nrow (cod_B)) / 2
       main = paste ("gamma s(sst)", round (summary (cod_gamma1_B)$edf[2], 2), sep = ", "))
 
 ```
-This has everything below 5 (except tensor spline) and still good dev explained. year isn't significant
+This has everything below 5 (except tensor spline) and still good dev explained (19.8% with gamma vs. 20.1%). year isn't significant. AIC is lower for unlimited model by ~50. Should I test AUC, TSS?
+
+
 ```{r cod_full}
 
 cod_full <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal) +s(tow_depth_begin),
@@ -523,10 +547,11 @@ plot (cod_full, residuals = TRUE,
 
 ```
 One extreme low residual. not sure how to find it
-```{r}
+```{r resid_hist}
 resid <- residuals.gam(cod_full)
 hist (resid)
 ```
+
 ```{r drop_var_table}
 full.terms <- c ("te (lon, lat)", "year", "season", "s(surface_temp)", "s(bottom_temp)", "s(gins_sal)")
 
@@ -562,15 +587,16 @@ dir.create ("../Models/PresAbs_summary_tables")
 save (single.var.comp, file = "../Data/PA_model_tables/Cod_single_var_comp.RData")
 ```
 Lat/lon has biggest signal -- 13%, driving 50% of the signal. . season is the next, 4. Salinity makes worse. 
-```{r}
+```{r lat_lon_interaction}
 # lat/lon interaction
-cod_full_2 <- gam (Presence ~ lon*lat + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal),
+cod_full_2 <- gam (Presence ~ s(lon,lat) + year + season + s(surface_temp) + s(bottom_temp) + s(gins_sal),
                  family = "binomial", 
                  data = cod_pred)
 
 summary (cod_full_2)
 ```
-```{r}
+
+```{r sat_vs_insitu}
 # satellite instead of in situ
 cod_full_sat <- gam (Presence ~ te(lon, lat) + year + season + s(oisst) + s(gins_bt) + s(gins_sal) +s(tow_depth_begin),
                  family = "binomial", 
@@ -580,3 +606,106 @@ summary (cod_full_sat)
 
 ```
 
+### Seeing really weird behavior in prediction rasters, may be a result of tensor spline?
+8/10/2020
+Try cod model with just lat. I think this was an issue with my hammerhead models
+```{r cod_lat_only}
+
+# match species ID to scientific name
+  sci_name <- "Gadus_morhua"
+  spp <- 1
+  
+  #grab presence/absence data for that species and attach to predictor data
+  spp_PA <- mfri_pa %>%
+    dplyr::select (sample_id, all_of(sci_name)) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # don't know how to do this elegantly within a pipe, but change colname to presence
+  colnames(spp_PA)[2] <- "Presence"
+  
+  
+  # non-zero biomass data; this will have variable size. 
+  spp_B <- mfri_abun %>%
+    filter (species == spp) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # define gamma
+  gamma_PA <- log (nrow (spp_PA)) / 2
+  gamma_B <- log (nrow (spp_B)) / 2
+
+  
+set.seed(10)
+
+ gam_PA <- gam (Presence ~ s(lat) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+                 family = "binomial", 
+                 data = spp_PA,
+                gamma = gamma_PA)
+  
+  gam_LB <- gam (kg_log ~ s(lat) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+  summary (gam_PA) # 67
+  summary (gam_LB) # 14
+
+```
+seems like don't lose a lot of dev expl for PA (67 instead of 69ish), but yes for biomass (only 14% instead of 20ish). 
+
+Run this through build prediction rasters and still have really weird behavior, really high values at higher latitudes:
+![Sample lat only cod prediction (245, timestep 1)](../Figures/cod_245_latonly_predict.png)
+try with smooth s(lat,lon) interaction 
+```{r cod_smooth_latlon}
+# have model code above, modifying so I can just run through build_prediction_rasters.R
+
+#rename models so I can compare AIC
+latonly_LB <- gam_LB
+latonly_PA <- gam_PA
+
+#copying code here 
+# match species ID to scientific name
+  sci_name <- "Gadus_morhua"
+  spp <- 1
+  
+  #grab presence/absence data for that species and attach to predictor data
+  spp_PA <- mfri_pa %>%
+    dplyr::select (sample_id, all_of(sci_name)) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # don't know how to do this elegantly within a pipe, but change colname to presence
+  colnames(spp_PA)[2] <- "Presence"
+  
+  
+  # non-zero biomass data; this will have variable size. 
+  spp_B <- mfri_abun %>%
+    filter (species == spp) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # define gamma
+  gamma_PA <- log (nrow (spp_PA)) / 2
+  gamma_B <- log (nrow (spp_B)) / 2
+
+  
+set.seed(10)
+
+ gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+                 family = "binomial", 
+                 data = spp_PA,
+                gamma = gamma_PA)
+  
+  gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+  summary (gam_PA) # 68
+  summary (gam_LB) # 21
+  
+  AIC (gam_PA, latonly_PA) # s(lat,lon) is much better) 5055 vs 6238 [tensor is 5949]
+  AIC (gam_LB, latonly_LB) # s(lat,lon is better: 79638 vs 81486) [ tensor is 79825]
+
+
+```
+s(lat,lon) seems like a good choice. Doesn't appear to be making any weird distortions, in fact looks similar to depth map. 
+
+Going to move forward with s(lat, lon) and gamma. Redoing model fitting and predicitons starting 8/10. 
