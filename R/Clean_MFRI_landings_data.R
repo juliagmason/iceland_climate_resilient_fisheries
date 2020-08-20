@@ -5,7 +5,7 @@
 library (tidyverse)
 
 # first downloaded just community quota
-cq <- read.csv ("../Data/Raw_data/SI_community_quota_landings.csv", sep = ";", skip = 2)
+cq <- read.csv ("Data/Raw_data/SI_community_quota_landings.csv", sep = ";", skip = 2)
 
 # This has a column for species, quota type and unit, and then a column for each month of each year: X1992.January
 
@@ -56,3 +56,61 @@ dplyr::select (Species, Quota.type, year, tonnes) %>%
   rename (species = Species, quota = Quota.type)
 
 write.csv (lands_long, "Data/Landings_annual_all_sectors.csv", row.names = FALSE)
+
+# catch volume and value by quota type----
+
+quota_catch <- read.csv("Data/Raw_data/SI_landings_quota_type.csv", skip = 2, na.strings = c(".."))
+quota_long <- quota_catch %>%
+  pivot_longer (
+    cols = contains("20"),
+    names_to = c("metric", "year"),
+    names_pattern = "(.*)\\.(.*)", # split on last period
+    values_to = "amount"
+  ) %>%
+  mutate (metric = ifelse (grepl("X", metric), "1000 ISK", metric)) # get rid of "X1000
+
+# don't know how to do proportions yet, should be easier than this 
+val_tot <- quota_long %>%
+  dplyr::filter(metric == "1000 ISK") %>%
+  group_by (year) %>%
+  summarize (total_ISK = sum(amount, na.rm = TRUE))
+
+tonnes_tot <- quota_long %>%
+  dplyr::filter(metric == "Tonnes") %>%
+  group_by(year) %>%
+  summarize (total_tonnes = sum(amount, na.rm = TRUE))
+
+# https://stackoverflow.com/questions/24576515/relative-frequencies-proportions-with-dplyr
+quota_val <- quota_long %>%
+  dplyr::filter(metric == "1000 ISK") %>%
+  group_by (Quota.class, year) %>%
+  summarize (year_tot = sum(amount)) %>% 
+  left_join (val_tot, by = "year") %>%
+  mutate (perc_val = round (year_tot / total_ISK *100, 2))
+
+quota_val_mn <- quota_val %>%
+  group_by (Quota.class) %>%
+  summarize (mean_val = mean (perc_val))
+
+quota_tonnes <- quota_long %>%
+  dplyr::filter(metric == "Tonnes") %>%
+  group_by (Quota.class, year) %>%
+  summarize (year_tot = sum(amount)) %>% 
+  left_join (tonnes_tot, by = "year") %>%
+  mutate (perc_wt = round (year_tot / total_tonnes *100, 2))
+
+quota_tonnes_mn <- quota_tonnes %>%
+  group_by (Quota.class) %>%
+  summarize (mean_wt = mean (perc_wt)) # doesn't add up to 100 though...
+
+quota_tonnes_overall_mn <- quota_long %>%
+  dplyr::filter(metric == "Tonnes") %>%
+  group_by (Quota.class) %>%
+  summarize (tot = sum(amount)) %>%
+  mutate (perc_wt = round (tot /sum(tonnes_tot$total_tonnes) * 100, 2))
+  
+quota_val_overall_mn <- quota_long %>%
+  dplyr::filter(metric == "1000 ISK") %>%
+  group_by (Quota.class) %>%
+  summarize (tot = sum(amount)) %>%
+  mutate (perc_wt = round (tot /sum(val_tot$total_ISK) * 100, 2))
