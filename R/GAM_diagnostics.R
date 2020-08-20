@@ -9,6 +9,7 @@ library (mgcv)
 library (forecast)
 library(dismo)
 
+# Morely et al. 2018 code:
 # https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R
 
 
@@ -28,7 +29,7 @@ mfri_abun <- read_csv ("Data/MFRI_comb_survey.csv",
                        )
 )%>%
   filter (!(year == 2011 & season == "autumn"),
-          !(year < 2000 & season == "autumn")) %>% # remove autumn 2011
+          !(year < 2000 & season == "autumn")) %>% # remove autumn 2011 and pre-2000 autumn
   group_by (sample_id, species) %>%
   summarize (n_tot = sum(n_per_nautmile),
              kg_tot = sum(kg_per_nautmile)) %>%
@@ -57,8 +58,8 @@ spp_list <- read_csv ("Data/species_eng.csv",
 spp_totals <- mfri_abun %>% 
   group_by (species) %>% 
   summarize (count = n()) %>% 
-  filter (count > 50) %>%  # need to have enough observations for the model
-  filter (!species %in% c(41, 72, 97, 35, 92, 49)) # cut out problematic species. Pandalus has no presences in test data. 72 more coefficients
+  filter (count > 50) %>%  # need to have enough observations for the model: https://stackoverflow.com/questions/36719799/mgcv-gam-error-model-has-more-coefficients-than-data
+  filter (!species %in% c(41, 72, 97, 35, 92, 49, 89)) # cut out problematic species. Pandalus has no presences in test data. 72 more coefficients
 
 
 # Mega table for model diagnostics
@@ -76,14 +77,17 @@ GAM_diag <- data.frame(
   LB_dev = n,
   LB_cor = n,
   MASE_GAM = n,
-  DM_GAM_stat = n,
   DM_GAM_p = n,
+  DM_GAM_stat = n,
+  
   MASE_RWF = n,
-  DM_RW_stat = n,
   DM_RW_p = n,
+  DM_RW_stat = n,
+  
   MASE_RWL = n,
-  DM_RWL_stat = n,
   DM_RWL_p = n,
+  DM_RWL_stat = n,
+ 
   Train_last_zeros = n
 )
 
@@ -133,6 +137,11 @@ for (i in 1:length(spp_totals$species)) {
   test_spp <-  full_data_spp %>%
     filter (year > 2013)
   
+  # set gamma to penalize for wiggliness (From Morely github code and Simon wood)
+  # used in Morely et al. 2018 https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R; cites https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv-advanced.pdf
+  gamma_PA <- log (nrow (train_spp)) / 2
+  gamma_B <- log (nrow (train_spp_B)) / 2
+  
   # Record total number of presences
   GAM_diag$N_Presences[i] <- length (which (full_data_spp$Presence == 1))
   
@@ -141,13 +150,15 @@ for (i in 1:length(spp_totals$species)) {
   # ==================
   
   # fit on training data
-  gam_LB <- gam (kg_log ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+  gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
                  family = "gaussian", 
-                 data = train_spp_B)
+                 data = train_spp_B,
+                 gamma = gamma_B)
   
-  gam_PA <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+  gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
                  family = "binomial", 
-                 data = train_spp)
+                 data = train_spp,
+                 gamma = gamma_PA)
   
   # predict on testing data
   gampred_LB <- predict.gam (gam_LB, test_spp, type = "response")
@@ -212,13 +223,15 @@ for (i in 1:length(spp_totals$species)) {
   # don't see any difference with biasadj = T, with either log or total biomass. when I have both biasadj and lambda = -0.5, it does make a difference. much larger drift with biasadj = T
   
   ## Naive GAM (no environmental variables)
-  gam_LB_naive <- gam (kg_log ~ te(lon, lat) + year + s(tow_depth_begin),
+  gam_LB_naive <- gam (kg_log ~ s(lat, lon) + year + s(tow_depth_begin),
                        family = "gaussian", 
-                       data = train_spp_B)
+                       data = train_spp_B,
+                       gamma = gamma_B)
   
-  gam_PA_naive <- gam (Presence ~ te(lon, lat) + year + s(tow_depth_begin),
+  gam_PA_naive <- gam (Presence ~ s(lat, lon) + year + s(tow_depth_begin),
                        family = "binomial", 
-                       data = train_spp)
+                       data = train_spp,
+                       gamma = gamma_PA)
   
   gampred_LB_naive <- predict.gam (gam_LB_naive, test_spp, type = "response")
   gampred_PA_naive <- predict.gam (gam_PA_naive, test_spp, type = "response")
@@ -227,7 +240,7 @@ for (i in 1:length(spp_totals$species)) {
   
   ThermPred_spp_naive <- gampred_PA_naive * (exp (gampred_LB_naive)) * Eresid_naive
   
-  # KK took inverse log of LB residuals, and then one mean value for each species
+  # Residuals and thermpred for full gam. KK took inverse log of LB residuals, and then one mean value for each species
   Eresid <- mean (exp (residuals.gam (gam_LB)))
   
   # ThermPred is PA prediction * log (LB prediction) * log (LB residual). MAE is absolute value of thermPred - observed biomass.
