@@ -83,8 +83,8 @@ stack_names <- c("lat", "lon", "year", "surface_temp", "bottom_temp", "tow_depth
 predict_brick_fun <- function (sci_name) {
   
   # load gams
-  load (paste0("Models/PresAbs_dropSeason/", sci_name, "_PA_full.Rdata")) # gam_PA
-  load (paste0("Models/Biomass_dropSeason/", sci_name, "_LB_full.Rdata")) # gam_LB
+  load (paste0("Models/PresAbs/Smooth_latlon/", sci_name, "_PA_full.Rdata")) # gam_PA
+  load (paste0("Models/Biomass/Smooth_latlon/", sci_name, "_LB_full.Rdata")) # gam_LB
   
 
 # make first prediction raster to start the stack
@@ -163,12 +163,21 @@ writeRaster (pred_brick_245, file = paste0("Models/Prediction_bricks/", sci_name
 
 } # end function
 
-save (pred_brick_245, file = "Data/temp_pred_brick.RData")
+writeRaster (pred_brick_245, file = "Models/Prediction_bricks/Gadus_morhua_245_temp.grd", overwrite = TRUE)
 
 #### quick prediction test------
 # test predict
 library (mgcv)
 load ("Models/Biomass/Amblyraja_radiata_LB_full.Rdata") # error, can't process these factors. I think I would need to change to numeric. 
+
+# try without lon
+gam_PA <- gam (Presence ~ s(lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+               family = "binomial", 
+               data = full_data_sci_name)
+
+gam_LB <- gam (kg_log ~ s(lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+               family = "gaussian", 
+               data = full_data_sci_name)
 
 # try without season
 gam_PA <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
