@@ -23,7 +23,8 @@ ggplot() +
   coord_sf()
 
 # create vector of dates. should be jan 2015 - december 2100
-projected_dates <- seq (ymd("2015-01-01"), ymd("2100-12-12"), by = "months")
+# when including CM 2.5, only 80 years, not 86. 2021-2100
+projected_dates <- seq (ymd("2021-01-01"), ymd("2100-12-12"), by = "months")
 
 # list of my saved raster bricks
 brick_files <- list.files ("Data/CMIP6_delta_projections/", pattern = "projection.grd")
@@ -34,6 +35,10 @@ projected_deltas <- data.frame()
 for (file in brick_files) {
   
   projections <- brick(paste0("Data/CMIP6_delta_projections/", file))
+  
+  #crop CMIP6 files to smaller time period
+  if (dim (projections)[3]  == 1032)  {projections  <-  projections[[73:1032]] }
+
 
   # crop raster to EEZ extent
   delta_crop <- crop (projections, eez) # it's doing a box, not the shapefile
@@ -53,7 +58,7 @@ for (file in brick_files) {
   
 }
 
-save (projected_deltas, file = "Data/CMIP6_delta_projections/projection_mn_sd_table.RData")
+save (projected_deltas, file = "Data/CMIP6_delta_projections/projection_mn_sd_table_CM26.RData")
 
 
 delta_df %>%
@@ -78,7 +83,7 @@ projected_deltas %>%
   facet_wrap (~model)
 
 # plot annual values 
-png ("Figures/CMIP_temp_deltas_ts.png")
+png ("Figures/CMIP_CM26_temp_deltas_ts.png")
 projected_deltas %>%
   #filter (model == "gfdl") %>%
   group_by(year(date), model, ssp, var) %>%

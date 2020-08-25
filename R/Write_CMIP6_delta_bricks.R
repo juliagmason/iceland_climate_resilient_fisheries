@@ -33,13 +33,14 @@ file_list <- list.files (path = base_path, pattern = "projection.mat")
 # now doing bt [if redoing, can do all at once]
 #bt_list <- list.files (path = base_path, pattern = "bt_deltas.mat")
 
+
 for (file in file_list) {
   
   #open matlab file
   mat <- readMat(paste0(base_path, file))
   
   # in list format, so get actual data
-  deltas <- mat[[1]]
+  deltas <- mat[[1]] #not actually the deltas. actually the projection. 
   
   #rotate and reverse so matches lat/lon
   #https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
@@ -57,3 +58,52 @@ for (file in file_list) {
   deltas_r <- writeRaster(deltas_r, filename = paste0 ("Data/CMIP6_delta_projections/", fname, ".grd"), overwrite = TRUE) # add overwrite = TRUE if redoing
   
 }
+
+## # do with CM 2.6----
+base_path <- "../Documents/MATLAB/CM2_6/"
+#sst_file_list <- list.files (path = base_path, pattern = "sst_projection")
+bt_file_list <- list.files (path = base_path, pattern = "bt_projection")
+
+# did a run-through and they're each only 8MB. I think I can get away with stacking them first. do the first one, and then iteratively stack the rest?
+mat1 <- readMat(paste0(base_path, bt_file_list[1]))
+
+# in list format, so get actual data
+deltas1 <- mat1[[1]] #not actually the deltas. actually the projection. 
+
+#rotate and reverse so matches lat/lon
+#https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
+#rot1 <- aperm(deltas1, c(2, 1,3))
+rev1 <- apply (deltas1, c(2,3), rev)
+
+# rasterize and set extent
+bt_stack <- brick(rev1)
+projection(bt_stack) <- CRS(projstring)
+extent (bt_stack) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+
+
+for (i in 2:length(bt_file_list)) {
+  
+  file = bt_file_list[i]
+  
+  #open matlab file
+  mat <- readMat(paste0(base_path, file))
+  
+  # in list format, so get actual data
+  deltas <- mat[[1]] #not actually the deltas. actually the projection. 
+  
+  #rotate and reverse so matches lat/lon
+  #https://astrostatistics.psu.edu/su07/R/library/base/html/aperm.html
+  #rot <- aperm(deltas, c(2, 1,3))
+  rev <- apply (deltas, c(2,3), rev)
+  
+  # rasterize and set extent
+  deltas_r <- brick(rev)
+  projection(deltas_r) <- CRS(projstring)
+  extent (deltas_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+  
+  bt_stack <- raster::stack (bt_stack, deltas_r) # new one goes underneath
+  
+}
+
+# Write and save raster. label as 585 because it's analogous. 
+CM26_deltas_r <- writeRaster(bt_stack, filename = "Data/CMIP6_delta_projections/CM26_585_bt_projection.grd") #, overwrite = TRUE) # add overwrite = TRUE if redoing
