@@ -142,6 +142,22 @@ mfri_env_df <- mfri_samples %>%
   left_join (mfri_bt_df, by = "sample_id") %>%
   left_join (mfri_sal_df, by = "sample_id")
 
+# 8/20/2020 update: adding habitat data from Bormicon regions ----
+# From Pamela: # I attached a table you can join with stat_sq column to get at this. We generally use 'Bormicon' regions, which were defined a while ago based on depth and cluster analyses (see link below), but not so much habitat data if I remember correctly (double check this!). That means they may be a bit y ~ x ~ y situation because I believe multi-species survey data were used to define them. The true 'habitat' studies taking place here (using side sonar and such) don't nearly cover enough area to be useful yet.
+# https://www.hafogvatn.is/static/research/files/fjolrit-119.pdf  see page 330 - division and subdivision numbers correspond with attached table
+
+# update 8/26/2020:
+# From Pamela: We use the Gadget subdivisions but just call them 'Bormicon' because that is where the original justifications for the patterns came from (see figs. 9.1 vs. 9.4 in the document link)... they were just modified to be formed from statistical squares to make data analysis and subsampling easier (and that's why we still use the 'Gadget' rather than the original Bormicon regions). Yes, that stat_sq column has a lot of other 'junk' numbers that are for other parts of the database. But double-checking this made me realize that there is an error in the stations table that may have made it confusing - the 'areacell' column is the same as 'stat_sq', so I just remade the stations table 'tow_table.csv' with that column name corrected and the subdivision and division columns added. 
+
+# I renamed to bormicon_table.csv
+
+div_table <- read.csv ("Data/Raw_data/div_table.csv") %>%
+  mutate (stat_sq = as.character(-1*stat_sq)) %>% # not sure why, but stat_sq has a leading hyphen...nope it's a sequence that starts with negative numbers. this isn't right
+  rename (Bormicon_region = SUBDIVISION)
+
+mfri_env_df <- read.csv ("Data/MFRI_predictor_df.csv") %>%
+  left_join (div_table, by = "stat_sq")
+
 # write csv----
 write.csv (mfri_env_df, file = "Data/MFRI_predictor_df.csv", row.names = FALSE)
 
