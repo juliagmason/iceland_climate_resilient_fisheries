@@ -7,7 +7,7 @@
 library (tidyverse)
 library (mgcv)
 library (forecast)
-library(dismo)
+library (dismo)
 
 # Morely et al. 2018 code:
 # https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R
@@ -42,7 +42,8 @@ mfri_pred <- read_csv ("Data/MFRI_predictor_df.csv",
                        col_types = cols(
                          sample_id = col_factor(),
                          
-                         stat_sq = col_factor()
+                         stat_sq = col_factor(),
+                         bormicon_region = col_factor()
                        )
 ) %>%
   filter (!(year == 2011 & season == "autumn"),
@@ -54,40 +55,51 @@ spp_list <- read_csv ("Data/species_eng.csv",
                         Spp_ID = col_factor()
                       ))
 
-# do for all species, in order of number of presences
+# I'm going to run these diagnostics on all species with enough data, ordered by number of presences
 spp_totals <- mfri_abun %>% 
   group_by (species) %>% 
   summarize (count = n()) %>% 
   filter (count > 50) %>%  # need to have enough observations for the model: https://stackoverflow.com/questions/36719799/mgcv-gam-error-model-has-more-coefficients-than-data
-  filter (!species %in% c(41, 72, 97, 35, 92, 49, 89)) # cut out problematic species. Pandalus has no presences in test data. 72 more coefficients
+  filter (!species %in% c(41, 72, 97, 35, 92, 49, 89)) # cut out problematic species that filtering by # observations doesn't catch, e.g. Pandalus has no presences in test data. 72 more coefficients
 
 
-# Mega table for model diagnostics
+# Mega table to hold model diagnostics
 n = rep(NA, length(spp_totals$species))
 
 GAM_diag <- data.frame(
+  
+  # basic accounting info
   Species = n,
   N_Presences = n,
+  
+  # Presence/Absence skill
   PA_dev = n,
   AUC = n,
   TSS_mx = n,
   TSS_th = n,
   Kap_mx = n,
   Kap_th = n,
+  
+  # log Biomass 
   LB_dev = n,
   LB_cor = n,
+  
+  # Error with full GAM vs naive (no env variable) GAM
   MASE_GAM = n,
   DM_GAM_p = n,
   DM_GAM_stat = n,
   
+  # Error with full GAM vs. random walk function
   MASE_RWF = n,
   DM_RW_p = n,
   DM_RW_stat = n,
   
+  # Error with full GAM vs. random walk with lambda
   MASE_RWL = n,
   DM_RWL_p = n,
   DM_RWL_stat = n,
  
+  # disregard, was looking at how the number of trailing zeros affected the random walk 
   Train_last_zeros = n
 )
 
@@ -95,7 +107,7 @@ GAM_diag <- data.frame(
 for (i in 1:length(spp_totals$species)) {
   
   # link to spp code
-  spp <- as.numeric(as.character(spp_totals$species[i])) # no idea why this is suddenly necessary
+  spp <- as.numeric(as.character(spp_totals$species[i])) # no idea why this as.character is suddenly necessary
   
   # link species code to scientific name in PA dataset
   sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
@@ -110,7 +122,7 @@ for (i in 1:length(spp_totals$species)) {
   # Data setup ----
   # ==================
   
-  #Presence/absence data for species
+  #Presence/absence data for selected species
   PA_spp <- mfri_pa %>%
     # https://tidyselect.r-lib.org/reference/faq-external-vector.html need to use all_of for externally named variable
     dplyr::select (sample_id, all_of(sci_name)) 
@@ -123,7 +135,7 @@ for (i in 1:length(spp_totals$species)) {
   
   full_data_spp <- PA_spp %>%
     left_join (LB_spp, by = "sample_id") %>% # add abundance data
-    replace_na (list(n_tot = 0, kg_tot = 0, n_log = 0, kg_log = 0)) %>% # replace all NAs (absences) with zero. what about biomass of 1? none have
+    replace_na (list(n_tot = 0, kg_tot = 0, n_log = 0, kg_log = 0)) %>% # replace all NAs (absences) with zero. [what about biomass of 1? none have]
     right_join (mfri_pred, by = "sample_id") # add predictor variables and cut out faulty autumn samples. should have 27524 
   
   # divide into testing and training
@@ -149,13 +161,17 @@ for (i in 1:length(spp_totals$species)) {
   # Fit full GAM ----
   # ==================
   
+  set.seed(10) # needed for gamma maybe?
+  
   # fit on training data
-  gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+  # log biomass model:
+  gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + bormicon_region,
                  family = "gaussian", 
                  data = train_spp_B,
                  gamma = gamma_B)
   
-  gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
+  # Presence-absence model
+  gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + bormicon_region,
                  family = "binomial", 
                  data = train_spp,
                  gamma = gamma_PA)
@@ -194,7 +210,7 @@ for (i in 1:length(spp_totals$species)) {
   th_diff <- abs (e_test@t - prev_th_train)
   e_ind <- which (th_diff == min(th_diff))
   
-  # TSS shoudl be sensitivity + specificity - 1. Morely does tss_max from full model. going to do max from test?
+  # TSS should be sensitivity + specificity - 1. Morely does tss_max from full model. going to do max from test?
   # https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/j.1365-2664.2006.01214.x
   GAM_diag$TSS_mx[i] <- round (max (with (conf, (tp/(tp + fn) + (tn)/(tn+fp) - 1))), 2)
   GAM_diag$TSS_th[i] <- round (with (conf[e_ind,], (tp/(tp + fn) + (tn)/(tn+fp) - 1)), 2)
@@ -287,7 +303,7 @@ for (i in 1:length(spp_totals$species)) {
   GAM_diag$DM_RW_stat[i] <- round (dm_rw$statistic, 2)
   GAM_diag$DM_RW_p[i] <- round (dm_rw$p.value, 2)
   
-  # rwf lambda
+  # rwf lambda. Likely won't use this--Charles Perretti on 7/22/2020 said choosing the lambda (box cox transformation) is somewhat arbitrary, but if you do use it, also use biasadj = T
   
   GAM_diag$MASE_RWL[i]  <-  round (mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf_lambda, na.rm = TRUE), 2)
   
@@ -310,3 +326,10 @@ for (i in 1:length(spp_totals$species)) {
 
 
 write.csv (GAM_diag, file = "Models/GAM_diagnostics_all_spp.csv", row.names = FALSE)
+
+## check stats----
+GAM_diag <- read.csv("Models/GAM_diagnostics_all_spp.csv")
+
+GAM_diag %>%
+  filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>%
+  View()
