@@ -3,6 +3,8 @@
 # JGM
 
 library (raster)
+library (sf)
+library (lubridate)
 
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
@@ -16,11 +18,15 @@ projected_dates <- seq (ymd("2015-01-01"), ymd("2100-12-12"), by = "months")
 # for now, have temporary saved file in Data
 tmp_brick <- brick ("Models/Prediction_bricks/Gadus_morhua_245_temp.grd")
 
+allvals <- getValues(tmp_brick)
+summary (allvals[1])
+
 pred_clip <- mask (tmp_brick, eez)
 
+plot (tmp_brick, 1000)
 plot (log(tmp_brick), 1000)
 
-vals <- getValues (pred_clip[[1]])
+vals <- getValues (pred_clip[[1000]])
 
 suit_cells <- data.frame()
 
@@ -54,4 +60,5 @@ suit_cells %>%
   rename (year = `year(date)`) %>%
   ggplot (aes (x = year, y = prop_cells1)) +
   geom_point() +
-  geom_line()
+  geom_line() +
+  ggtitle ("Proportion of cells with probability cod biomass > 1")
