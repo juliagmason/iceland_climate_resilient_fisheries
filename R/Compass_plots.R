@@ -2,17 +2,75 @@
 # 8/21/2020
 # JGM
 
+
+# generate random simulated data for 10 species
+test_df <- data.frame (
+  dist = runif (10, 25, 100),
+  bearing = runif (10, 0, 360),
+  spp = spp_list$Common_name[1:10],
+  group = as.factor(sample (1:3, 10, replace = T))
+)
+
+
+# code from Kristin's PlosOne paper to do this with ggplot
+# Kristin code
+library (SDMTools) # not available for R version 4.0.2
+
+CA <- circular.averaging(direction=test_df$bearing) # will need to find some other way of calculating circular average
+
+library (tidyverse)
+# use geom_segment, not geom_line
+# https://stackoverflow.com/questions/10515703/ggplot2-polar-plot-arrows
+
+ggplot(test_df,
+       aes (x = bearing,
+            y = dist, 
+            #group = spp, 
+            colour = group), 
+       label = spp
+) +
+  coord_polar(start=0) +
+  geom_segment(aes (y = 0,
+                    xend = bearing, 
+                    yend = dist
+  ), 
+  size=1.2) +  
+  geom_text(aes(label = spp, 
+                x = bearing,
+                y = 100,  
+                # not sure what angle is doing here but it seems right
+                angle = ifelse (bearing < 180,
+                                -bearing + 90,
+                                -bearing + 270
+                )
+  ),
+  size=5, 
+  vjust=0.1) +
+  labs(y= "Maximum distance/decade (km)") + #, 
+  #title=paste("Spring, North, Circular Average = ", 
+  #round(CA[1], 2))) +
+  scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
+  theme_bw() +
+  
+  theme(plot.title = element_text(size = rel(1.5)), 
+        axis.title = element_text(size = rel(1.25)), 
+        legend.text = element_text(size = rel(1.25) ), 
+        axis.text = element_text(size = rel(1.5)), 
+        legend.title= element_text(size = rel(1.25) ))#+ 
+#scale_color_manual(values = colorit_cluster)
+
+# Morely et al. 2018 code ----
 # https://github.com/pinskylab/project_velocity/blob/master/MS_figures.R
 
 library (raster)
 
 # I'm going to assume I don't need to do the correction for biomass weighting? something about converging longitude? all of my stuff should be on the same grid. 
 
-# # projection grid
+# projection grid
 load ("Data/prediction_raster_template.RData")
-# 
+
 pred_r_template[] <- area(pred_r_template)[] # don't know what this does. adds a layer columm, 140 unique
-# 
+
 # # make df of lat/lon points. In Morely code this has depth and two other values (rugosity, sediment size?). not sure if I need them. 
 # 
  grid_area <- data.frame(rasterToPoints(pred_r_template), stringsAsFactors = FALSE) 
@@ -84,13 +142,7 @@ polar.plot(lengths = dist, polar.pos = bearing,
            boxed.radial = F, start = 90, clockwise= T) #, radial.lim = c(0, 1500))
 
 
-# nothing is showing up. try with some simulated data?
-test_df <- data.frame (
-  dist = runif (10, 25, 100),
-  bearing = runif (10, 0, 360),
-  spp = spp_list$Common_name[1:10],
-  group = as.factor(sample (1:3, 10, replace = T))
-)
+# nothing is showing up. try with test_df simulated data
 
 polar.plot(lengths = test_df$dist, polar.pos = test_df$bearing,
            lwd = 2.5, line.col = "red",
@@ -116,44 +168,3 @@ for(j in 1:2){
   }
 }  
 
-# Kristin code
-library (SDMTools) # not available for R version 4.0.2
-CA<-circular.averaging(direction=test_df$bearing)
-
-# use geom_segment, not geom_line
-# https://stackoverflow.com/questions/10515703/ggplot2-polar-plot-arrows
-ggplot(test_df,
-        aes (x = bearing,
-             y = dist, 
-             #group = spp, 
-             colour = group), 
-        label = spp
-        ) +
-  coord_polar(start=0) +
-  geom_segment(aes (y = 0,
-                    xend = bearing, 
-                    yend = dist
-                    ), 
-               size=1.2) +  
-  geom_text(aes(label = spp, 
-                x = bearing,
-                y = 100,  
-                angle = ifelse (bearing < 180,
-                               -bearing + 90,
-                               -bearing + 270
-                               )
-                ),
-            size=5, 
-            vjust=0.1) +
-  labs(y= "Maximum distance/decade (km)") + #, 
-       #title=paste("Spring, North, Circular Average = ", 
-                   #round(CA[1], 2))) +
-  scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
-  theme_bw() +
-
-  theme(plot.title = element_text(size = rel(1.5)), 
-        axis.title = element_text(size = rel(1.25)), 
-        legend.text = element_text(size = rel(1.25) ), 
-        axis.text = element_text(size = rel(1.5)), 
-        legend.title= element_text(size = rel(1.25) ))#+ 
-  #scale_color_manual(values = colorit_cluster)
