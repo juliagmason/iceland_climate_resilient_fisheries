@@ -149,14 +149,26 @@ mfri_env_df <- mfri_samples %>%
 # update 8/26/2020:
 # From Pamela: We use the Gadget subdivisions but just call them 'Bormicon' because that is where the original justifications for the patterns came from (see figs. 9.1 vs. 9.4 in the document link)... they were just modified to be formed from statistical squares to make data analysis and subsampling easier (and that's why we still use the 'Gadget' rather than the original Bormicon regions). Yes, that stat_sq column has a lot of other 'junk' numbers that are for other parts of the database. But double-checking this made me realize that there is an error in the stations table that may have made it confusing - the 'areacell' column is the same as 'stat_sq', so I just remade the stations table 'tow_table.csv' with that column name corrected and the subdivision and division columns added. 
 
-# I renamed to bormicon_table.csv
+# I renamed to bormicon_table.csv. Checked, and just one bormicon region per stat_sq so can condense into a key table. 
 
-div_table <- read.csv ("Data/Raw_data/div_table.csv") %>%
-  mutate (stat_sq = as.character(-1*stat_sq)) %>% # not sure why, but stat_sq has a leading hyphen...nope it's a sequence that starts with negative numbers. this isn't right
-  rename (Bormicon_region = SUBDIVISION)
+hab_table <- read.csv ("Data/Raw_data/bormicon_table.csv") %>%
+  group_by(stat_sq) %>%
+  summarize (bormicon_region = first(subdivision)) %>%
+  mutate (stat_sq = as.factor(stat_sq))
 
+# realized there are a few stat_sq typos where there are hyphens
 mfri_env_df <- read.csv ("Data/MFRI_predictor_df.csv") %>%
-  left_join (div_table, by = "stat_sq")
+  mutate (stat_sq = gsub ("-", "", stat_sq)) %>%
+  left_join (hab_table, by = "stat_sq")
+
+# only one missing, stat_Sq is 4214.   
+mfri_env_df[which (is.na(mfri_env_df$bormicon_region)),]  
+
+# does lat/lon fall within 4124? no
+mfri_env_df %>%
+  filter (stat_sq == 4124) %>%
+  select (lat, lon) %>% View()
+
 
 # write csv----
 write.csv (mfri_env_df, file = "Data/MFRI_predictor_df.csv", row.names = FALSE)
