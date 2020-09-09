@@ -25,3 +25,16 @@ r<-raster(Rugosity)
 rug<-extract(r, myPoints)
 myPoints_2<-cbind(myPoints, test, rug)
 names(myPoints_2)<-c("LON", "LAT", "grid_id", "rugosity")
+
+
+# random file downloaded from a publication?
+# ftp://ftp.earthbyte.org/earthbyte/Roughness/Grids/
+
+#https://rpubs.com/otienodominic/398952
+
+library (ncdf4)
+
+temp <- tempfile()
+download.file("ftp://ftp.earthbyte.org/earthbyte/Roughness/Grids/roughness_100km.15.2.nc.bz2",temp)
+earthbyte_rug <- nc_open(unz(temp, "roughness_100km.15.2.nc"))
+unlink(temp)
