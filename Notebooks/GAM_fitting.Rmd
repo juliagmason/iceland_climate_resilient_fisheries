@@ -23,7 +23,8 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
                        col_types = cols(
                       sample_id = col_factor(),
 
-                      stat_sq = col_factor()
+                      stat_sq = col_factor(),
+                      bormicon_region = col_factor()
                       )
                       ) %>%
   filter (!(year == 2011 & season == "autumn"),
@@ -64,6 +65,13 @@ spp_list <- read_csv ("../Data/species_eng.csv",
 spp_25 <- spp_list %>%
   filter (n_autumn > 24 & n_spring > 35)
 
+# species that worked for gams
+spp_totals <- mfri_abun %>% 
+  group_by (species) %>% 
+  summarize (count = n()) %>% 
+  filter (count > 50) %>%  # need to have enough observations for the model: https://stackoverflow.com/questions/36719799/mgcv-gam-error-model-has-more-coefficients-than-data
+  filter (!species %in% c(41, 72, 97, 35, 92, 49, 89))
+
 ```
 
 ### Fit individual full GAM for all species
@@ -87,10 +95,15 @@ Note: these were fit with pre-2000 fall data, but 2011 excluded.
 # build data frame to hold gam results
 maj_spp_gam_summary <- data.frame ()
 
-for (spp in spp_25$Spp_ID) {
+# 9/8/2020 do again for additional species not in top 25
+addl_spp <- as.character(spp_totals$species[which (! spp_totals$species %in% spp_25$Spp_ID)])  # use as.character to avoid error with differing factor levels
+
+#for (spp in spp_25$Spp_ID) {
+  for (spp in addl_spp) {
+  
   
   # match species ID to scientific name
-  sci_name <- spp_25$sci_name_underscore[which (spp_25$Spp_ID == spp)]
+  sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
   
   #grab presence/absence data for that species and attach to predictor data
   spp_PA <- mfri_pa %>%
@@ -709,3 +722,43 @@ set.seed(10)
 s(lat,lon) seems like a good choice. Doesn't appear to be making any weird distortions, in fact looks similar to depth map. 
 
 Going to move forward with s(lat, lon) and gamma. Redoing model fitting and predicitons starting 8/10. 
+
+### incorporating habitat proxy variables
+
+8/26/2020
+```{r bormicon}
+
+borm_gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + bormicon_region,
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+borm_gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin)+ bormicon_region,
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+
+summary (borm_gam_PA) # 68.9, n = 25469
+summary (borm_gam_LB) # 21.8, n - 22404
+
+AIC (borm_gam_PA, borm_gam_LB) # 5937, 79377. so better than s(lat, lon)
+
+```
+```{r drop lat/lon and year}
+borm_only_gam_LB <- gam (kg_log ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + bormicon_region,
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+borm_only_gam_PA <- gam (Presence ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin)+ bormicon_region,
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+
+summary (borm_only_gam_PA) # 68.1, n = 25469
+summary (borm_only_gam_LB) # 15.4, n - 22404
+
+AIC (borm_only_gam_PA, borm_only_gam_LB) # 6056, 81081. worse than s(lat,lon)
+
+```
+
