@@ -188,7 +188,7 @@ print (end1 - start1)
 
 predict_brick_fun (sci_name = "Lepidorhombus_whiffiagonis", GAM = "Smooth_latlon", scenario = 585)
 
-# run on full species list that I ran GAMs for
+# run on full species list that I ran GAMs for----
 spp_totals <- mfri_abun %>% 
   group_by (species) %>% 
   summarize (count = n()) %>% 
@@ -198,11 +198,102 @@ spp_totals <- mfri_abun %>%
 spp_table <- read.csv("Data/species_eng.csv")
 spp <- spp_table$sci_name_underscore[which (spp_table$Spp_ID %in% spp_totals$species)]
 
-system.time (sapply (spp, predict_brick_fun, GAM = GAM, scenario = 585)) # 5 hours for 25 spp
+system.time (sapply (spp, predict_brick_fun, GAM = GAM, scenario = 585)) # 5 hours for 25 spp, 25 hours for 65 species, 20 ears
 
+## Historical period using GLORYS temperature ----
 
+year_vals <- rep (2000:2018, each = 12)
 
+hist_brick_fun <- function (sci_name, GAM) {
+  
+  print (sci_name)
+  start1 <- Sys.time()
+  
+  # load saved GAM for species of interest
+  load (paste0("Models/PresAbs/", GAM, "/", sci_name, "_PA_full.Rdata")) # gam_PA
+  load (paste0("Models/Biomass/", GAM, "/", sci_name, "_LB_full.Rdata")) # gam_LB
+  
+    
+  # load temperature bricks
+  sst_brick <- brick ("Data/GLORYS_sst_hist.grd")
+  bt_brick <- brick ("Data/GLORYS_bt_hist.grd")
+  
+    
+    # make first prediction raster to start the stack
+   
+    sst_r <- sst_brick[[1]] 
+    bt_r <- bt_brick[[1]]
+    
+    values (year_r) <- year_vals[1]
+    
+    stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
+    names (stack_1) <- stack_names
+    
+    # crop to Iceland EEZ
+    clip_1 <- mask (stack_1, eez)
+    
+    # make predictions
+    predict_PA <- raster::predict (clip_1, gam_PA, type = "response")
+    predict_LB <- raster::predict (clip_1, gam_LB, type = "response")
+    
+    # thermal prediction--relate PA to log biomass
+    pred_stack <- overlay (predict_PA, predict_LB, 
+                           fun = function (x,y) {x * exp(y)}
+    )
+    
+    
+    # for loop to stack for all years----
+    start_time <- Sys.time()
+    for (i in 2:length(year_vals)) { # length of time series
+      
+      # if doing the whole time series, progress report
+      
+      if (i%%10 == 0) {print (i)}
+      sst_i <- sst_brick[[i]]
+      bt_i <- bt_brick[[i]]
+      
+      values (year_r) <- year_vals[i]
+      
+      stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
+      names (stack_i) <- stack_names
+      
+      clip_i <- mask (stack_i, eez)
+      
+      predict_PA_i <- raster::predict (clip_i, gam_PA, type = "response")
+      predict_LB_i <- raster::predict (clip_i, gam_LB, type = "response")
+      
+      predict_therm_i <- overlay (predict_PA_i, predict_LB_i, 
+                                  fun = function (x,y) {x * exp(y)}
+      )
+      
+      # stack predictions for each year
+      pred_stack <- stack (pred_stack, predict_therm_i)
+      
+      
+    } # end year_vals for loop
+    end_time = Sys.time()
+    
+    print (end_time - start_time)
 
+  
+  system.time(pred_brick <- brick (pred_stack)) # 2.4s for 10 years. convert to brick to make stackapply go faster
+  
+  # write prediction brick as raster
+  save_path <- paste (sci_name, GAM, "2000_2018", sep = "_")
+  
+  writeRaster (pred_brick, file = paste0("Models/Prediction_bricks/", save_path, ".grd"), overwrite = TRUE)
+  end1 <- Sys.time()
+  
+  print (end1 - start1)
+  
+} # end function
+
+hist_brick_fun ("Gadus_morhua", "Smooth_latlon")
+cod_test <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_2000_2018.grd")
+dim (cod_test)
+plot (cod_test, 100)
+
+system.time (sapply (spp, hist_brick_fun, GAM = "Smooth_latlon")) # 4.5 hours
 ### Trial code down here #######
 
 # plot check 
