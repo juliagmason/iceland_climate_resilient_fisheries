@@ -189,16 +189,13 @@ print (end1 - start1)
 predict_brick_fun (sci_name = "Lepidorhombus_whiffiagonis", GAM = "Smooth_latlon", scenario = 585)
 
 # run on full species list that I ran GAMs for----
-spp_totals <- mfri_abun %>% 
-  group_by (species) %>% 
-  summarize (count = n()) %>% 
-  filter (count > 50) %>%  # need to have enough observations for the model: https://stackoverflow.com/questions/36719799/mgcv-gam-error-model-has-more-coefficients-than-data
-  filter (!species %in% c(41, 72, 97, 35, 92, 49, 89))
+load ("Models/spp_Smooth_latlon.RData")
 
-spp_table <- read.csv("Data/species_eng.csv")
-spp <- spp_table$sci_name_underscore[which (spp_table$Spp_ID %in% spp_totals$species)]
+GAM <- "Smooth_latlon"
 
 system.time (sapply (spp, predict_brick_fun, GAM = GAM, scenario = 585)) # 5 hours for 25 spp, 25 hours for 65 species, 20 ears
+
+system.time (sapply (spp_Smooth_latlon$sci_name_underscore, predict_brick_fun, GAM = GAM, scenario = 245))
 
 ## Historical period using GLORYS temperature ----
 
