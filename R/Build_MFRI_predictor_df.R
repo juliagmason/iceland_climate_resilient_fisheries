@@ -75,7 +75,7 @@ for (x in mfri_dates_gl) {
   
   # take a subset representing date and 12 months prior; extract values for each lat/lon point, and calculate max of those values
   smax_extract <- apply (
-    z <- raster::extract (
+    raster::extract (
       subset (sst_max, (y-11):y),
       mfri, method = "simple"), 
     1, function (x) max (x, na.rm = TRUE))
@@ -110,11 +110,47 @@ for (x in mfri_dates_gl) {
 
 # there are 116 missing values that are too close to shore to be resolved I think
 
+# SST std dev----
+
+# full range of dates, don't need to go back a year
+
+sst_dev <- brick ("Data/glorys_sst_dev.grd")
+bt_dev <- brick ("Data/glorys_bt_dev.grd")
+
+mfri_glorys_dev_df <- data.frame()
+
+for (x in glorys_dates) {
+  # subset mfri data
+  mfri <- mfri_pts[which (mfri_pts$date == x),]
+  
+  # subset glorys brick 
+  y <- which (glorys_dates == x)
+  
+  # grab mfri points
+  sdev_extract <- raster::extract (
+    subset(sst_dev, y),
+    mfri, method = "simple")
+  
+  bdev_extract <- raster::extract (
+    subset(bt_dev, y),
+    mfri, method = "simple")
+  
+  dev_df <- data.frame (sample_id = mfri$sample_id,
+                        sst_dev = sdev_extract,
+                        bt_dev = bdev_extract)
+  
+  mfri_glorys_dev_df <- rbind (mfri_glorys_dev_df, dev_df)
+
+  }
+  
+  
+
 # combine df ----
 
 mfri_env_df <- mfri_samples %>%
   left_join (hab_table, by = "stat_sq") %>%
-  left_join (mfri_glorys_df, by = "sample_id")
+  left_join (mfri_glorys_df, by = "sample_id") %>%
+  left_join (mfri_glorys_dev_df, by = "sample_id")
 
 
 
