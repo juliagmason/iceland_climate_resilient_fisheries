@@ -24,7 +24,13 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
                       sample_id = col_factor(),
 
                       stat_sq = col_factor(),
-                      bormicon_region = col_factor()
+                      bormicon_region = col_factor(),
+                      sst_dev = col_number(),
+                      bt_dev = col_number(),
+                      sst_max = col_number(),
+                      sst_min = col_number(),
+                      bt_max = col_number(),
+                      bt_min = col_number()
                       )
                       ) %>%
   filter (!(year == 2011 & season == "autumn"),
@@ -72,10 +78,21 @@ spp_totals <- mfri_abun %>%
   filter (count > 50) %>%  # need to have enough observations for the model: https://stackoverflow.com/questions/36719799/mgcv-gam-error-model-has-more-coefficients-than-data
   filter (!species %in% c(41, 72, 97, 35, 92, 49, 89))
 
+# save this species list
+# spp_Smooth_latlon <- spp_totals %>%
+#   rename (Spp_ID = species) %>%
+#   left_join (spp_list, by = 'Spp_ID') %>%
+#   select (Spp_ID, sci_name_underscore)
+# 
+#save (spp_Smooth_latlon, file = "../Models/spp_Smooth_latlon.RData")
+
 ```
 
+# First model -- Tensor season
 ### Fit individual full GAM for all species
 Note: these were fit with pre-2000 fall data, but 2011 excluded. 
+
+Re ran a few times, dropped season, then did with s(lat, lon) instead of te(lat, lon). On 9/14 I switched around the file structure so I have a folder for each model instead of separate PA/biomass folders. 
 ```{r fit_full_gam}
 
 # build folders to hold models
@@ -337,7 +354,7 @@ Scomber scombrus atl mackerel, env gam performed worse than naive gam. Only 350 
 Setting test set kg_log to 0 vs. -18 or something like that doesn't make a difference, because the test set kg_log actual values don't come into play for error measurement. using just kg_tot and exp(prediction). 
 
 
-### DISMo model evaluations
+### DISMO model evaluations
 Morely et al takes preds1 (fitted.values/gampred for PA). makes vector of presences and absences. evaluate acts on a column of predicted values at observed presences and ovserved absences
 
 for kappa and TSS, for the full model he doesn't use a threshold. modeldiag$tssmax is max tss for full model. tssmax.tt is max from test. tss is with e.ind, prevalence threshold from full model. tss.tt is with e.ind.tt, which is the minimum difference between test evaluation and training prevalence threshold. 
@@ -418,6 +435,269 @@ suitable_spp <- gam_diag %>%
 
 ```
 28 species, doesn't include cod?? really very few species out perform random walk. 
+
+# More habitat variables 
+### Incorporate Bormicon and temp max, min, stdev, no lat/lon
+
+Some of these are correlated, so I'm going to run the full model and also record the single dex expl and difference in dropping each variable, maybe can take a mean or something. just doing for PA
+```{r temp_hab}
+
+dir.create ("../Models/Bormicon_allTemp")
+dir.create ("../Models/Depth_Temp")
+
+
+# need > 92 observations
+spp_borm <- mfri_abun %>% 
+  group_by (species) %>% 
+  summarize (count = n()) %>% 
+  filter (count > 70) %>%  # 92 for borm # need to have enough observations for the model: https://stackoverflow.com/questions/36719799/mgcv-gam-error-model-has-more-coefficients-than-data
+  filter (!species %in% c(21))
+# hippoglossus did not converge for borm 
+
+# build data frame to hold gam results
+gam_stats <- data.frame ()
+
+for (spp in spp_25$Spp_ID) {
+
+  
+  # match species ID to scientific name
+  sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
+  
+  #grab presence/absence data for that species and attach to predictor data
+  spp_PA <- mfri_pa %>%
+    dplyr::select (sample_id, all_of(sci_name)) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # don't know how to do this elegantly within a pipe, but change colname to presence
+  colnames(spp_PA)[2] <- "Presence"
+  
+  
+  # non-zero biomass data; this will have variable size. 
+  spp_B <- mfri_abun %>%
+    filter (species == spp) %>%
+    left_join (mfri_pred, by = "sample_id")
+  
+  # set gamma
+  set.seed (10)
+  gamma_PA <- log (nrow (spp_PA)) / 2
+  gamma_B <- log (nrow (spp_B)) / 2
+  
+  # fit gams
+  # gam_PA <- gam (Presence ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_dev) + s(bt_dev) + s(sst_max) + s(sst_min) + s(bt_max) + s(bt_min),
+  #                family = "binomial", 
+  #                data = spp_PA,
+  #                gamma = gamma_PA)
+  # 
+  # gam_LB <- gam (kg_log ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_dev) + s(bt_dev) + s(sst_max) + s(sst_min) + s(bt_max) + s(bt_min),
+  #                family = "gaussian", 
+  #                data = spp_B,
+  #                gamma = gamma_B)
+  
+  
+    gam_PA <- gam (Presence ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max) ,
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+  
+  gam_LB <- gam (kg_log ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max) ,
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+  # record summary stats
+  gam_summary <- data.frame(
+    Species = sci_name,
+    PA_dev_exp = round(summary (gam_PA)$dev.expl, 2), 
+    PA_AIC = round(AIC(gam_PA), 2),
+    LB_dev_exp =  round(summary (gam_LB)$dev.expl, 2),
+    LB_AIC = round(AIC(gam_LB), 2)
+  )
+    
+  
+  # drop variables
+  
+  # full_terms <- c ("bormicon_region", "year", "s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_dev)", "s(bt_dev)", "s(sst_max)", "s(sst_min)", "s(bt_max)", "s(bt_min)")
+  
+  full_terms <- c ("s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_max)", "s(sst_min)", "s(bt_max)")
+
+  var_comp_df <- data.frame()
+  
+  for (x in full_terms){
+    # single variable model
+    formula <- as.formula (paste0 ("Presence ~", x))
+    G <- gam (formula, family = binomial, data = spp_PA)
+    
+    # full model without that variable
+   formula_drop <- as.formula (paste0 ("Presence ~", (paste (full_terms[! full_terms %in% x], collapse = " + "))))
+   G_drop <- gam (formula_drop, family = binomial, data = filter (spp_PA, !is.na (x)))
+   
+  
+    # extract summaries, put together in temporary df
+    drop_df <- data.frame (Var = x, 
+                      R2_s = round (summary(G)$dev.expl * 100, digits = 2),
+   
+                      Diff_full = round (summary(G_drop)$dev.expl * 100 - summary (gam_PA)$dev.expl * 100, 2)
+    )
+    
+    # rbind to full data frame
+    var_comp_df <- rbind (var_comp_df, drop_df)
+    
+  }
+  
+  # pivot var_comp wider
+  var_wide <- var_comp_df %>%
+    pivot_wider (names_from = Var, values_from = c(R2_s, Diff_full))
+    
+  # add to gam stats
+  gam_df <- cbind (gam_summary, var_wide)
+  
+  # rbind
+  gam_stats <- rbind (gam_stats, gam_df)
+  
+  
+  save (gam_PA, file = paste0("../Models/Depth_Temp/", sci_name, "_PA.Rdata"))
+  save (gam_LB, file = paste0("../Models/Depth_Temp/", sci_name, "_LB.Rdata"))
+    
+}
+
+ write.csv (borm_gam_summary, file = "../Models/borm_gam_table_tmp.csv", row.names = FALSE)
+ write.csv (gam_stats, file = "../Models/depth_temp_gam_table_25.csv", row.names = FALSE)
+
+```
+
+### AIC test for correlated vars
+do on sample of 1000 rows to move a bit faster
+accidentally removed bt min for all of the sst trials. so that's what I wanted to do anyway, so just keeping. 
+```{r temp_AIC}
+
+temp_AIC <- data.frame()
+
+for (spp in spp_25$Spp_ID) {
+
+  
+  # match species ID to scientific name
+  sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
+  
+  #grab presence/absence data for that species and attach to predictor data
+  spp_PA <- mfri_pa %>%
+    dplyr::select (sample_id, all_of(sci_name)) %>%
+    left_join (mfri_pred, by = "sample_id") %>%
+    slice_sample (n = 1000)
+  
+  
+  # don't know how to do this elegantly within a pipe, but change colname to presence
+  colnames(spp_PA)[2] <- "Presence"
+  
+  
+  # non-zero biomass data; this will have variable size. 
+  spp_B <- mfri_abun %>%
+    filter (species == spp) %>%
+    left_join (mfri_pred, by = "sample_id") %>%
+    ungroup() %>% # don't know why but this fixes it
+    slice_sample (prop = 0.3)
+  
+  # set gamma
+  set.seed (10)
+  gamma_PA <- log (nrow (spp_PA)) / 2
+  gamma_B <- log (nrow (spp_B)) / 2
+  
+    
+  # all temp vars
+  gam_PA <- gam (Presence ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max) + s(bt_min),
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+  
+  gam_LB <- gam (kg_log ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max) + s(bt_min),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+   # keep bt, drop bt min
+  gam_PA_btm <- gam (Presence ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max),
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+  
+  gam_LB_btm <- gam (kg_log ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+  # # keep bt min, drop bt
+  # gam_PA_bt <- gam (Presence ~  s(surface_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max),
+  #                family = "binomial", 
+  #                data = spp_PA,
+  #                gamma = gamma_PA)
+  # 
+  # gam_LB_bt <- gam (kg_log ~  s(surface_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max),
+  #                family = "gaussian", 
+  #                data = spp_B,
+  #                gamma = gamma_B)
+  
+  # drop sst_min
+  
+  gam_PA_smi <- gam (Presence ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(bt_max),
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+  
+  gam_LB_smi <- gam (kg_log ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(bt_max),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+  # drop sst_max
+  gam_PA_sma <- gam (Presence ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin)  + s(sst_min) + s(bt_max),
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+
+  gam_LB_sma <- gam (kg_log ~  s(surface_temp) + s(bottom_temp) + s(tow_depth_begin)  + s(sst_min) + s(bt_max),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+                 
+  # drop sst
+  gam_PA_st <- gam (Presence ~  s(bottom_temp) + s(tow_depth_begin)  + s(sst_min) + s(bt_max),
+                 family = "binomial", 
+                 data = spp_PA,
+                 gamma = gamma_PA)
+
+  gam_LB_st <- gam (kg_log ~   s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max),
+                 family = "gaussian", 
+                 data = spp_B,
+                 gamma = gamma_B)
+  
+  # record summary stats
+  AIC_summary <- data.frame(
+    Species = sci_name,
+    PA = round(AIC(gam_PA), 2),
+    LB = round(AIC(gam_LB), 2),
+    PA_bt = round (AIC(gam_PA_bt) - AIC(gam_PA), 2),
+    LB_bt = round (AIC (gam_LB_bt) - AIC(gam_LB), 2),
+    PA_btm = round (AIC(gam_PA_btm) - AIC(gam_PA), 2),
+    LB_btm = round (AIC (gam_LB_btm) - AIC(gam_LB), 2),
+    PA_st = round (AIC(gam_PA_st) - AIC(gam_PA), 2),
+    LB_st = round (AIC (gam_LB_st) - AIC(gam_LB), 2),
+    PA_smi = round (AIC(gam_PA_smi) - AIC(gam_PA), 2),
+    LB_smi = round (AIC (gam_LB_smi) - AIC(gam_LB), 2),
+    PA_sma = round (AIC(gam_PA_sma) - AIC(gam_PA), 2),
+    LB_sma = round (AIC (gam_LB_sma) - AIC(gam_LB), 2)
+    
+  )
+  
+  temp_AIC <- rbind (temp_AIC, AIC_summary)
+  
+}
+
+write.csv (temp_AIC, file = "../Models/temperature_AIC_check.csv", row.names = FALSE)
+    
+
+```
+
+### T
+
 ### Cod
 ```{r cod_data}
 #subset cod presence and absence
