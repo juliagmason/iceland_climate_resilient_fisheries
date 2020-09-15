@@ -58,7 +58,7 @@ sapply (glorys_files, rasterize_glorys_fun)
 # Calculate and rasterize standard deviation----
 
 sst_gl <- brick ("Data/glorys_sst_16_sample.grd")
-bt_gl <- brick ("Data/glorys_sst_16_sample.grd")
+bt_gl <- brick ("Data/glorys_bt_16_sample.grd")
 # function for applying focal statistics on a brick
 # https://stat.ethz.ch/pipermail/r-sig-geo/2016-May/024454.html
 multiFocal <- function(x, w=matrix(1, nr=3, nc=3), ...) {
@@ -82,4 +82,4 @@ sst_gl_dev <- multiFocal(sst_gl, fun = sd)
 system.time(bt_gl_dev <- multiFocal (bt_gl, fun = sd)) # 5mins
 
 writeRaster (sst_gl_dev, filename = "Data/glorys_sst_dev.grd")
-writeRaster (bt_gl_dev, filename = "Data/glorys_bt_dev.grd")
+writeRaster (bt_gl_dev, filename = "Data/glorys_bt_dev.grd", overwrite = TRUE)
