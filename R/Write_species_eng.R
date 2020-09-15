@@ -73,7 +73,7 @@ spp_names_match <- prelim_names_match %>%
                        Landed_name == "Mackerel" ~ "Atlantic mackerel",
                        Landed_name == "Monk" ~ "Monkfish",
                        Landed_name == "Norwegian spring-spawning herring" ~ "Herring/Norway-Icelandic",
-                       Landed_name == "Ocean redfish" ~ "Deep sea redfish", # not sure about this one
+                       Landed_name == "Deepwater redfish" ~ "Deepwater redfish", # changed from ocean redfish based on fiskistofa website and that 61 is caught each year http://www.fiskistofa.is/english/quotas-and-catches/catches-in-individual-species/
                        Landed_name == "Shrimp" ~ "Deep water prawn",
                        Landed_name == "Silver smelt" ~ "Greater argentine",
                        Landed_name == "Spiny dogfish" ~ "Dogfish",
@@ -117,7 +117,7 @@ comb_ds <- read_csv ("Data/MFRI_comb_survey.csv",
 )
 
 
-# count how many years each species has samples for each season
+# count how many years each species has samples for each season ----
 spp_yrs_sampled <- comb_ds %>%
   group_by (species, season) %>%
   summarise (n_yrs = length (unique (year))) %>%
@@ -133,8 +133,17 @@ spp_yrs_sampled <- comb_ds %>%
 
 
 # join to spp_table by species
+
+
+
+# add column for whether in quota system or not
+
+# http://www.fiskistofa.is/english/quotas-and-catches/catches-in-individual-species/ drop down menu
+quota_spp <- c(1:19, 21:28, 30:36, 40:49, 60:63, 77, 78, 86, 95, 130, 173, 191, 199, 210, 235, 279, 286, 689, 703, 949, 950, 951) # just note that 11 has been removed
+
 spp_table_nyrs <- spp_table_ldgs %>%
   left_join (spp_yrs_sampled, by = "Spp_ID") %>%
-  arrange (Spp_ID)
+  arrange (Spp_ID) %>%
+  mutate (Quota = ifelse (Spp_ID %in% quota_spp, 1, 0))
 
 write.csv (spp_table_nyrs, file = "Data/species_eng.csv", row.names = FALSE)
