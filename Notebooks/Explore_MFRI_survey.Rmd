@@ -773,6 +773,69 @@ ggcorrplot (cont.corr, hc.order = TRUE,
 ```
 surface temp and oisst very well correlated. bottom temp not as much, but still pretty good. 
 
+
+### Corrplot with GLORYS temperature data
+9/14/2020
+```{r glorys_corrplot}
+library(ggcorrplot)
+
+mfri_pred <-  read_csv ("../Data/MFRI_predictor_df.csv",
+                       col_types = cols(
+                      sample_id = col_factor(),
+                      stat_sq = col_factor(),
+                      bormicon_region = col_factor(),
+                      sst_dev = col_number(),
+                      bt_dev = col_number(),
+                      sst_max = col_number(),
+                      sst_min = col_number(),
+                      bt_max = col_number(),
+                      bt_min = col_number())
+)
+
+mfri_pred_vars <- mfri_pred %>%
+  dplyr::select ( tow_depth_begin, surface_temp, bottom_temp, sst_dev, bt_dev, sst_max, sst_min, bt_max) #, bt_min)
+
+mfri_comp <- mfri_pred_vars [ complete.cases (mfri_pred_vars),]
+cont.corr <- round (cor (mfri_comp), 1)
+
+ggcorrplot (cont.corr, hc.order = TRUE,
+            type = "lower",
+            lab = TRUE, 
+            lab_size = 3,
+            method = "circle",
+            ggtheme = theme_bw
+          )
+
+```
+-0.8 with sst_min and lat. 0.8 with bottom_Temp and bt_min. 0.7 for bt_max and bt, bt_max/bt_min. 0.7 for sst and sst_min, sst_max and sst_min, sst_min and bt_min. -0.7 sst_max and lat. 
+
+I think if I take out sst_min and bt_min or bottom temp I'd be in pretty good shape. might lean toward taking out bottom temp, bt_min is looking more helpful. 
+sst_min looks more important than sst_max or sst however, although maybe should just try AIC
+
+Looking at temperature_AIC_check.csv, dropping bt is much more problematic than dropping bt_min. 
+
+# bormicon region and depth, temp
+```{r bormicon}
+
+mfri_pred %>%
+  ggplot (aes (x = bormicon_region, y = tow_depth_begin)) +
+  geom_boxplot()
+
+mfri_pred %>%
+  ggplot (aes (x = bormicon_region, y = surface_temp)) +
+  geom_boxplot()
+
+mfri_pred %>%
+  ggplot (aes (x = bormicon_region, y = bottom_temp)) +
+  geom_boxplot()
+
+
+```
+Definitely big differences in depth. 3 in particular are below 1000
+surface temp also some differences, but actually fairly similar spread. bottom temp bigger differences, where deeper sites prob have lower temps. 
+
+
+
 ## Run linear models and look at residuals?
 
 start with cod
