@@ -47,8 +47,9 @@ for (i in 1:length(hist_files)) {
   # fill out temporary df with two rows for both scenarios
   
   hab_df <- data.frame (
-    # species name will be first two elements of file_split
-    species = rep (paste (file_split[1], file_split[2], sep = "_"), 2),
+    # species name will be first two elements of file_split. except squid and myctophidae
+    species = ifelse (file_split[1] %in% c ("Squid", "Myctophidae"), rep (file_split[1], 2),
+                      rep (paste (file_split[1], file_split[2], sep = "_"), 2),
     
     # scenario will be third from last [models might have variable descriptors]
     scenario = c(245, 585),
@@ -65,6 +66,8 @@ for (i in 1:length(hist_files)) {
 
 # save for now
 save (hab_change, file = "Data/perc_hab_change_Morely_smoothlatlon.RData")
+
+load ("Data/perc_hab_change_Morely_smoothlatlon.RData")
 head (hab_change)
 
 summary (hab_change$perc_change_Morely) # some extreme high values
@@ -84,6 +87,26 @@ hab_change %>%
   coord_flip() + 
   theme_bw() +
   facet_wrap (~scenario)
+
+
+# fill based on quota
+quota_status <- read_csv ("Data/species_eng.csv") %>%
+  select (sci_name_underscore, Quota) %>%
+  rename (species = sci_name_underscore)
+
+hab_change %>% 
+  left_join (quota_status, by = "species") %>% 
+  filter (perc_change_Morely < 750) %>%
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota)) %>% 
+  ggplot (aes (x = species, 
+               y = perc_change_Morely,
+               fill = Quota)) +
+  geom_bar (stat = "identity") + 
+  coord_flip() + 
+  theme_bw() +
+  facet_wrap (~scenario)
+  
   
   
   
