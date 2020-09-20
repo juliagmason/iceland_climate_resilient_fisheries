@@ -55,21 +55,15 @@ year_r <- raster::resample (year_r, pred_r_template, method = "bilinear") # not 
 # make vector of years
 #year_vals <- rep (2015:2100, each = 12) # may need to change to 2021 for CM 2.6
 
-# try just with 2091-2100
-year_vals <- rep (2091:2100, each = 12)
-
-# # Season ?? ----
-# # I have season still in the models I saved. should take out?? will also be weird because i'll need to arbitrarily assign the winter and summer months. for now will call it spring. actually doesn't work with factor, should change to numeric
-# season_r <- raster()
-# extent (season_r) <- extent (pred_r_template)
-# season_r <- raster::resample (season_r, pred_r_template, method = "bilinear")
-# 
-# season_vals <- 1
 
 
-# vector of names
-stack_names <- c("lat", "lon", "year", "surface_temp", "bottom_temp", "tow_depth_begin")
+# vector of names ----
+#stack_names <- c("lat", "lon", "year", "surface_temp", "bottom_temp", "tow_depth_begin")
 
+# td names
+stack_names <- c("surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max")
+
+# Future predictions ----
 # function to go through each species, CM, scenario ----
 
 # tried putting vector of year_vals in function argument but get errors--attempt to apply non-function. maybe better to set it out here. do 2060-2080, to match with kristin/CM26
@@ -78,11 +72,12 @@ year_vals <- rep (2061:2080, each = 12) # model projections are monthly
 predict_brick_fun <- function (sci_name, GAM, scenario) {
   
   print (sci_name)
+  print (Sys.time())
   start1 <- Sys.time()
   
   # load saved GAM for species of interest
-  load (paste0("Models/PresAbs/", GAM, "/", sci_name, "_PA_full.Rdata")) # gam_PA
-  load (paste0("Models/Biomass/", GAM, "/", sci_name, "_LB_full.Rdata")) # gam_LB
+  load (paste0("Models/", GAM, "/", sci_name, "_PA.Rdata")) # gam_PA. add PA_full.RData for Smooth_latlon
+  load (paste0("Models/", GAM, "/", sci_name, "_LB.Rdata")) # gam_LB
   
   # CM2.6 run corresponds to 585 scenario, but don't have a 245 equivalent. 
   if (scenario == 585) {
@@ -90,7 +85,7 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
   } else {CM_list = c("gfdl", "cnrm", "ipsl", "mohc") }
   
   for (CM in CM_list) {
-    print (CM)
+    #print (CM)
     
     # load temperature bricks
     sst_brick <- brick (paste0("Data/CMIP6_delta_projections/", CM, "_", scenario, "_sst_projection.grd"))
@@ -107,9 +102,25 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
     sst_r <- sst_brick[[start_val + 1]] 
     bt_r <- bt_brick[[start_val + 1]]
     
-    values (year_r) <- year_vals[1]
+    # also calculate sst min/max and bt max
+    # subset start value and 11 preceding layers, then cal
+    sst_max_r <- calc (
+      subset (sst_brick, (start_val - 11):start_val),
+    max)
     
-    stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
+    sst_min_r <- calc (
+      subset (sst_brick, (start_val - 11):start_val),
+      min)
+    
+    bt_max_r <- calc (
+      subset (bt_brick, (start_val - 11):start_val),
+      max)
+    
+    
+    #values (year_r) <- year_vals[1]
+    
+    #stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
+    stack_1 <- stack (sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r)
     names (stack_1) <- stack_names
     
     # crop to Iceland EEZ
@@ -126,7 +137,7 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
 
 
     # for loop to stack for all years----
-    start_time <- Sys.time()
+    #start_time <- Sys.time()
     for (i in 2:length(year_vals)) { # length of time series
       
       # if doing the whole time series, progress report
@@ -135,9 +146,23 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
       sst_i <- sst_brick[[i + start_val]]
       bt_i <- bt_brick[[i + start_val]]
       
-      values (year_r) <- year_vals[i]
+      sst_max_i <- calc (
+        subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
+        max)
       
-      stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
+      sst_min_i <- calc (
+        subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
+        min)
+      
+      bt_max_i <- calc (
+        subset (bt_brick, (i + start_val - 12):(i + start_val -1)),
+        max)
+      
+      
+      #values (year_r) <- year_vals[i]
+      
+      #stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
+      stack_i <- stack (sst_i, bt_i, depth_r, sst_max_i, sst_min_i, bt_max_i)
       names (stack_i) <- stack_names
       
       clip_i <- mask (stack_i, eez)
@@ -154,9 +179,9 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
     
     
     } # end year_vals for loop
-    end_time = Sys.time()
+    #end_time = Sys.time()
   
-    print (end_time - start_time)
+    #print (end_time - start_time)
     
     # keep as stack, give model name
     stack_name <- paste0 (CM, "_stack")
@@ -164,29 +189,33 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
 
   } # end CM for loop
     
-  
+  # stack up all the climate model predictions
   if (scenario == 585) {ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack, CM26_stack)} else {ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack) }
     
-  system.time(ensemble_brick <- brick (ensemble_stack)) # 2.4s for 10 years. convert to brick to make stackapply go faster
+  # convert to brick to make stackapply go faster
+  ensemble_brick <- brick (ensemble_stack) # 2.4s for 10 years. 
   
-  system.time(
-    mean_brick <- stackApply (ensemble_brick, mean, indices = 1:length(year_vals)) # also ~2s
-  )
+  # take mean
+  mean_brick <- stackApply (ensemble_brick, mean, indices = 1:length(year_vals)) # also ~2s
   
-    # write prediction brick as raster
-     save_path <- paste (sci_name, GAM, scenario, year_vals[1], year_vals[length(year_vals)], sep = "_")
+  
+  # write prediction brick as raster
+  save_path <- paste (sci_name, GAM, scenario, year_vals[1], year_vals[length(year_vals)], sep = "_")
     
-     writeRaster (mean_brick, file = paste0("Models/Prediction_bricks/", save_path, ".grd"), overwrite = TRUE)
-end1 <- Sys.time()
+  writeRaster (mean_brick, file = paste0("Models/Prediction_bricks/", save_path, ".grd"), overwrite = TRUE)
+  
+  end1 <- Sys.time()
+  
+  # let me know how long that took
+  print (end1 - start1)
 
-print (end1 - start1)
 
 } # end function
 
 # test again
 
 
-predict_brick_fun (sci_name = "Lepidorhombus_whiffiagonis", GAM = "Smooth_latlon", scenario = 585)
+predict_brick_fun (sci_name = "Lepidorhombus_whiffiagonis", GAM = "Depth_Temp", scenario = 585)
 
 # run on full species list that I ran GAMs for----
 load ("Models/spp_Smooth_latlon.RData")
@@ -196,6 +225,12 @@ GAM <- "Smooth_latlon"
 system.time (sapply (spp, predict_brick_fun, GAM = GAM, scenario = 585)) # 5 hours for 25 spp, 25 hours for 65 species, 20 ears
 
 system.time (sapply (spp_Smooth_latlon$sci_name_underscore, predict_brick_fun, GAM = GAM, scenario = 245))
+sapply (spp_Smooth_latlon$sci_name_underscore, predict_brick_fun, GAM = GAM, scenario = 585)
+
+# run for temp depth ----
+load ("Models/spp_Depth_Temp.RData")
+system.time (sapply (td_spp_names, predict_brick_fun, GAM = "Depth_Temp", scenario = 245)) #25 hours
+sapply (td_spp_names, predict_brick_fun, GAM = "Depth_Temp", scenario = 585)
 
 ## Historical period using GLORYS temperature ----
 
@@ -207,13 +242,17 @@ hist_brick_fun <- function (sci_name, GAM) {
   start1 <- Sys.time()
   
   # load saved GAM for species of interest
-  load (paste0("Models/PresAbs/", GAM, "/", sci_name, "_PA_full.Rdata")) # gam_PA
-  load (paste0("Models/Biomass/", GAM, "/", sci_name, "_LB_full.Rdata")) # gam_LB
+  load (paste0("Models/", GAM, "/", sci_name, "_PA.Rdata")) # gam_PA
+  load (paste0("Models/", GAM, "/", sci_name, "_LB.Rdata")) # gam_LB
   
     
   # load temperature bricks
   sst_brick <- brick ("Data/GLORYS_sst_hist.grd")
   bt_brick <- brick ("Data/GLORYS_bt_hist.grd")
+  
+  sst_max_brick <- brick ("Data/glorys_sst_month_max.grd")
+  sst_min_brick <- brick ("Data/glorys_sst_month_min.grd")
+  bt_max_brick <- brick ("Data/glorys_bt_month_max.grd")
   
     
     # make first prediction raster to start the stack
@@ -221,9 +260,15 @@ hist_brick_fun <- function (sci_name, GAM) {
     sst_r <- sst_brick[[1]] 
     bt_r <- bt_brick[[1]]
     
-    values (year_r) <- year_vals[1]
+    # need to subset year and take max/min. 1993-2018, so 12 mos prior to Jan 2000 [85] would be 73:84
+    smax_r <- calc (subset (sst_max_brick, 73:84), max)
+    smin_r <- calc (subset (sst_min_brick, 73:84), min)
+    bmax_r <- calc (subset (bt_max_brick, 73:84), max)
     
-    stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
+    #values (year_r) <- year_vals[1]
+    
+    #stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
+    stack_1 <- stack (sst_r, bt_r, depth_r, smax_r, smin_r, bmax_r)
     names (stack_1) <- stack_names
     
     # crop to Iceland EEZ
@@ -240,18 +285,23 @@ hist_brick_fun <- function (sci_name, GAM) {
     
     
     # for loop to stack for all years----
-    start_time <- Sys.time()
+    #start_time <- Sys.time()
     for (i in 2:length(year_vals)) { # length of time series
       
       # if doing the whole time series, progress report
       
-      if (i%%10 == 0) {print (i)}
+      #if (i%%10 == 0) {print (i)}
       sst_i <- sst_brick[[i]]
       bt_i <- bt_brick[[i]]
       
-      values (year_r) <- year_vals[i]
+      smax_i <- calc (subset (sst_max_brick, (72 + i):(83 + i)), max)
+      smin_i <- calc (subset (sst_min_brick, (72 + i):(83 + i)), min)
+      bmax_i <- calc (subset (bt_max_brick, (72 + i):(83 + i)), max)
       
-      stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
+      #values (year_r) <- year_vals[1]
+      
+      stack_i <- stack (sst_i, bt_i, depth_r, smax_i, smin_i, bmax_i)
+      #stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
       names (stack_i) <- stack_names
       
       clip_i <- mask (stack_i, eez)
@@ -268,12 +318,12 @@ hist_brick_fun <- function (sci_name, GAM) {
       
       
     } # end year_vals for loop
-    end_time = Sys.time()
+    #end_time = Sys.time()
     
-    print (end_time - start_time)
+    #print (end_time - start_time)
 
   
-  system.time(pred_brick <- brick (pred_stack)) # 2.4s for 10 years. convert to brick to make stackapply go faster
+  pred_brick <- brick (pred_stack) # 2.4s for 10 years. convert to brick to make stackapply go faster
   
   # write prediction brick as raster
   save_path <- paste (sci_name, GAM, "2000_2018", sep = "_")
@@ -291,6 +341,12 @@ dim (cod_test)
 plot (cod_test, 100)
 
 system.time (sapply (spp, hist_brick_fun, GAM = "Smooth_latlon")) # 4.5 hours
+
+hist_brick_fun ("Gadus_morhua", "Depth_Temp")
+sapply (td_spp_names, hist_brick_fun, GAM = "Depth_Temp")
+td_spp_names_2 <- td_spp_names[22:length(td_spp_names)]
+
+
 ### Trial code down here #######
 
 # plot check 
