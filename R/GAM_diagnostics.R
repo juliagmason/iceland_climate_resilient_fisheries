@@ -38,7 +38,7 @@ mfri_abun <- read_csv ("Data/MFRI_comb_survey.csv",
 
 
 # predictor variables
-mfri_pred <-  read_csv ("../Data/MFRI_predictor_df.csv",
+mfri_pred <-  read_csv ("Data/MFRI_predictor_df.csv",
                         col_types = cols(
                           sample_id = col_factor(),
                           stat_sq = col_factor(),
@@ -48,10 +48,12 @@ mfri_pred <-  read_csv ("../Data/MFRI_predictor_df.csv",
                           sst_max = col_number(),
                           sst_min = col_number(),
                           bt_max = col_number(),
-                          bt_min = col_number())
-) %>%
+                          bt_min = col_number()
+                          )
+                        ) %>%
   filter (!(year == 2011 & season == "autumn"),
-          !(year < 2000 & season == "autumn"))  # remove autumn 2011, 131 samples. Also cutting out autumn pre-2000 (as of 7/23/2020. so did this with MASE fitting, but not with original run through of full gams)
+          !(year < 2000 & season == "autumn")
+          )  # remove autumn 2011, 131 samples. Also cutting out autumn pre-2000 (as of 7/23/2020. so did this with MASE fitting, but not with original run through of full gams)
 
 # species list
 spp_list <- read_csv ("Data/species_eng.csv",
@@ -67,22 +69,23 @@ spp_totals <- mfri_abun %>%
   filter (!species %in% c(41, 72, 97, 35, 92, 49, 89)) # cut out problematic species that filtering by # observations doesn't catch, e.g. Pandalus has no presences in test data. 72 more coefficients
 
 
-# write unction ----
+# write function ----
 # function to run training/testing models and store diagnostics for each species, based on GAM formula. Use spp IDs because that's what's in the abundance dataset. 
+
+# running into all sort of problems with factors, so do this with sci_name
  
 
-gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
+gam_diag_fun <- function (model_terms, naive_terms, spp_names) {
   
   # empty data frame to hold GAM info
   GAM_diag <- data.frame() 
   
-  for (i in 1:length(spp_ids)) { # actually nicer to print a number than the species name for keeping track
+  for (i in 1:length(spp_names)) { # actually nicer to print a number than the species name for keeping track
     
-    # link species code to scientific name in PA dataset
-    sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp_ids$species[i])]
+    spp_id <- as.numeric(as.character(spp_list$Spp_ID[which (spp_list$sci_name_underscore == spp_names[i])])) # this fixes weird factor problem
     
     # signal where we are in the process
-    print(paste(i, sci_name, Sys.time()))  
+    print(paste(i, spp_names[i], spp_id, Sys.time()))  
     
     # ==================
     # Data setup ----
@@ -91,13 +94,13 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
     #Presence/absence data for selected species
     PA_spp <- mfri_pa %>%
       # https://tidyselect.r-lib.org/reference/faq-external-vector.html need to use all_of for externally named variable
-      dplyr::select (sample_id, all_of(sci_name)) 
+      dplyr::select (sample_id, all_of(spp_names[i])) 
     colnames (PA_spp)[2] <- "Presence"
     
     
     # biomass data--need presence-only training set and presence/absence testing set
     LB_spp <- mfri_abun %>%
-      filter (species == spp)
+      filter (species == spp_id)
     
     full_data_spp <- PA_spp %>%
       left_join (LB_spp, by = "sample_id") %>% # add abundance data
@@ -160,15 +163,15 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
     
     conf <- as.data.frame (e_test@confusion)
     
-    p_train <- gam_PA$fitted.values[which(train_spp$Presence == 1)]
-    a_train <- gam_PA$fitted.values[which(train_spp$Presence == 0)]
+    #p_train <- gam_PA$fitted.values[which(train_spp$Presence == 1)]
+    #a_train <- gam_PA$fitted.values[which(train_spp$Presence == 0)]
     
-    e_train <- evaluate(p_train, a_train)
+    #e_train <- evaluate(p_train, a_train)
     
     # find prevalence threshold for training data, and then threshold from testing data that's closest to it (from Morely code)
-    prev_th_train <- threshold (e_train, stat = "prevalence")
-    th_diff <- abs (e_test@t - prev_th_train)
-    e_ind <- which (th_diff == min(th_diff))
+    #prev_th_train <- threshold (e_train, stat = "prevalence")
+    #th_diff <- abs (e_test@t - prev_th_train)
+    #e_ind <- which (th_diff == min(th_diff))
     
     
     # ==================
@@ -242,7 +245,7 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
     spp_df <- data.frame (
       
       ### general info
-      species = sci_name,
+      species = spp_names[i],
       n_presence = length (which (full_data_spp$Presence == 1)),
       
       ### presence/absence performance
@@ -251,10 +254,10 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
       # TSS should be sensitivity + specificity - 1. Morely does tss_max from full model. going to do max from test?
       # https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/j.1365-2664.2006.01214.x
       TSS_mx = round (max (with (conf, (tp/(tp + fn) + (tn)/(tn+fp) - 1))), 2),
-      TSS_th = round (with (conf[e_ind,], (tp/(tp + fn) + (tn)/(tn+fp) - 1)), 2),
+      #TSS_th = round (with (conf[e_ind,], (tp/(tp + fn) + (tn)/(tn+fp) - 1)), 2),
       
       Kap_mx = round (max(e_test@kappa), 2),
-      Kap_th = round (e_test@kappa[e_ind], 2),
+      #Kap_th = round (e_test@kappa[e_ind], 2),
       
       ### log biomass performance
       LB_dev = round (summary (gam_LB)$dev.expl, 2),
@@ -266,13 +269,15 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
       
       # for Naive GAM
       MASE_GAM = round (mean (MAE_gam, na.rm = TRUE) / mean (MAE_gam_naive, na.rm = TRUE), 2),
-      DM_GAM_stat = round (dm_gam$statistic, 2),
       DM_GAM_p = round (dm_gam$p.value, 2),
+      DM_GAM_stat = round (dm_gam$statistic, 2),
+     
       
       # for Random walk
       MASE_RWF = round (mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE), 2),
-      DM_RW_stat = round (dm_rw$statistic, 2),
-      DM_RW_p = round (dm_rw$p.value, 2)
+      DM_RW_p = round (dm_rw$p.value, 2),
+      DM_RW_stat = round (dm_rw$statistic, 2)
+
       
     ) # end df
     
@@ -280,7 +285,9 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
     GAM_diag <- rbind (GAM_diag, spp_df)
     
   } # end for loop
-      
+  
+  # hard coding this not sure what to name
+  write.csv (GAM_diag, file = "Models/Temp_Depth_GAM_diagnostics.csv", row.names = FALSE)    
   
 } # end function
 
@@ -289,35 +296,47 @@ gam_diag_fun <- function (model_terms, naive_terms, spp_ids) {
 td_model_terms <- "s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) +  s(sst_max) + s(sst_min) + s(bt_max)"
 td_naive_terms <- "s(tow_depth_begin)"
 
-td_spp_ids <- mfri_abun %>% 
+td_spp <-
+  mfri_abun %>% 
   group_by (species) %>% 
   summarize (count = n()) %>% 
-  filter (count > 60)
+  # match levels to spp_list to fix factor issue
+  #mutate (species = factor (species, levels = levels(spp_list$Spp_ID))) %>%
+  filter (count > 60) %>%
+  filter (!species %in% c(41, 49, 72, 92, 97)) 
+
+td_spp_names <- spp_list$sci_name_underscore[which (spp_list$Spp_ID %in% td_spp$species)] 
 
 
-gam_diag_fun (model_terms = td_model_terms, naive_terms = td_naive_terms, spp_ids = td_spp_ids)
+gam_diag_fun (model_terms = td_model_terms, naive_terms = td_naive_terms, spp_names = td_spp_names)
   
+# there's something wrong with c. rupestris with p_train, maybe about missing values and years. cutting out p_train threshold values for now. 
 
-  
-  
-  
-  
-  
-  
-  
-  
-  # I'm curious how much the last value or number of trailing zeros of the training set affects naive forecast. Count how many trailing zeros--total number minus the last non-zero row number. 
-  
-  GAM_diag$Train_last_zeros[i] <- nrow (train_spp) - max (which (train_spp$kg_log != 0))
-
-}
-
-
-write.csv (GAM_diag, file = "Models/GAM_diagnostics_all_spp.csv", row.names = FALSE)
 
 ## check stats----
-GAM_diag <- read.csv("Models/GAM_diagnostics_all_spp.csv")
+full_GAM_diag <- read.csv("Models/GAM_diagnostics_all_spp.csv")
+td_GAM_diag <- read.csv ("Models/Temp_Depth_GAM_diagnostics.csv")
 
-GAM_diag %>%
-  filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>%
-  View()
+full_good <- full_GAM_diag %>%
+  filter (MASE_GAM < 1 & DM_GAM_p < 0.05) # 30
+
+td_good <- td_GAM_diag %>%
+  filter (MASE_GAM < 1 & DM_GAM_p < 0.05) # 46
+
+td_good$species[which (!td_good$species %in% full_good$Species)]
+# cod, molva, brosme, ray, monkfish, halibut, limanda
+
+full_good$Species[which (!full_good$Species %in% td_good$species)]
+# M_aegle, Pollack, clupea, scomber, blue ling
+
+# shared spp
+full_good$Species[which (full_good$Species %in% td_good$species)]
+# lemon, lump, merlan, sebastes marinus, a minor, whiffia, silus, mentella, molva dyp
+
+summary (full_GAM_diag$PA_dev)
+summary (td_GAM_diag$PA_dev)
+
+summary (full_GAM_diag$LB_dev)
+summary (td_GAM_diag$LB_dev)
+
+# full definitely outperforms td in terms of dev expl. 
