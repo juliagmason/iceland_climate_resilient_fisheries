@@ -12,8 +12,15 @@ pred_files_245 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Sm
 pred_files_585 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Smooth_latlon_585_2061_2080.grd")
 
 
+hist_files <- list.files (path = "Models/Prediction_bricks", pattern = ".*Depth_Temp.*2000_2018.grd")
+pred_files_245 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Depth_Temp_245_2061_2080.grd")
+pred_files_585 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Depth_Temp_585_2061_2080.grd")
+
+
+
 # list of species names in Models folder
 #load ("Models/spp_Smooth_latlon.RData")
+load ("Models/spp_Depth_Temp.RData") # td_spp_names. same, just squid and myctophids
 
 # make data table: species, scenario, period, mean, sd
 
@@ -48,8 +55,10 @@ for (i in 1:length(hist_files)) {
   
   hab_df <- data.frame (
     # species name will be first two elements of file_split. except squid and myctophidae
-    species = ifelse (file_split[1] %in% c ("Squid", "Myctophidae"), rep (file_split[1], 2),
-                      rep (paste (file_split[1], file_split[2], sep = "_"), 2),
+    species = ifelse (file_split[1] %in% c ("Squid", "Myctophidae"), 
+                      rep (file_split[1], 2),
+                      rep (paste (file_split[1], file_split[2], sep = "_"), 2)
+                      ),
     
     # scenario will be third from last [models might have variable descriptors]
     scenario = c(245, 585),
@@ -62,13 +71,21 @@ for (i in 1:length(hist_files)) {
   
   hab_change <- rbind (hab_change, hab_df)
 
-}
+} # end for loop
 
 # save for now
 save (hab_change, file = "Data/perc_hab_change_Morely_smoothlatlon.RData")
+save (hab_change, file = "Data/perc_hab_change_Morely_depthtemp.RData")
 
+# load and plot ----
 load ("Data/perc_hab_change_Morely_smoothlatlon.RData")
+
 head (hab_change)
+
+# fix underscore issue for smoothlatlon
+# not working with mutate for some reason
+hab_change$species[which (hab_change$species == "Squid_Smooth")] <- "Squid"
+hab_change$species[which (hab_change$species == "Myctophidae_Smooth")] <- "Myctophidae"
 
 summary (hab_change$perc_change_Morely) # some extreme high values
 
@@ -79,33 +96,97 @@ spp_order <- hab_change %>%
   filter (perc_change_Morely < 750, scenario == 245) %>%
   arrange (perc_change_Morely)
 
-hab_change %>%
-  filter (perc_change_Morely < 750) %>%
-  mutate (species = factor(species, levels = spp_order$species)) %>% 
-  ggplot (aes (x = species, y = perc_change_Morely)) +
-  geom_bar (stat = "identity") + 
-  coord_flip() + 
-  theme_bw() +
-  facet_wrap (~scenario)
-
-
 # fill based on quota
 quota_status <- read_csv ("Data/species_eng.csv") %>%
   select (sci_name_underscore, Quota) %>%
   rename (species = sci_name_underscore)
 
+# fill based on certainty
+smoothLL_MASE <- read_csv ("Models/GAM_diagnostics_all_spp.csv") %>%
+  rename (species = Species)
+
+
+png (file = "Figures/Percent_hab_change_by_quota_SmoothLatlon.png", width = 16, height = 9, units = "in", res = 300)
 hab_change %>% 
   left_join (quota_status, by = "species") %>% 
+  left_join (smoothLL_MASE, by = "species") %>% 
   filter (perc_change_Morely < 750) %>%
   mutate (species = factor(species, levels = spp_order$species),
-          Quota = factor(Quota)) %>% 
+          Quota = factor(Quota),
+          fill_col = case_when(
+            MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
+            MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
+            MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
+            )
+          ) %>% 
   ggplot (aes (x = species, 
                y = perc_change_Morely,
-               fill = Quota)) +
+               color = Quota, 
+               fill = fill_col,
+               width = 0.85)) +
+  scale_fill_manual (values = c("lightgray",  "#F8766D", "#00BFC4")) +
+  labs (fill = "",
+        y = "Percent habitat change") +
+  guides (color = FALSE) +
   geom_bar (stat = "identity") + 
   coord_flip() + 
   theme_bw() +
-  facet_wrap (~scenario)
+  facet_wrap (~scenario) +
+  ggtitle ("Smoothed lat/lon Percent habitat change, 2000-2018 vs 2061-2080")
+dev.off()
+
+
+# depth/temp ----
+load ("Data/perc_hab_change_Morely_depthtemp.RData")
+
+spp_order <- hab_change %>%
+  filter (perc_change_Morely < 750, scenario == 245) %>%
+  arrange (perc_change_Morely)
+
+# quota and model diagnostics
+quota_status <- read_csv ("Data/species_eng.csv") %>%
+  select (sci_name_underscore, Quota) %>%
+  rename (species = sci_name_underscore)
+
+depth_temp_MASE <- read_csv ("Models/Temp_Depth_GAM_diagnostics.csv")
+
+png (file = "Figures/Percent_hab_change_by_quota_DepthTemp.png", width = 16, height = 9, units = "in", res = 300)
+hab_change %>% 
+  left_join (quota_status, by = "species") %>% 
+  left_join (depth_temp_MASE, by = "species") %>% 
+mutate (Model_suitable = ifelse (
+  MASE_GAM < 1 & DM_GAM_p < 0.05, 
+  "1", 
+  "0"
+)) %>%
+  filter (perc_change_Morely < 750, !is.na (Model_suitable)) %>%
+  # create column to manipulate fill based on quota and model
+  # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota),
+          fill_col = case_when(
+            Model_suitable == 0 ~ "Model unsuitable",
+            Model_suitable == 1 & Quota == 1 ~ "Quota",
+            Model_suitable == 1 & Quota == 0 ~ "Non-Quota"
+            ) 
+          ) %>% 
+  ggplot (aes (x = species, 
+               y = perc_change_Morely,
+               color = Quota, 
+               fill = fill_col,
+               width = 0.85)) +
+  scale_fill_manual (values = c("lightgray",  "#F8766D", "#00BFC4")) +
+  labs (fill = "",
+        y = "Percent habitat change") +
+  guides (color = FALSE) +
+  geom_bar (stat = "identity") + 
+  coord_flip() + 
+  theme_bw() +
+  facet_wrap (~scenario) +
+  ggtitle ("Depth/Temp model Percent habitat change, 2000-2018 vs. 2061-2080")
+
+dev.off()
+
   
   
   
