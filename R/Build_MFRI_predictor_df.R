@@ -81,9 +81,11 @@ mfri_sal_df$sample_id <- as.factor(mfri_sal_df$sample_id)
 
 hab_table <- read.csv ("Data/Raw_data/bormicon_table.csv") %>%
   group_by(stat_sq) %>%
-  summarize (bormicon_region = first(subdivision)) %>%
+  summarize (bormicon_region = first(division),
+             bormicon_subdivision = first (subdivision)) %>%
   mutate (stat_sq = as.factor(stat_sq))
 
+# mfri has a 4214 stat sq not in hab_table. I think I looked at it, definitely in 421 stat sq. division would be 101. 
 
 # GLORYS sst min, max, stdev ----
 
@@ -190,18 +192,13 @@ for (x in glorys_dates) {
 
 mfri_env_df <- mfri_samples %>%
   left_join (hab_table, by = "stat_sq") %>%
+  # fix missing stat_sq, division should be 101
+  mutate (bormicon_region = ifelse (stat_sq == "4214", 101, bormicon_region)) %>%
+  left_join (mfri_sal_df, by = "sample_id") %>%
   left_join (mfri_glorys_df, by = "sample_id") %>%
   left_join (mfri_glorys_dev_df, by = "sample_id")
 
 
-# add salinity back in
-mfri_env_df <- read_csv("Data/MFRI_predictor_df.csv", 
-                        col_types = cols(
-                          sample_id = col_factor())
-                        )
-
-mfri_env_df <- mfri_env_df %>%
-  left_join (mfri_sal_df, by = "sample_id")
 
 # write csv----
 write.csv (mfri_env_df, file = "Data/MFRI_predictor_df.csv", row.names = FALSE)
@@ -228,9 +225,10 @@ gins_temp_files <- list.files (path = "../Documents/Python Scripts/", pattern = 
 gins <- nc_open (gins_temp_files[1])
 lat <- ncvar_get (gins, "lat")
 lon <- ncvar_get (gins, "lon")
+gins_bt <- ncvar_get (gins, "t_an")
 nc_close(gins)
 
-image(lat, lon, gins_bt[[1]])
+image(lat, lon, gins[[1]])
 maps::map("world", add = TRUE)
 
 plot(gins_bt,1)
@@ -270,8 +268,15 @@ ggplot(data = world) +
   theme_bw() +
   theme (axis.text = element_blank())
 
-# these ones are quite close to shore, so maybe not getting gins. try to plot?
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point (aes (x = lon, y = lat),alpha = 0.7, data = mfri_env_df) +
+  theme_bw() +
+  theme (axis.text = element_blank())
 
+# these ones are quite close to shore, so maybe not getting gins. try to plot?
+ missing_bt <- filter (mfri_env_df, month == 4)
 # make spatial
 coordinates(missing_bt) <- ~lon + lat
 
@@ -280,3 +285,13 @@ points (missing_bt)
 
 # do any of these points not have their own bt
 length (which (is.na(missing_bt$bottom_temp))) # 53
+
+## bormicon/stat sq issue 
+gplot(data = world) +
+       geom_sf() +
+      coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+      geom_point (aes (x = lon, y = lat, col = season), 
+                                   alpha = 0.7, 
+                                     data = filter (mfri_samples, stat_sq == "4214")) + 
+       theme_bw() +
+       theme (axis.text = element_blank())
