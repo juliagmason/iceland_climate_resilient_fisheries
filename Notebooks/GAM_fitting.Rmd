@@ -4,11 +4,9 @@ date: "07-09-2020"
 output: html_notebook
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+I'm using this notebook to examine GAM model outputs and compare GAMs. I'm actually running/fitting the gams in Fit_GAMS_fun.R
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
-```{r setup}
+```{r setup, eval = FALSE}
 library (mgcv)
 library (tidyverse)
 
@@ -115,43 +113,45 @@ maj_spp_gam_summary <- data.frame ()
 # 9/8/2020 do again for additional species not in top 25
 addl_spp <- as.character(spp_totals$species[which (! spp_totals$species %in% spp_25$Spp_ID)])  # use as.character to avoid error with differing factor levels
 
-#for (spp in spp_25$Spp_ID) {
-  for (spp in addl_spp) {
+for (spp in spp_25$Spp_ID) {
+  #for (spp in addl_spp) {
   
   
   # match species ID to scientific name
   sci_name <- spp_list$sci_name_underscore[which (spp_list$Spp_ID == spp)]
   
   #grab presence/absence data for that species and attach to predictor data
-  spp_PA <- mfri_pa %>%
-    dplyr::select (sample_id, all_of(sci_name)) %>%
-    left_join (mfri_pred, by = "sample_id")
+  # spp_PA <- mfri_pa %>%
+  #   dplyr::select (sample_id, all_of(sci_name)) %>%
+  #   left_join (mfri_pred, by = "sample_id")
+  # 
+  # # don't know how to do this elegantly within a pipe, but change colname to presence
+  # colnames(spp_PA)[2] <- "Presence"
+  # 
+  # 
+  # # non-zero biomass data; this will have variable size. 
+  # spp_B <- mfri_abun %>%
+  #   filter (species == spp) %>%
+  #   left_join (mfri_pred, by = "sample_id")
+  # 
+  # # set gamma
+  # set.seed (10)
+  # gamma_PA <- log (nrow (spp_PA)) / 2
+  # gamma_B <- log (nrow (spp_B)) / 2
+  # 
+  # # fit gams
+  # gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+  #                family = "binomial", 
+  #                data = spp_PA,
+  #                gamma = gamma_PA)
+  # 
+  # gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
+  #                family = "gaussian", 
+  #                data = spp_B,
+  #                gamma = gamma_B)
   
-  # don't know how to do this elegantly within a pipe, but change colname to presence
-  colnames(spp_PA)[2] <- "Presence"
-  
-  
-  # non-zero biomass data; this will have variable size. 
-  spp_B <- mfri_abun %>%
-    filter (species == spp) %>%
-    left_join (mfri_pred, by = "sample_id")
-  
-  # set gamma
-  set.seed (10)
-  gamma_PA <- log (nrow (spp_PA)) / 2
-  gamma_B <- log (nrow (spp_B)) / 2
-  
-  # fit gams
-  gam_PA <- gam (Presence ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
-                 family = "binomial", 
-                 data = spp_PA,
-                 gamma = gamma_PA)
-  
-  gam_LB <- gam (kg_log ~ s(lat, lon) + year + s(surface_temp) + s(bottom_temp) +s(tow_depth_begin),
-                 family = "gaussian", 
-                 data = spp_B,
-                 gamma = gamma_B)
-  
+  load (paste0("../Models/First_full_tensor_season/", sci_name, "_PA_full.RData"))
+   load (paste0("../Models/First_full_tensor_season/", sci_name, "_LB_full.RData"))
   
   # populate table
   summary <- cbind (sci_name, 
@@ -169,8 +169,8 @@ addl_spp <- as.character(spp_totals$species[which (! spp_totals$species %in% spp
   
   maj_spp_gam_summary <- rbind (maj_spp_gam_summary, summary)
   
-  save (gam_PA, file = paste0("../Models/PresAbs/Smooth_latlon/", sci_name, "_PA_full.Rdata"))
-  save (gam_LB, file = paste0("../Models/Biomass/Smooth_latlon/", sci_name, "_LB_full.Rdata"))
+  #save (gam_PA, file = paste0("../Models/PresAbs/Smooth_latlon/", sci_name, "_PA_full.Rdata"))
+  #save (gam_LB, file = paste0("../Models/Biomass/Smooth_latlon/", sci_name, "_LB_full.Rdata"))
     
 }
 
@@ -181,6 +181,7 @@ colnames (maj_spp_gam_summary) <- c("Species",
 #https://stackoverflow.com/questions/24829027/unimplemented-type-list-when-trying-to-write-table
 # weird error about list 
 maj_spp_gam_summary <- apply(maj_spp_gam_summary,2,as.character)
+write.csv (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table_tensorfull.csv")
 write.csv (maj_spp_gam_summary, file = "../Models/Major_spp_summary_table_slatlon.csv", row.names = FALSE)
 write.csv (MASE_all_spp, file = "../Models/MASE_table_all_spp.csv", row.names = FALSE)
 ```
@@ -435,6 +436,54 @@ suitable_spp <- gam_diag %>%
 
 ```
 28 species, doesn't include cod?? really very few species out perform random walk. 
+
+# tensor simple model after call with pat
+s(latlon) but tensor instead. drop season, salinity, year
+```{r compare_SLL_tensor}
+
+load("../Models/Major_spp_summary_table.RData") # not exactly sure what model this is, not identical to slatlon
+sll_25_stats <- read_csv ("../Models/Major_spp_summary_table_slatlon.csv")
+
+te_simple_stats <- read_csv("../Models/summary_table_Tensor_simple.csv")
+sll_simple_stats <- read_csv("../Models/summary_table_Smooth_latlon_drop_year.csv")
+
+te_simple_stats %>%
+  #filter (species %in% sll_25_stats$Species) %>%
+  group_by (GAM) %>%
+  summarise (AIC = mean (AIC),
+           sd_AIC = sd(AIC),
+           mn_dev = mean (dev_exp),
+           min_dev = min (dev_exp),
+           max_dev = max (dev_exp),
+           sd_dev = sd (dev_exp))
+
+
+sll_simple_stats %>%
+  #filter (species %in% sll_25_stats$Species) %>%
+  group_by (GAM) %>%
+  summarise (AIC = mean (AIC),
+           sd_AIC = sd(AIC),
+           mn_dev = mean (dev_exp),
+           min_dev = min (dev_exp),
+           max_dev = max (dev_exp),
+           sd_dev = sd (dev_exp))
+
+summary (sll_25_stats)
+
+```
+I don't think this is quite right because I took out year for tensor. but mean AID is 14698 for tensor; 14479 for smooth. 33805 smooth lb, 34017 for tensor lb. 
+
+comparing just l/l, depth, sst, bt: tensor is better for PA AIC by ~30, slightly better for PA dev and slightly worse for LB dev but not huge. SLL is better for LB AIC by ~50. 
+```{r ten_Simple_mase}
+
+te_simp_mase <- read_csv ("../Models/Tensor_simple_GAM_diagnostics.csv")
+
+te_simp_mase %>%
+  filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>%
+  View()
+
+```
+32
 
 # More habitat variables 
 ### Incorporate Bormicon and temp max, min, stdev, no lat/lon
@@ -695,8 +744,455 @@ write.csv (temp_AIC, file = "../Models/temperature_AIC_check.csv", row.names = F
     
 
 ```
+```{r explor_AIC_temp}
+temp_AIC <- read_csv ("../Models/temperature_AIC_check.csv")
 
-### T
+temp_AIC_long <- temp_AIC %>%
+  pivot_longer (!Species,
+    names_to = c("GAM", "Var"),
+    names_sep = "_", 
+    values_to = "AIC"
+  ) %>%
+  mutate (Var = ifelse (is.na (Var), 
+                        "full", 
+                        Var))
+
+png ("../Figures/temp_vars_AIC.png", width = 16, height = 9, units = "in", res = 300)
+temp_AIC_long %>%
+  filter (Var != "full") %>%
+  ggplot (aes (x = reorder (Var, desc(AIC)), y = AIC)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  facet_wrap (~factor (GAM, levels = c("PA", "LB"))) +
+  coord_flip () +
+  theme_bw() +
+  scale_x_discrete (labels = rev(c("bt_min", "sst_max", "sst_min", "bt", "sst"))) +
+  labs (x = "Dropped variable", 
+        y = (expression (paste (Delta, "AIC"))
+             )
+  ) +
+  ggtitle ("Temperature variables effect on AIC") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+dev.off()
+```
+AIC is drop minus full. So a positive value means dropping > full, so that's worse. 
+### Fit Temperature and depth only model for all species
+
+did this in fit_GAMS_function
+```{r run_temp_depth_model}
+
+dir.create ()
+
+```
+
+### EXplore variable importance
+added code to do drop variable dev expl for each term in models. 
+```{r var_imp_full}
+
+var_imp_full <- read_csv ("../Models/var_imp_First_full_tensor_season.csv")
+
+var_imp_full %>%
+  group_by(GAM, Var) %>%
+  summarize (mean = mean(Diff_f)) %>%
+  arrange (desc (mean))
+
+png ("../Figures/var_imp_full_tensor.png", width = 16, height = 9, units = "in", res = 300)
+var_imp_full %>%
+  ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  geom_hline (yintercept = 0, col = "red", lty = 2) +
+  coord_flip () +
+  theme_bw() +
+  facet_wrap (~factor(GAM, levels = c("PA", "LB"))) +
+  labs (x = "", y = "Contribution to deviance explained") +
+  ggtitle ("Variable importance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+
+dev.off()
+```
+Salinity might be better than I had thought. seems to outperform surface temperature (mean 4.1 vs 3.9 for PA, 1.7 vs 1.65 for LB).
+
+```{r var_imp_sll}
+
+
+vi_SLL <- read_csv ("../Models/var_imp_Smooth_latlon.csv")
+
+png ("../Figures/var_imp_Smooth_latlon.png", width = 16, height = 9, units = "in", res = 300)
+vi_SLL%>%
+  ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  geom_hline (yintercept = 0, col = "red", lty = 2) +
+  coord_flip () +
+  theme_bw() +
+  facet_wrap (~factor(GAM, levels = c("PA", "LB"))) +
+  labs (x = "", y = "Contribution to deviance explained") +
+  ggtitle ("Variable importance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),    
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+dev.off()
+  
+```
+
+```{r var_imp_temp_Depth}
+
+vi_td <- read_csv ("../Models/var_imp_Depth_Temp.csv")
+
+png ("../Figures/var_imp_depth_temp.png", width = 16, height = 9, units = "in", res = 300)
+vi_td %>%
+  ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  geom_hline (yintercept = 0, col = "red", lty = 2) +
+  coord_flip () +
+  theme_bw() +
+  facet_wrap (~factor(GAM, levels = c("PA", "LB"))) +
+  labs (x = "", y = "Contribution to deviance explained") +
+  ggtitle ("Variable importance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+
+```{r var_imp_borm}
+
+
+vi_borm <- read_csv ("../Models/var_imp_Bormicon_allTemp.csv")
+
+png ("../Figures/var_imp_borm_allTemp.png", width = 16, height = 9, units = "in", res = 300)
+vi_borm %>%
+  ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  geom_hline (yintercept = 0, col = "red", lty = 2) +
+  coord_flip () +
+  theme_bw() +
+  facet_wrap (~factor(GAM, levels = c("PA", "LB"))) +
+  labs (x = "", y = "Contribution to deviance explained") +
+  ggtitle ("Variable importance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+
+```{r var_imp_borm_14}
+b14 <- read_csv("../Models/var_imp_Borm_14.csv")
+
+b14 %>%
+  ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  geom_hline (yintercept = 0, col = "red", lty = 2) +
+  coord_flip () +
+  theme_bw() +
+  facet_wrap (~factor(GAM, levels = c("PA", "LB"))) +
+  labs (x = "", y = "Contribution to deviance explained") +
+  ggtitle ("Variable importance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+
+b14_temp <- read_csv("../Models/var_imp_Borm_14_alltemp.csv")
+
+b14_temp %>%
+  ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  geom_hline (yintercept = 0, col = "red", lty = 2) +
+  coord_flip () +
+  theme_bw() +
+  facet_wrap (~factor(GAM, levels = c("PA", "LB"))) +
+  labs (x = "", y = "Contribution to deviance explained") +
+  ggtitle ("Variable importance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+
+```
+deviation variables aren't terrible...
+
+### explore AUC and other diagnostics
+```{r diagnostics_SLL}
+sll_diag <- read_csv ("../Models/GAM_diagnostics_all_spp.csv")
+
+# order metrics how I want them
+diag_lev <- c("PA_dev", "AUC", "TSS_mx", "Kap_mx", "LB_dev", "LB_cor")
+
+png ("../Figures/GAM_diagnostics_SLL.png", width = 16, height = 9, units = "in", res = 300)
+sll_diag %>%
+  dplyr::select (Species, PA_dev, AUC, TSS_mx, Kap_mx, LB_dev, LB_cor) %>%
+  pivot_longer (
+    cols = (-Species),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>% 
+  mutate (Metric = factor (Metric, levels = diag_lev)) %>%
+  ggplot (aes (x = Metric, y = Value)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  theme_bw() +
+  labs (y = "", y = "Diagnostic test") +
+  ggtitle ("Smoothed lat/lon GAM performance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    #strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+```{r diagnostics_TD}
+TD_diag <- read_csv ("../Models/Temp_Depth_GAM_diagnostics.csv")
+
+# order metrics how I want them
+diag_lev <- c("PA_dev", "AUC", "TSS_mx", "Kap_mx", "LB_dev", "LB_cor")
+
+png ("../Figures/GAM_diagnostics_TD.png", width = 16, height = 9, units = "in", res = 300)
+TD_diag %>%
+  dplyr::select (species,PA_dev, AUC, TSS_mx, Kap_mx, LB_dev, LB_cor) %>%
+  pivot_longer (
+    cols = (-species),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>% 
+  mutate (Metric = factor (Metric, levels = diag_lev)) %>%
+  ggplot (aes (x = Metric, y = Value)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  theme_bw() +
+  labs (y = "", y = "Diagnostic test") +
+  ggtitle ("Depth/Temp GAM performance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    #strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+```{r diagnostics_tensor}
+Te_diag <- read_csv ("../Models/First_full_tensor_season_GAM_diagnostics.csv")
+
+# order metrics how I want them
+diag_lev <- c("PA_dev", "AUC", "TSS_mx", "Kap_mx", "LB_dev", "LB_cor")
+
+png ("../Figures/GAM_diagnostics_tensor_25.png", width = 16, height = 9, units = "in", res = 300)
+Te_diag %>%
+  dplyr::select (species,PA_dev, AUC, TSS_mx, Kap_mx, LB_dev, LB_cor) %>%
+  pivot_longer (
+    cols = (-species),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>% 
+  mutate (Metric = factor (Metric, levels = diag_lev)) %>%
+  ggplot (aes (x = Metric, y = Value)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  theme_bw() +
+  labs (y = "", y = "Diagnostic test") +
+  ggtitle ("Tensor full GAM performance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    #strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+
+```{r diagnostics_borm}
+borm_diag <- read_csv ("../Models/Bormicon_allTemp_GAM_diagnostics.csv")
+
+# order metrics how I want them
+diag_lev <- c("PA_dev", "AUC", "TSS_mx", "Kap_mx", "LB_dev", "LB_cor")
+
+png ("../Figures/GAM_diagnostics_borm_25.png", width = 16, height = 9, units = "in", res = 300)
+borm_diag %>%
+  dplyr::select (species,PA_dev, AUC, TSS_mx, Kap_mx, LB_dev, LB_cor) %>%
+  pivot_longer (
+    cols = (-species),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>% 
+  mutate (Metric = factor (Metric, levels = diag_lev)) %>%
+  ggplot (aes (x = Metric, y = Value)) +
+  geom_boxplot () +
+  geom_jitter (alpha = 0.5) +
+  theme_bw() +
+  labs (y = "", y = "Diagnostic test") +
+  ggtitle ("Bormicon GAM performance") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    #strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+### compare AIC and dev expl across models
+```{r model_comparisons}
+# te_full
+load ("../Models/Major_spp_summary_table.RData")
+# rename
+te_full <- maj_spp_gam_summary %>%
+  select (Species, PA_dev_exp, PA_AIC, LB_dev_exp, LB_AIC)
+
+# slatlon
+sLL <- read_csv ("../Models/Major_spp_summary_table_slatlon.csv")%>%
+  select (Species, PA_dev_exp, PA_AIC, LB_dev_exp, LB_AIC)
+
+# borm
+borm <- read_csv ("../Models/borm_gam_table_tmp.csv")%>%
+  select (Species, PA_dev_exp, PA_AIC, LB_dev_exp, LB_AIC)
+
+# depth_temp
+TD <- read_csv ("../Models/depth_temp_gam_table_25.csv")%>%
+  select (Species, PA_dev_exp, PA_AIC, LB_dev_exp, LB_AIC)
+
+model_AIC_comp <- rbind (te_full, sLL, borm, TD)
+model_AIC_comp$Model <- c( rep ("Tensor_full", nrow (te_full)), 
+                           rep ("sLatLon", nrow (sLL)),
+                           rep ("Bormicon_temp", nrow(borm)),
+                           rep ("Depth_temp", nrow (TD))
+)
+
+model_AIC_comp_long <- model_AIC_comp %>%
+  #rename (PA_devexp = PA_dev_exp, LB_devexp = LB_dev_exp) %>%
+  mutate (Species = as.character (Species),
+          PA_devexp = as.numeric (PA_dev_exp), 
+          PA_AIC = as.numeric (PA_AIC),
+          LB_devexp = as.numeric (LB_dev_exp),
+          LB_AIC = as.numeric (LB_AIC), .keep = "unused") %>% 
+  pivot_longer (cols = -c(Species, Model),
+    names_to = c("GAM", "metric"),
+    names_sep = "_", 
+    values_to = "value",
+  )
+
+png ("../Figures/model_comp_AIC_devexp.png", width = 16, height = 9, units = "in", res = 300)
+model_AIC_comp_long %>%
+  ggplot (aes (x = Model, y = value)) +
+  geom_boxplot () +
+  geom_jitter ()+
+  facet_grid (metric~factor(GAM, levels = c("PA", "LB")),
+              scales = "free_y") +
+              #switch = "y") +
+  theme_bw () +
+  #ggtitle ("AIC") +
+  labs (y = "") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+dev.off()
+
+```
+
+look at models with the 14 bormicon regions
+```{r borm_14_compare}
+b14_stats <- read_csv ("../Models/summary_table_Borm_14.csv")
+b14_temp_stats <- read_csv ("../Models/summary_table_Borm_14_alltemp.csv")
+
+borm_14_comp <- rbind (b14_stats, b14_temp_stats)
+borm_14_comp$model <- c (rep ("borm 14", nrow (b14_stats)), rep("borm 14 plus temp", nrow (b14_temp_stats)))
+
+
+
+borm_14_comp %>%
+  ggplot (aes (x = model, y = dev_exp)) +
+  geom_boxplot () +
+  geom_jitter ()+
+  facet_wrap (~factor(GAM, levels = c("PA", "LB")),
+              scales = "free_y") +
+              #switch = "y") +
+  theme_bw () +
+  #ggtitle ("AIC") +
+  labs (y = "") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+
+borm_14_comp %>%
+  ggplot (aes (x = model, y = AIC)) +
+  geom_boxplot () +
+  geom_jitter ()+
+  facet_wrap (~factor(GAM, levels = c("PA", "LB")),
+              scales = "free_y") +
+              #switch = "y") +
+  theme_bw () +
+  #ggtitle ("AIC") +
+  labs (y = "") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18)
+  )
+
+```
+temp seems way better for AIC, moderately for dev exp
+```{r borm_14_ttest}
+
+b14_c <- b14_stats %>% filter (species != "Myoxocephalus_scorpius")
+b14_pa <- filter (b14_c, GAM == "PA")
+b14_t_pa <- filter (b14_temp_stats, GAM == "PA")
+
+b14_lb <- filter (b14_c, GAM == "LB")
+b14_t_lb <- filter (b14_temp_stats, GAM == "LB")
+
+t.test (b14_pa$dev_exp, b14_t_pa$dev_exp) # not sig, p = 0.31
+t.test (b14_lb$dev_exp, b14_t_lb$dev_exp) # not sig, p = 0.15
+
+t.test (b14_pa$AIC, b14_t_pa$AIC) # sig, 0.03
+t.test (b14_lb$AIC, b14_t_lb$AIC) # not sig, 0.26
+
+
+
+summary (b14_pa$AIC)
+summary (b14_t_pa$AIC)
+
+```
+not really comparable though because SST variables from GLORYS are only 1993-2018. 
 
 ### Cod
 ```{r cod_data}
