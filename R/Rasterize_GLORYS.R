@@ -11,6 +11,8 @@ load ("Data/prediction_raster_template.RData") # named pred_r_template
 projstring <- '+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0'
 
 #glorys_files <- list.files (path = "Data", pattern = "glorys.*month.*.nc") 
+
+# glorys 16 files are where I took one day of each month (the 16th) instead of trying to download the daily data. I figured it's equivalent to monthly observation data. 
 glorys_files <- list.files (path = "Data", pattern = "glorys.*16.*.nc") 
 
 rasterize_glorys_fun <- function (file) {
@@ -81,5 +83,5 @@ multiFocal <- function(x, w=matrix(1, nr=3, nc=3), ...) {
 sst_gl_dev <- multiFocal(sst_gl, fun = function (x) sd (x, na.rm = TRUE))
 system.time(bt_gl_dev <- multiFocal (bt_gl, fun = function (x) sd (x, na.rm = TRUE))) # 5mins
 
-writeRaster (sst_gl_dev, filename = "Data/glorys_sst_dev.grd")
+writeRaster (sst_gl_dev, filename = "Data/glorys_sst_dev.grd", overwrite = TRUE)
 writeRaster (bt_gl_dev, filename = "Data/glorys_bt_dev.grd", overwrite = TRUE)
