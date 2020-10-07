@@ -4,7 +4,7 @@
 
 library (tidyverse)
 
-# first downloaded just community quota
+# first downloaded just community quota ----
 cq <- read.csv ("Data/Raw_data/SI_community_quota_landings.csv", sep = ";", skip = 2)
 
 # This has a column for species, quota type and unit, and then a column for each month of each year: X1992.January
@@ -32,12 +32,45 @@ cq_long %>%
   geom_line()
 
 cq_long %>%
-  group_by (Species) %>%
+  group_by (Species, year) %>%
   summarize (tot_cat = sum(tonnes, na.rm = TRUE)) %>%
   arrange (desc (tot_cat)) %>%
   View()
 
-# all quota types, annual averages (limited number of rows can download at once. If I need monthly values, may need to do by individual sectors)
+write.csv(cq_long, file= "Data/comm_quota_landings_annual.csv", row.names = FALSE)
+
+# small boat quota types, by species ----
+sm_q <- read.csv ("Data/Raw_data/SI_small_quota_spp_catch_value.csv", skip = 2, na.strings = c(".."))
+
+sm_q_long <- sm_q %>%
+    pivot_longer (
+      cols = contains("20"),
+      names_to = c("metric", "year"),
+      names_pattern = "(.*)\\.(.*)", # split on last period
+      values_to = "amount"
+    ) 
+
+head (sm_q_long)
+write.csv (sm_q_long, "Data/Landings_annual_spp_small_quota.csv", row.names = FALSE)
+
+
+# all quota types, annual avg by species  ----
+# this is the same as above, but with large boats as well. 
+spp_qu <- read.csv ("Data/Raw_data/SI_landings_spp_quota_2003_2019.csv", skip = 2, na.strings = c(".."))
+
+spp_qu_long <- spp_qu %>%
+  pivot_longer (
+    cols = contains("20"),
+    names_to = c("metric", "year"),
+    names_pattern = "(.*)\\.(.*)", # split on last period
+    values_to = "amount"
+  ) %>%
+  select (-Region)
+
+write.csv (spp_qu_long, "Data/Landings_annual_spp_quota.csv", row.names = FALSE)
+
+# all quota types, annual averages  ----
+#(limited number of rows can download at once. If I need monthly values, may need to do by individual sectors)
 
 annual_landings <- read.csv ("Data/Raw_data/SI_landings_annual.csv", sep = ";", skip = 2, na.strings = c(".."))
 
@@ -50,7 +83,8 @@ lands_long <- annual_landings %>%
     #names_pattern = "(.*)\\.",
     values_to = "tonnes"
   ) %>%
-  mutate (year = as.numeric (strsplit(year, "\\.")[[1]][1])) %>% # remove extra characters
+  # https://stackoverflow.com/questions/42565539/using-strsplit-and-subset-in-dplyr-and-mutate
+  mutate (year = as.numeric (sapply (stringr::str_split(year, "\\."), function(x) x[1]))) %>% # remove extra characters
 dplyr::select (Species, Quota.type, year, tonnes) %>%
   # rename columns to be compatible with mfri data
   rename (species = Species, quota = Quota.type)
