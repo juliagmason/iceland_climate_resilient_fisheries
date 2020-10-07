@@ -33,7 +33,9 @@ file_list <- list.files (path = base_path, pattern = "projection.mat")
 # now doing bt [if redoing, can do all at once]
 #bt_list <- list.files (path = base_path, pattern = "bt_deltas.mat")
 
-
+# redo for cnrm sst
+base_path <- "../Documents/MATLAB/CMIP6/"
+file_list <- list.files (path = base_path, pattern = "cnrm.*.sst_projection.mat")
 for (file in file_list) {
   
   #open matlab file
@@ -58,6 +60,13 @@ for (file in file_list) {
   deltas_r <- writeRaster(deltas_r, filename = paste0 ("Data/CMIP6_delta_projections/", fname, ".grd"), overwrite = TRUE) # add overwrite = TRUE if redoing
   
 }
+
+# quick check of cnrm 245 vs 585
+cnrm_245 <- brick ("Data/CMIP6_delta_projections/cnrm_245_sst_projection.grd")
+cnrm_585 <- brick ("Data/CMIP6_delta_projections/cnrm_585_sst_projection.grd")
+
+plot (cnrm_245, 1000)
+plot (cnrm_585, 1000)
 
 ## # do with CM 2.6----
 base_path <- "../Documents/MATLAB/CM2_6/"
