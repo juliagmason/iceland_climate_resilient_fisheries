@@ -1,7 +1,9 @@
 ---
 title: "Explore MFRI survey data"
-date: "2020-06-16"
-output: html_notebook
+date: '2020-06-16'
+output:
+  html_document:
+    df_print: paged
 ---
 
 Pamela Woods provided autumn and spring survey data on 6/16/20. Performing preliminary data exploration here. 
@@ -271,6 +273,25 @@ ggmap(isl_basemap) +
 ggmap(isl_basemap) +
   geom_point (aes (x = lon, y = lat), data = aut_samples) +
   ggtitle ("Fall survey locations")
+
+```
+
+```{r comb_samples ggplot}
+
+library (sf)
+library (rnaturalearth)
+library (rnaturalearthdata)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")  
+
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point (aes (x = lon, y = lat, col = season), 
+              alpha = 0.7, 
+              data = comb_samples) + 
+  theme_bw() +
+  theme (axis.text = element_blank())
 
 ```
 
@@ -654,7 +675,8 @@ library (MASS)
 library(lattice)
 spatial_vars <- comb_samples %>%
   mutate(season_num = ifelse (season == "spring", 1, 2)) %>%
-  dplyr::select (lat, lon, year, tow_depth_begin, surface_temp, bottom_temp, season_num)
+  dplyr::select (lat, lon, year, tow_depth_begin, surface_temp, bottom_temp)
+# removed month and season
 
 # from the documentation...
 ## put histograms on the diagonal
@@ -682,7 +704,9 @@ panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
     text(0.5, 0.5, txt, cex = cex.cor * r)
 }
 
+#png (file = "../Figures/panelplot_smoothLL.png", width = 16, height = 9, units = "in", res = 300)
 pairs (spatial_vars, upper.panel = panel.cor, diag.panel = panel.hist)
+#dev.off ()
 ```
 See a 0.7 correlation between surface and bottom temp (pos), this makes sense. Also a negative relationship between lat and surface temp and bottom temp, this also makes sense--colder at higher latitudes. Would expect more of a relationship with depth and bottom temp. Year and depth makes sense, probably deeper corresponding with starting autumn surveys. 
 ```{r salinity}
@@ -709,7 +733,7 @@ gam_env <- mfri_pred %>%
   mutate(season_num = ifelse (season == "spring", 1, 2)) %>%
   dplyr::select(lat, lon, year, season_num, surface_temp, bottom_temp, gins_sal, tow_depth_begin)
 
-png (filename = "../Figures/JM_GAM_pairplot.png", width = 11, height = 8.5, unit = "in", res = 72)
+png (filename = "../Figures/pairplot_tensor_full_GAM.png", width = 16, height = 9, unit = "in", res = 300)
 pairs (gam_env, upper.panel = panel.cor, diag.panel = panel.hist,
        main = "Pairplot, environmental variables used in full GAM")
 dev.off()
@@ -793,11 +817,12 @@ mfri_pred <-  read_csv ("../Data/MFRI_predictor_df.csv",
 )
 
 mfri_pred_vars <- mfri_pred %>%
-  dplyr::select ( tow_depth_begin, surface_temp, bottom_temp, sst_dev, bt_dev, sst_max, sst_min, bt_max) #, bt_min)
+  dplyr::select ( tow_depth_begin, surface_temp, bottom_temp, sst_max, sst_min, bt_max, bt_min, sst_dev, bt_dev)
 
 mfri_comp <- mfri_pred_vars [ complete.cases (mfri_pred_vars),]
 cont.corr <- round (cor (mfri_comp), 1)
 
+png (file = "../Figures/Depth_Temp_Corrplot.png")
 ggcorrplot (cont.corr, hc.order = TRUE,
             type = "lower",
             lab = TRUE, 
@@ -805,6 +830,13 @@ ggcorrplot (cont.corr, hc.order = TRUE,
             method = "circle",
             ggtheme = theme_bw
           )
+dev.off()
+
+# panel pairplot
+
+png (file = "../Figures/pairplot_depthTemp.png", width = 16, height = 9, units = "in", res = 300)
+pairs (mfri_pred_vars, upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off ()
 
 ```
 -0.8 with sst_min and lat. 0.8 with bottom_Temp and bt_min. 0.7 for bt_max and bt, bt_max/bt_min. 0.7 for sst and sst_min, sst_max and sst_min, sst_min and bt_min. -0.7 sst_max and lat. 
