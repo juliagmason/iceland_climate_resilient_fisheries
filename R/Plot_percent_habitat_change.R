@@ -89,16 +89,32 @@ hab_change$species[which (hab_change$species == "Myctophidae_Smooth")] <- "Mycto
 
 summary (hab_change$perc_change_Morely) # some extreme high values
 
+hab_change %>%
+  arrange (desc (perc_change_Morely)) %>%
+  head (10)
+
+hab_change %>%
+  ggplot (aes (x = perc_change_Morely, fill = scenario)) +
+  geom_density()
+
 # order based on 245 perc change
 # https://stackoverflow.com/questions/28190435/changing-factor-levels-with-dplyr-mutate
 # for just overall order based on perc_change, use aes (x = reorder(species, perc_change_Morely))
 spp_order <- hab_change %>%
-  filter (perc_change_Morely < 750, scenario == 245) %>%
-  arrange (perc_change_Morely)
+  filter (perc_change_Morely < 20000, scenario == 245) %>%
+  arrange (perc_change_Morely) %>%
+  # add all the names...
+  rename (sci_name_underscore = species) %>%
+  left_join (spp_list, by = "sci_name_underscore") %>%
+  rename (species = sci_name_underscore) %>%
+  mutate (name = ifelse (!is.na (Landed_name),
+                                 Landed_name, 
+                                 species))
+ 
 
 # fill based on quota
 quota_status <- read_csv ("Data/species_eng.csv") %>%
-  select (sci_name_underscore, Quota) %>%
+  dplyr::select (sci_name_underscore, Quota, Landed_name) %>%
   rename (species = sci_name_underscore)
 
 # fill based on certainty
@@ -106,11 +122,18 @@ smoothLL_MASE <- read_csv ("Models/GAM_diagnostics_all_spp.csv") %>%
   rename (species = Species)
 
 
-png (file = "Figures/Percent_hab_change_by_quota_SmoothLatlon.png", width = 16, height = 9, units = "in", res = 300)
+png (file = "Figures/Percent_hab_change_by_quota_SmoothLatlon_6000.png", width = 16, height = 9, units = "in", res = 300)
 hab_change %>% 
   left_join (quota_status, by = "species") %>% 
   left_join (smoothLL_MASE, by = "species") %>% 
-  filter (perc_change_Morely < 750) %>%
+  mutate (Model_suitable = ifelse (
+    MASE_GAM < 1 & DM_GAM_p < 0.05, 
+    "1", 
+    "0"
+  )) %>%
+  filter (perc_change_Morely < 20000, !is.na (Model_suitable)) %>%
+  #filter (perc_change_Morely < 750) %>%
+
   mutate (species = factor(species, levels = spp_order$species),
           Quota = factor(Quota),
           fill_col = case_when(
@@ -119,12 +142,112 @@ hab_change %>%
             MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
             )
           ) %>% 
+ 
   ggplot (aes (x = species, 
                y = perc_change_Morely,
                color = Quota, 
                fill = fill_col,
                width = 0.85)) +
   scale_fill_manual (values = c("lightgray",  "#F8766D", "#00BFC4")) +
+  labs (fill = "",
+        x = "",
+        y = "Percent habitat change") +
+  guides (color = FALSE) +
+  geom_bar (stat = "identity") + 
+  coord_flip() + 
+  theme_bw() +
+  facet_wrap (~scenario) +
+  ggtitle ("Percent habitat change, 2000-2018 vs 2061-2080") +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 18),
+    legend.text = element_text (size = 18)
+  )
+dev.off()
+
+# plot starting with herring, cut off at 750
+spp_order <- hab_change %>%
+  filter (perc_change_Morely < 750, scenario == 245) %>%
+  arrange (perc_change_Morely)
+
+png (file = "Figures/Percent_hab_change_by_quota_SmoothLatlon.png", width = 18, height = 12, units = "in", res = 300)
+hab_change %>% 
+  left_join (quota_status, by = "species") %>% 
+  left_join (smoothLL_MASE, by = "species") %>% 
+  mutate (Model_suitable = ifelse (
+    MASE_GAM < 1 & DM_GAM_p < 0.05, 
+    "1", 
+    "0"
+  )) %>%
+  #filter (perc_change_Morely < 20000, !is.na (Model_suitable)) %>%
+  filter (perc_change_Morely < 750) %>%
+  
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota),
+          fill_col = case_when(
+            MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
+            MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
+            MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
+          )
+  ) %>% 
+  
+  ggplot (aes (x = species, 
+               y = perc_change_Morely,
+               color = Quota, 
+               fill = fill_col,
+               width = 0.85)) +
+  scale_fill_manual (values = c("lightgray",  "#F8766D", "#00BFC4")) +
+  labs (fill = "",
+        x = "",
+        y = "Percent habitat change") +
+  guides (color = FALSE) +
+  geom_bar (stat = "identity") + 
+  coord_flip() + 
+  theme_bw() +
+  facet_wrap (~scenario) +
+  ggtitle ("Percent habitat change, 2000-2018 vs 2061-2080") +
+  theme (
+    axis.text.x = element_text (size = 20),
+    axis.text.y = element_text (size = 18),
+    axis.title = element_text (size = 20),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 20),
+    legend.text = element_text (size = 20),
+    legend.position = c(0.87, 0.15)
+  ) 
+dev.off()
+
+# plot with common name for figures
+png (file = "Figures/Percent_hab_change_by_quota_SmoothLatlon_comm_names.png", width = 16, height = 9, units = "in", res = 300)
+hab_change %>% 
+  left_join (quota_status, by = "species") %>% 
+  left_join (smoothLL_MASE, by = "species") %>% 
+  mutate (Model_suitable = ifelse (
+    MASE_GAM < 1 & DM_GAM_p < 0.05, 
+    "1", 
+    "0"
+  )) %>%
+  filter (perc_change_Morely < 20000, !is.na (Model_suitable)) %>%
+  #filter (perc_change_Morely < 750) %>%
+  
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota),
+          fill_col = case_when(
+            MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
+            MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
+            MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
+          )
+  ) %>% 
+  
+  ggplot (aes (x = species, 
+               y = perc_change_Morely,
+               color = Quota, 
+               fill = fill_col,
+               width = 0.85)) +
+  scale_fill_manual (values = c("lightgray",  "#F8766D", "#00BFC4")) +
+  scale_x_discrete (labels = spp_order$name) +
   labs (fill = "",
         y = "Percent habitat change") +
   guides (color = FALSE) +
@@ -188,7 +311,25 @@ mutate (Model_suitable = ifelse (
 dev.off()
 
   
-  
+ # # SDMTools patchstat test ----
+library (SDMTools)
+
+# https://rdrr.io/cran/SDMTools/man/PatchStat.html
+# https://gis.stackexchange.com/questions/210149/patch-stat-r-for-loop-question
+
+# take mean first? can it do a raster brick?
+br_hist <- brick (file.path ("Models/Prediction_bricks", hist_files[i]))
+br_245 <- brick (file.path ("Models/Prediction_bricks", pred_files_245[i]))
+br_585 <- brick (file.path ("Models/Prediction_bricks", pred_files_585[i]))
+
+hist_ps <- PatchStat (subset(br_hist, 1), latlon = TRUE) # works, but only gives me patchID
+
+hist_ccl_test <- ConnCompLabel()
+
+
+
+## Kristin rgeos method ----
+
   
   
   # # Kleisner 2017 selects all points with values greater than one sd above the mean, then computes area of those kernels. but what mean?? For now, will take overall mean of historical period--just one value. calc is significantly faster than overlay for this (1.4 vs 9s for test brick). 
