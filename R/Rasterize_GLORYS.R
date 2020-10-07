@@ -67,7 +67,7 @@ multiFocal <- function(x, w=matrix(1, nr=3, nc=3), ...) {
     x <- brick(x)
   }
   # The function to be applied to each individual layer
-  fun <- function(ind, x, w, ...){
+  fun <- function(ind, x, w, na.rm = TRUE, ...){
     focal(x[[ind]], w=w, ...)
   }
   
@@ -78,8 +78,8 @@ multiFocal <- function(x, w=matrix(1, nr=3, nc=3), ...) {
   return(out)
 }
 
-sst_gl_dev <- multiFocal(sst_gl, fun = sd)
-system.time(bt_gl_dev <- multiFocal (bt_gl, fun = sd)) # 5mins
+sst_gl_dev <- multiFocal(sst_gl, fun = function (x) sd (x, na.rm = TRUE))
+system.time(bt_gl_dev <- multiFocal (bt_gl, fun = function (x) sd (x, na.rm = TRUE))) # 5mins
 
 writeRaster (sst_gl_dev, filename = "Data/glorys_sst_dev.grd")
 writeRaster (bt_gl_dev, filename = "Data/glorys_bt_dev.grd", overwrite = TRUE)
