@@ -4,7 +4,7 @@
 
 library (R.matlab)
 
-load ("Data/GINS_bottom_temp.RData")
+load ("Data/GINS_bottom_temp_seasonal.RData")
 writeMat("../Documents/MATLAB/GINS/gins_bt.mat", gins_bt = gins_bt)
 
 load ("Data/cnrm_lat.RData")

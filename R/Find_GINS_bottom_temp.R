@@ -63,7 +63,7 @@ lon <- ncvar_get (gins_tmp, "lon")
 image (lon, lat, gins_bt$Summer)
 
 # save as RData file
-save (gins_bt, file = "Data/GINS_bottom_temp.RData")
+save (gins_bt, file = "Data/GINS_bottom_temp_seasonal.RData")
 
 ##############################################
 ### Monthly GINS data ----
