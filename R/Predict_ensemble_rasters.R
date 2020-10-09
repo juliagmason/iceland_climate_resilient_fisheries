@@ -8,9 +8,9 @@ library (marmap) # for depth layer
 library (mgcv)
 library (sf) # for EEZ shapefile
 
-# I'll run predictions for all species, all models, both scenarios. Will set up the static variables, then bring in the temperature bricks for each model and scenario. Clipping to Iceland EEZ for now to save time. Predict on each layer (year) of the brick for each model, take a mean, and save. 
+# I'll run predictions for all species, all models, both scenarios. Will set up the static variables, then bring in the temperature bricks for each model and scenario. Clipping to Iceland EEZ for now to save time. Predict on each layer (year) of the brick for each climate model. Also take a mean of all the climate models. 
 
-dir.create ("Models/Prediction_bricks")
+#dir.create ("Models/Prediction_bricks")
 
 # load standardized raster template
 load ("Data/prediction_raster_template.RData") # named pred_r_template
@@ -42,26 +42,30 @@ depth <- getNOAA.bathy(lon1 = -45, lon2 = 15,
 
 #plot (depth, image = TRUE, land = TRUE)
 
+# rasterize and resample to my template
 depth_r <- as.raster(depth)
 depth_r <- raster::resample (depth_r, pred_r_template, method = "bilinear")
 
-# Year ----
-# make raster, but don't assign value yet
-year_r <- raster()
-extent (year_r) <- extent (pred_r_template)
-year_r <- raster::resample (year_r, pred_r_template, method = "bilinear") # not sure why I needed this (from PD sharks code)
+# # Year ----
+# # make raster, but don't assign value yet
+# year_r <- raster()
+# extent (year_r) <- extent (pred_r_template)
+# year_r <- raster::resample (year_r, pred_r_template, method = "bilinear") # not sure why I needed this (from PD sharks code)
 
 
-# make vector of years
-#year_vals <- rep (2015:2100, each = 12) # may need to change to 2021 for CM 2.6
-
-
+# Bormicon region ----
+hab_table <- read_csv ("Data/Raw_data/bormicon_table.csv")
 
 # vector of names ----
+# this will depend on the terms in the GAM
+
 #stack_names <- c("lat", "lon", "year", "surface_temp", "bottom_temp", "tow_depth_begin")
 
 # td names
-stack_names <- c("surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max")
+stack_names <- c("bormicon_region", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
+
+# tensor simple names
+stack_names <- c("lat", "lon", "surface_temp", "bottom_temp", "tow_depth_begin")
 
 # Future predictions ----
 # function to go through each species, CM, scenario ----
@@ -70,16 +74,20 @@ stack_names <- c("surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "s
 year_vals <- rep (2061:2080, each = 12) # model projections are monthly
  
 predict_brick_fun <- function (sci_name, GAM, scenario) {
+  # sci_name is the scientific name separated by an underscore 
+  # GAM is the name of the model (name of directory where I saved them in "Fit_GAMS_function.R")
+  # scenario is either 245 or 585
   
   print (sci_name)
   print (Sys.time())
   start1 <- Sys.time()
   
-  # load saved GAM for species of interest
+  # load saved GAM for species of interest ----
   load (paste0("Models/", GAM, "/", sci_name, "_PA.Rdata")) # gam_PA. add PA_full.RData for Smooth_latlon
   load (paste0("Models/", GAM, "/", sci_name, "_LB.Rdata")) # gam_LB
   
-  # CM2.6 run corresponds to 585 scenario, but don't have a 245 equivalent. 
+  # run predictions for each climate model ----
+  # CM2.6 run corresponds to 585 scenario, but doesn't have a 245 equivalent. 
   if (scenario == 585) {
     CM_list = c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
   } else {CM_list = c("gfdl", "cnrm", "ipsl", "mohc") }
@@ -102,25 +110,28 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
     sst_r <- sst_brick[[start_val + 1]] 
     bt_r <- bt_brick[[start_val + 1]]
     
-    # also calculate sst min/max and bt max
-    # subset start value and 11 preceding layers, then cal
-    sst_max_r <- calc (
-      subset (sst_brick, (start_val - 11):start_val),
-    max)
+    # also calculate sst min/max and bt max if these are terms in the model
+    # subset start value and 11 preceding layers, then calc
+    # sst_max_r <- calc (
+    #   subset (sst_brick, (start_val - 11):start_val),
+    # max)
+    # 
+    # sst_min_r <- calc (
+    #   subset (sst_brick, (start_val - 11):start_val),
+    #   min)
+    # 
+    # bt_max_r <- calc (
+    #   subset (bt_brick, (start_val - 11):start_val),
+    #   max)
+    # 
     
-    sst_min_r <- calc (
-      subset (sst_brick, (start_val - 11):start_val),
-      min)
-    
-    bt_max_r <- calc (
-      subset (bt_brick, (start_val - 11):start_val),
-      max)
-    
-    
+    # set values for year if these are terms in the model
     #values (year_r) <- year_vals[1]
     
+    # stack all the predictor layers; this will change based on model terms ----
+    stack_1 <- stack (lat_r, lon_r, sst_r, bt_r, depth_r)
     #stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
-    stack_1 <- stack (sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r)
+    #stack_1 <- stack (sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r)
     names (stack_1) <- stack_names
     
     # crop to Iceland EEZ
@@ -146,23 +157,24 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
       sst_i <- sst_brick[[i + start_val]]
       bt_i <- bt_brick[[i + start_val]]
       
-      sst_max_i <- calc (
-        subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
-        max)
-      
-      sst_min_i <- calc (
-        subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
-        min)
-      
-      bt_max_i <- calc (
-        subset (bt_brick, (i + start_val - 12):(i + start_val -1)),
-        max)
+      # sst_max_i <- calc (
+      #   subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
+      #   max)
+      # 
+      # sst_min_i <- calc (
+      #   subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
+      #   min)
+      # 
+      # bt_max_i <- calc (
+      #   subset (bt_brick, (i + start_val - 12):(i + start_val -1)),
+      #   max)
       
       
       #values (year_r) <- year_vals[i]
       
+      stack_i <- stack (lat_r, lon_r, sst_i, bt_i, depth_r)
       #stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
-      stack_i <- stack (sst_i, bt_i, depth_r, sst_max_i, sst_min_i, bt_max_i)
+      #stack_i <- stack (sst_i, bt_i, depth_r, sst_max_i, sst_min_i, bt_max_i)
       names (stack_i) <- stack_names
       
       clip_i <- mask (stack_i, eez)
@@ -174,7 +186,7 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
                                 fun = function (x,y) {x * exp(y)}
                                 )
     
-      # stack predictions for each year
+      # iteratively stack predictions for each year
       pred_stack <- stack (pred_stack, predict_therm_i)
     
     
@@ -183,24 +195,31 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
   
     #print (end_time - start_time)
     
-    # keep as stack, give model name
+    # save each CM prediction
+    CM_save_path <- paste (sci_name, GAM, CM, scenario, year_vals[1], year_vals[length(year_vals)], sep = "_")
+    writeRaster (pred_stack, file = paste0("Models/Prediction_bricks/", CM_save_path, ".grd"), overwrite = TRUE)
+    
+    # keep each individual CM stack in my environment, give unique model name so I can stack them all
     stack_name <- paste0 (CM, "_stack")
     assign (stack_name, pred_stack)
+    
 
   } # end CM for loop
     
   # stack up all the climate model predictions
-  if (scenario == 585) {ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack, CM26_stack)} else {ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack) }
+  if (scenario == 585) {
+    ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack, CM26_stack)
+    } else {ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack) }
     
   # convert to brick to make stackapply go faster
   ensemble_brick <- brick (ensemble_stack) # 2.4s for 10 years. 
   
-  # take mean
+  # take mean of all the climate models
   mean_brick <- stackApply (ensemble_brick, mean, indices = 1:length(year_vals)) # also ~2s
   
   
-  # write prediction brick as raster
-  save_path <- paste (sci_name, GAM, scenario, year_vals[1], year_vals[length(year_vals)], sep = "_")
+  # write mean prediction brick as raster
+  save_path <- paste (sci_name, GAM, "ensemble_mean", scenario, year_vals[1], year_vals[length(year_vals)], sep = "_")
     
   writeRaster (mean_brick, file = paste0("Models/Prediction_bricks/", save_path, ".grd"), overwrite = TRUE)
   
@@ -212,9 +231,8 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
 
 } # end function
 
-# test again
 
-
+# test on one species 
 predict_brick_fun (sci_name = "Lepidorhombus_whiffiagonis", GAM = "Depth_Temp", scenario = 585)
 
 # run on full species list that I ran GAMs for----
@@ -231,6 +249,22 @@ sapply (spp_Smooth_latlon$sci_name_underscore, predict_brick_fun, GAM = GAM, sce
 load ("Models/spp_Depth_Temp.RData")
 system.time (sapply (td_spp_names, predict_brick_fun, GAM = "Depth_Temp", scenario = 245)) #25 hours
 sapply (td_spp_names, predict_brick_fun, GAM = "Depth_Temp", scenario = 585)
+
+# run for tensor simple
+load ("Models/spp_Smooth_latlon.RData")
+
+sapply (spp_Smooth_latlon$sci_name_underscore, predict_brick_fun, GAM = "Tensor_simple", scenario = 245)
+sapply (spp_Smooth_latlon$sci_name_underscore, predict_brick_fun, GAM = "Tensor_simple", scenario = 585)
+
+# failed on squid, continue without and circle back? dims [product 10080000] do not match the length of object [9504768]. worked when I loaded the individual CMs
+
+
+# failed on l seminudus
+# incorrect number of layer names--is the model different for some reason?
+# failed for mean of g retrodorsalis
+te_spp_2 <- spp_Smooth_latlon$sci_name_underscore[37:65]
+te_spp_4 <- spp_Smooth_latlon$sci_name_underscore[53:65]
+sapply (te_spp_4, predict_brick_fun, GAM = "Tensor_simple", scenario = 585)
 
 ## Historical period using GLORYS temperature ----
 
@@ -250,9 +284,9 @@ hist_brick_fun <- function (sci_name, GAM) {
   sst_brick <- brick ("Data/GLORYS_sst_hist.grd")
   bt_brick <- brick ("Data/GLORYS_bt_hist.grd")
   
-  sst_max_brick <- brick ("Data/glorys_sst_month_max.grd")
-  sst_min_brick <- brick ("Data/glorys_sst_month_min.grd")
-  bt_max_brick <- brick ("Data/glorys_bt_month_max.grd")
+  # sst_max_brick <- brick ("Data/glorys_sst_month_max.grd")
+  # sst_min_brick <- brick ("Data/glorys_sst_month_min.grd")
+  # bt_max_brick <- brick ("Data/glorys_bt_month_max.grd")
   
     
     # make first prediction raster to start the stack
@@ -261,14 +295,15 @@ hist_brick_fun <- function (sci_name, GAM) {
     bt_r <- bt_brick[[1]]
     
     # need to subset year and take max/min. 1993-2018, so 12 mos prior to Jan 2000 [85] would be 73:84
-    smax_r <- calc (subset (sst_max_brick, 73:84), max)
-    smin_r <- calc (subset (sst_min_brick, 73:84), min)
-    bmax_r <- calc (subset (bt_max_brick, 73:84), max)
+    # smax_r <- calc (subset (sst_max_brick, 73:84), max)
+    # smin_r <- calc (subset (sst_min_brick, 73:84), min)
+    # bmax_r <- calc (subset (bt_max_brick, 73:84), max)
     
     #values (year_r) <- year_vals[1]
     
+    stack_1 <- stack (lat_r, lon_r, sst_r, bt_r, depth_r)
     #stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
-    stack_1 <- stack (sst_r, bt_r, depth_r, smax_r, smin_r, bmax_r)
+    #stack_1 <- stack (sst_r, bt_r, depth_r, smax_r, smin_r, bmax_r)
     names (stack_1) <- stack_names
     
     # crop to Iceland EEZ
@@ -294,13 +329,14 @@ hist_brick_fun <- function (sci_name, GAM) {
       sst_i <- sst_brick[[i]]
       bt_i <- bt_brick[[i]]
       
-      smax_i <- calc (subset (sst_max_brick, (72 + i):(83 + i)), max)
-      smin_i <- calc (subset (sst_min_brick, (72 + i):(83 + i)), min)
-      bmax_i <- calc (subset (bt_max_brick, (72 + i):(83 + i)), max)
+      # smax_i <- calc (subset (sst_max_brick, (72 + i):(83 + i)), max)
+      # smin_i <- calc (subset (sst_min_brick, (72 + i):(83 + i)), min)
+      # bmax_i <- calc (subset (bt_max_brick, (72 + i):(83 + i)), max)
       
       #values (year_r) <- year_vals[1]
       
-      stack_i <- stack (sst_i, bt_i, depth_r, smax_i, smin_i, bmax_i)
+      stack_i <- stack (lat_r, lon_r, sst_i, bt_i, depth_r)
+      #stack_i <- stack (sst_i, bt_i, depth_r, smax_i, smin_i, bmax_i)
       #stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
       names (stack_i) <- stack_names
       
@@ -346,254 +382,5 @@ hist_brick_fun ("Gadus_morhua", "Depth_Temp")
 sapply (td_spp_names, hist_brick_fun, GAM = "Depth_Temp")
 td_spp_names_2 <- td_spp_names[22:length(td_spp_names)]
 
-
-### Trial code down here #######
-
-# plot check 
-tmp <- brick ("Models/Prediction_bricks/Amblyraja_radiata_Smooth_latlon_245_2091_2100.grd")
-dim (tmp)
-plot (tmp, 100)
-summary (getValues(tmp[[1]])) # super weird big values
-
-cod_tmp <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_245_2091_2100.grd")
-plot (cod_tmp, 1)
-summary (getValues (cod_tmp[[1]]))
-
-cod_mn <- overlay (cod_tmp, fun = mean)
-
-cod_2 <- brick ("Models/Prediction_bricks/Gadus_morhua_245_slatlon_temp.grd")
-cod_2 <- mask (cod_2, eez)
-summary (getValues (cod_2[[913]]))
-### Run predictions----
-
-CM_list = c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
-
-# function to run the predictions and take mean?
-library (rgdal)
-library (data.table)
-library (parallel)
-
-mean_predict_brick_fun <- function (sci_name, GAM, scenario) {
-  
-  # CM 2.6 only corresponds to 585
-  if (scenario == 585) {
-    CM_list = c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
-  } else {CM_list = c("gfdl", "cnrm", "ipsl", "mohc") }
-  
-  # apply prediction function
-  sapply (CM_list, predict_brick_fun, sci_name = sci_name, GAM = GAM, scenario = scenario)
-  
-  # load files and take mean
-  
-  # https://gis.stackexchange.com/questions/259011/looping-several-raster-files-in-r
-  
-  brick_pattern <- paste0(
-    paste(sci_name, GAM, sep = "_"), 
-    ".*", 
-    paste0(scenario, ".grd")
-  )
-  
-  brick_files <- list.files (path = "Models/Prediction_bricks", pattern = brick_pattern)
-  
-  brickTab <- data.table (brick_files)
-  # https://www.rdocumentation.org/packages/data.table/versions/1.13.0/topics/%3A%3D
-  brickTab[, col := lapply (file.path("Models/Prediction_bricks", brick_files), raster),]
-  
-  mean_fun <- function (brick_files) {
-    require (raster)
-    return (overlay (brick_files),
-            fun = function (CM26, cnrm, gfdl, ipsl, mohc) {return (mean (CM26, cnrm, gfdl, ipsl, mohc, na.rm = TRUE))}
-    )
-
-    
-  }
-  
-  
-  
-}
-
-# try with one species I know worked
-sapply (CM_list, predict_brick_fun, sci_name = "Microstomus_kitt", GAM = "Smooth_latlon", scenario = 585)
-sapply (CM_list, predict_brick_fun, sci_name = "Gadus_morhua", GAM = "Smooth_latlon", scenario = 585)
-
-predict_brick_fun(sci_name = "Melanogrammus_aeglefinus", GAM = "Smooth_latlon", CM = "mohc", scenario = 245)
-
-# load and plot
-test <- brick("Models/Prediction_bricks/Microstomus_kitt_Smooth_latlon_cnrm_585.grd")
-test_clip <- mask(test, eez)
-dim(test)
-plot (test_clip[[100]])
-summary (getValues(test_clip[[100]]))
-#really not seeing anything. don't understand. why is pred_stack only 181 long. 
-
-test_Ma <- brick("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_mohc_245.grd")
-dim(test_Ma)
-plot (test_Ma, 1000)
-q_breaks <- quantile (getValues(test_Ma), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (test_Ma, 1000, 
-      breaks = q_breaks, col = terrain.colors(11),
-      xlim = c (-32, 0), ylim = c (60, 70))
-
-# try with cod
-predict_brick_fun(sci_name = "Gadus_morhua", GAM = "Smooth_latlon", CM = "gfdl", scenario = 245)
-cod_test <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_gfdl_245.grd")
-dim (cod_test)
-plot (cod_test, 100)
-
-q_breaks <- quantile (getValues(cod_test), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (cod_test, 100, 
-      breaks = q_breaks, col = terrain.colors(11),
-      xlim = c (-32, 0), ylim = c (60, 70))
-
-
-#### quick prediction test------
-# test predict
-library (mgcv)
-load ("Models/Biomass/Amblyraja_radiata_LB_full.Rdata") # error, can't process these factors. I think I would need to change to numeric. 
-
-# try without lon
-gam_PA <- gam (Presence ~ s(lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
-               family = "binomial", 
-               data = full_data_sci_name)
-
-gam_LB <- gam (kg_log ~ s(lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
-               family = "gaussian", 
-               data = full_data_sci_name)
-
-# try without season
-gam_PA <- gam (Presence ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
-               family = "binomial", 
-               data = full_data_sci_name)
-
-gam_LB <- gam (kg_log ~ te(lon, lat) + year + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin),
-               family = "gaussian", 
-               data = full_data_sci_name)
-
-predict_PA <- raster::predict (stack, gam_PA, type = "response")
-predict_LB <- raster::predict (stack, gam_LB, type = "response")
-
-predict_therm <- overlay (predict_PA, predict_LB, 
-                          fun = function (x,y) {x * exp(y)}
-                          )
-
-plot (predict_therm)
-
-tmp
-
-## quick plot check ----
-
-library (raster)
-library (sf)
-library (mapdata)
-
-# iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
-eez <- st_read("Data/eez.shp")
-
-# vector of dates
-projected_dates <- seq (ymd("2015-01-01"), ymd("2100-12-12"), by = "months")
-
-# load prediction bricks
-# eventually these will be in Models/prediction_bricks
-
-# for now, have temporary saved file in Data
-
-# this one is tensor lat lon
-te_brick <- brick ("Models/Prediction_bricks/Gadus_morhua_245_temp.grd")
-s_brick <- brick ("Models/Prediction_bricks/Gadus_morhua_245_slatlon_temp.grd")
-
-plot (tmp_brick, 1)
-# make color scale based on quantiles
-col_breaks <- quantile (getValues(s_brick), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (tmp_brick, 1000, breaks = col_breaks, col = terrain.colors(11))
-
-## take decade averages
-# https://gis.stackexchange.com/questions/222443/find-mean-of-a-group-of-every-10-layers-in-raster-stack-in-r
-
-# not evenly split into decades. would want 2015-2020, then 2021-2030 and so on. need to repeat first index 72 times, then 120. 
-dec_index <- c (rep (1, 72), rep (2:9, each = 120))
-
-dec_names <- c(
-  "2015-2020",
-  "2021-2030",
-  "2031-2040",
-  "2041-2050",
-  "2051-2060",
-  "2061-2070",
-  "2071-2080",
-  "2081-2090",
-  "2091-2100"
-)
-
-dec_mean <- stackApply (tmp_brick, dec_index, fun = mean)
-names (dec_mean) <- dec_names
-dec_breaks <- quantile (getValues(dec_mean), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (dec_mean, breaks = dec_breaks, col = terrain.colors(11))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-# clip decades to island eez
-dec_clip <- mask (dec_mean, eez)
-dec_breaks_isl <- quantile (getValues(dec_clip), probs = c(seq (0, 0.9, 0.1), 0.95, 0.99, 0.999, 1), na.rm = TRUE)
-plot (dec_clip, breaks = dec_breaks_isl, col = terrain.colors(14),
-      xlim = c(-33, 0), ylim = c (58, 72))
-
-
-vals1 <- getValues (tmp_brick[[1]])
-summary (vals1) # max e38
-# plot with color range excluding outliers
-quantile (vals1, 0.75, na.rm = TRUE) + 1.5 * (quantile (vals1, 0.75, na.rm = TRUE) - quantile (vals1, 0.25, na.rm = TRUE))
-
-allvals <- as.vector(getValues(tmp_brick))
-summary (allvals)
-
-# should my range exclude zeros?
-max_scale <- quantile (allvals, 0.75, na.rm = TRUE) + 1.5 * (quantile (allvals, 0.75, na.rm = TRUE) - quantile (allvals, 0.25, na.rm = TRUE)) # 34
-
-allvals_P <- allvals[which(allvals > 0)]
-summary (allvals_P) # exactly the same?? more values have been exlcuded than just NA...
-
-library (viridis)
-library (maps)
-library (mapdata)
-
-plot (tmp_brick, 1, col = viridis(64), zlim = c (0, 35))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (tmp_brick, 100, col = viridis(64), zlim = c (0, 35))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (tmp_brick, 1000, col = viridis(64), zlim = c (0, 35))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (tmp_brick, 1000, col = viridis(64), zlim = c (0, 350))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-pred_clip <- mask (s_brick, eez)
-
-plot (tmp_brick, 1000)
-plot (log(tmp_brick), 1000)
-
-vals <- getValues (pred_clip[[1000]])
-
-# also quick checks with first layer for different cod models run through build_prediciton_rasters
-
-# for tensor, have weird thing where exp() values > 710 are Inf, so messes up color bar. weird behavior in extreme north for biomass giving huge values. 
-pred_stack_245[pred_stack_245 > 10000] <- NA
-
-pred_clip <- mask (pred_stack_245, eez)
-isl_breaks <- quantile (getValues(pred_clip), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (pred_clip, 1000, 
-      breaks = isl_breaks, col = terrain.colors(11),
-      xlim = c (-32, 0), ylim = c (60, 70))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-# plot full map
-col_breaks <- quantile (getValues(pred_stack_245), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (pred_stack_245, breaks = col_breaks, col = terrain.colors(11))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-# zoom to get weird greenland corner
-col_breaks <- quantile (getValues(pred_stack_245), probs = seq (0, 1, 0.1), na.rm = TRUE)
-plot (pred_stack_245, breaks = col_breaks, col = terrain.colors(11),
-      xlim = c(-33, 0), ylim = c (58, 72))
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
+# tensor simple
+sapply (spp_Smooth_latlon$sci_name_underscore, hist_brick_fun, GAM = "Tensor_simple")
