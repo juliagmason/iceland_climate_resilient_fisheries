@@ -54,8 +54,101 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
 plot_pred_maps_fun (sci_name = "Gadus_morhua", 
                     model_name = "Smooth_latlon")
 
+plot_pred_maps_fun (sci_name = "Lophius_piscatorius", 
+                    model_name = "Smooth_latlon")
 
+
+
+plot_pred_maps_fun (sci_name = "Melanogrammus_aeglefinus", 
+                    model_name = "Smooth_latlon")
 # test maps ----
+
+# haddock for smast seminar
+png (file = "Figures/Haddock_thermpred_map.png", width = 6, height = 4, units = "in", res = 300)
+plot (mn_hist, 
+             breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+             xlim = c (-32, -3), ylim = c (60, 69),
+             legend = FALSE,
+            main = "Suitable thermal habitat")
+ maps::map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ dev.off()
+ 
+ # haddock vs herring, smast seminar
+had_hist_br <- brick ("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_2000_2018.grd")
+had_245_br <- brick ("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_245_2061_2080.grd")
+had_585_br <- brick ("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_585_2061_2080.grd")
+ 
+had_hist_mn <- calc (had_hist_br, mean)
+had_245_mn <- calc (had_245_br, mean)
+had_585_mn <- calc (had_585_br, mean)
+
+had_vals <- stack (had_hist_mn, had_245_mn, had_585_mn) 
+had_breaks <- quantile (getValues(had_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
+ 
+ her_hist_br <- brick ("Models/Prediction_bricks/Clupea_harengus_Smooth_latlon_2000_2018.grd")
+ her_245_br <- brick ("Models/Prediction_bricks/Clupea_harengus_Smooth_latlon_245_2061_2080.grd")
+ her_585_br <- brick ("Models/Prediction_bricks/Clupea_harengus_Smooth_latlon_585_2061_2080.grd")
+ 
+ her_hist_mn <- calc (her_hist_br, mean)
+ her_245_mn <- calc (her_245_br, mean)
+ her_585_mn <- calc (her_585_br, mean)
+ 
+ her_vals <- stack (her_hist_mn, her_245_mn, her_585_mn) 
+ her_breaks <- quantile (getValues(her_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
+ 
+ 
+ png ("Figures/haddock_herring_SMAST_maps.png", width = 16, height = 9, units = "in", res = 300)
+ par (mfrow = c (2, 3))
+ plot (had_hist_mn, 
+       breaks = had_breaks, col = viridis(length(had_breaks) -1),
+       xlim = c (-32, -3), ylim = c (60, 69),
+       cex.main = 2,
+       legend = FALSE,
+       main = "Haddock, historical")
+ 
+ map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ 
+ plot (had_245_mn, 
+       breaks = had_breaks, col = viridis(length(had_breaks) -1),
+       xlim = c (-32, -3), ylim = c (60, 69),
+       legend = FALSE,
+       cex.main = 2,
+       main = "Haddock, SSP 245")
+ map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ 
+ plot (had_585_mn, 
+       breaks = had_breaks, col = viridis(length(had_breaks) -1),
+       xlim = c (-32, -3), ylim = c (60, 69),
+       cex.main = 2,
+       main = "Haddock, SSP 585")
+ map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ 
+ plot (her_hist_mn, 
+       breaks = her_breaks, col = viridis(length(her_breaks) -1),
+       xlim = c (-32, -3), ylim = c (60, 69),
+       legend = FALSE,
+       cex.main = 2,
+       main = "Herring, historical")
+ map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ 
+ plot (her_245_mn, 
+       breaks = her_breaks, col = viridis(length(her_breaks) -1),
+       xlim = c (-32, -3), ylim = c (60, 69),
+       legend = FALSE,
+       cex.main = 2,
+       main = "Herring, SSP 245")
+ map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ 
+ plot (her_585_mn, 
+       breaks = her_breaks, col = viridis(length(her_breaks) -1),
+       xlim = c (-32, -3), ylim = c (60, 69),
+       cex.main = 2,
+       main = "Herring, SSP 585")
+ map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+ dev.off()
+ 
+ 
+ 
 # for temp_depth, m. merlangus was biggest increase, brosme was biggest decrease
 
 m_mer_hist_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_2000_2018.grd")
