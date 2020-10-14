@@ -10,6 +10,7 @@ library (raster)
 library (lubridate)
 
 # csv of MFRI tow information ----
+# This is a combined csv of spring and autumn surveys, where each row is a sample/tow. Goes through March 2020. 
 mfri_samples <- read_csv ("Data/MFRI_comb_survey_samples.csv",
                           col_types = cols(
                             sample_id = col_factor(),
@@ -28,6 +29,8 @@ coordinates(mfri_pts) <- ~lon + lat
 mfri_dates <- unique (mfri_pts$date)
 
 # GINS salinity ----
+# Salinity climatology from NOAA: https://www.nodc.noaa.gov/OC5/regional_climate/gin-seas-climate/about_gin.html
+# this is not the right salinity data to be using since it's averaged over decades. I used it in my first model but shouldn't use for anything else. It only goes until 2012. 
 # adding back in 9/22 to document variable importance
 gins_sal <- brick ("Data/GINS_bottom_sal.grd")
 
@@ -45,7 +48,7 @@ mfri_sal_df <- data.frame(sample_id = factor(),
 
 for (i in 1:length(mfri_dates_gins)) {
   x <- mfri_dates_gins[i]
-  # subset mfri data
+  # subset mfri data for that date
   mfri <- mfri_pts[which (mfri_pts$date == x),]
   
   # match date by re-assigning year to appropriate decade
@@ -58,7 +61,7 @@ for (i in 1:length(mfri_dates_gins)) {
   #index date
   y_in <- which (gins_dates == y)
   
-  # subset oisst brick
+  # subset salinity brick for that date and extract data for mfri lat/lon points
   gins_subset <- subset (gins_sal, y_in)
   gins_extract <- raster::extract (gins_subset, mfri, method = "simple")
   
@@ -79,18 +82,30 @@ mfri_sal_df$sample_id <- as.factor(mfri_sal_df$sample_id)
 
 # I renamed to bormicon_table.csv. Checked, and just one bormicon region per stat_sq so can condense into a key table. 
 
+# going to condense a few bormicon regions for ease of predicting. In my prediction raster I combined 112 and 111, and 109 and 110. 
+# 115 is not in the prediction data at all. going to join with 113--eastern extension. 112 is not well represented in the data (only 41 points for data with sst min/max). Going to join with 111 as a northern extension. 110 also not well represented (only 36 points), but not super clear how to handle it--represents Greenland shelf. I think makes more sense to join with 111 and 112 than with 109 for a larger prediction, but the portion of 110 that's within the EEZ is contiguous with 109. Will convert to 109 for now. 
+
 hab_table <- read.csv ("Data/Raw_data/bormicon_table.csv") %>%
   group_by(stat_sq) %>%
   summarize (bormicon_region = first(division),
              bormicon_subdivision = first (subdivision)) %>%
-  mutate (stat_sq = as.factor(stat_sq))
+  mutate (stat_sq = as.factor(stat_sq),
+          bormicon_region = case_when (bormicon_region == 115 ~ 113,
+                                       bormicon_region == 112 ~ 111,
+                                       bormicon_region == 110 ~ 109,
+                                       TRUE ~ as.numeric(bormicon_region)
+                                       )
+          )
 
 # mfri has a 4214 stat sq not in hab_table. I think I looked at it, definitely in 421 stat sq. division would be 101. 
 
 # GLORYS sst min, max, stdev ----
 
+# https://resources.marine.copernicus.eu/?option=com_csw&view=details&product_id=GLOBAL_REANALYSIS_PHY_001_031
+# temperature reanalysis product for more sophisticated temperature variables, e.g. annual max and min, as in Morely et al. 2018
+
 # update 9/14/2020:
-# for max and min, I need to find the layer that corresponds to the point date, then take a subset representing the preceeding twelve layers. then I extract the cells corresponding to the points, and calculate the max or min. 
+# for max and min, I need to find the layer that corresponds to the point date, then take a subset representing the preceding twelve layers. then I extract the cells corresponding to the points, and calculate the max or min. 
 
 sst_max <- brick ("Data/glorys_sst_month_max.grd")
 sst_min <- brick ("Data/glorys_sst_month_min.grd")
@@ -203,7 +218,17 @@ mfri_env_df <- mfri_samples %>%
 # write csv----
 write.csv (mfri_env_df, file = "Data/MFRI_predictor_df.csv", row.names = FALSE)
 
+
+
+
+
+
+
+
+
+### =========================
 # explore missing values ----
+### =========================
 
 # inf glorys
 gl_inf <- mfri_env_df[which (is.infinite(mfri_env_df$sst_max)),]
