@@ -141,3 +141,13 @@ spp_by_qu %>%
   
   ggtitle ("Small boat ITQ")
 dev.off()
+
+# for SNAPP case, what are the main groundfish species by volume and value?
+
+lands_qu %>%
+  filter (!Species %in% c ("Blue whiting", "Capelin", "Capelin roe", "Greenland shark", "Iceland cyprine", "Mackerel", "Norway lobster", "Norwegian spring-spawning herring", "Other pelagic fish", "Other shellfish", "Scallop", "Shrimp", "Skate", "Spiny dogfish", "Starry ray")) %>%
+  group_by (year, metric) %>%
+  summarize (tot = sum(amount, na.rm = TRUE)) %>% 
+  filter (metric == "Tonnes", year >=2010) %>%
+  ggplot (aes (x = year, y = tot)) +
+  geom_line()
