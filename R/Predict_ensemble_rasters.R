@@ -18,6 +18,25 @@ load ("Data/prediction_raster_template.RData") # named pred_r_template
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
 
+# function for applying focal statistics on a brick
+# https://stat.ethz.ch/pipermail/r-sig-geo/2016-May/024454.html
+multiFocal <- function(x, w=matrix(1, nr=3, nc=3), ...) {
+  
+  if(is.character(x)) {
+    x <- brick(x)
+  }
+  # The function to be applied to each individual layer
+  fun <- function(ind, x, w, na.rm = TRUE, ...){
+    focal(x[[ind]], w=w, ...)
+  }
+  
+  n <- seq(nlayers(x))
+  list <- lapply(X=n, FUN=fun, x=x, w=w, ...)
+  
+  out <- stack(list)
+  return(out)
+}
+
 # set up static variables ----
 
 # Lat ----
@@ -54,7 +73,7 @@ depth_r <- raster::resample (depth_r, pred_r_template, method = "bilinear")
 
 
 # Bormicon region ----
-hab_table <- read_csv ("Data/Raw_data/bormicon_table.csv")
+borm_r <- raster ("Data/bormicon_divisions.grd")
 
 # vector of names ----
 # this will depend on the terms in the GAM
@@ -83,8 +102,15 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
   start1 <- Sys.time()
   
   # load saved GAM for species of interest ----
-  load (paste0("Models/", GAM, "/", sci_name, "_PA.Rdata")) # gam_PA. add PA_full.RData for Smooth_latlon
-  load (paste0("Models/", GAM, "/", sci_name, "_LB.Rdata")) # gam_LB
+  # load previously fit GAMs, which have slightly different naming conventions depending on the model
+  if (GAM %in% c ("First_full_tensor_season", "Tensor_drop_season", "Smooth_latlon")) {
+    load (file.path("Models", GAM, paste0(sci_name, "_PA_full.Rdata")))
+    load (file.path("Models", GAM, paste0(sci_name, "_LB_full.Rdata")))
+  } else {
+    load (file.path("Models", GAM, paste0(sci_name, "_PA.Rdata")))
+    load (file.path("Models", GAM, paste0(sci_name, "_LB.Rdata")))
+  }
+
   
   # run predictions for each climate model ----
   # CM2.6 run corresponds to 585 scenario, but doesn't have a 245 equivalent. 
@@ -112,26 +138,31 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
     
     # also calculate sst min/max and bt max if these are terms in the model
     # subset start value and 11 preceding layers, then calc
-    # sst_max_r <- calc (
-    #   subset (sst_brick, (start_val - 11):start_val),
-    # max)
-    # 
-    # sst_min_r <- calc (
-    #   subset (sst_brick, (start_val - 11):start_val),
-    #   min)
-    # 
-    # bt_max_r <- calc (
-    #   subset (bt_brick, (start_val - 11):start_val),
-    #   max)
-    # 
+    sst_max_r <- calc (
+      subset (sst_brick, (start_val - 11):start_val),
+    max)
+
+    sst_min_r <- calc (
+      subset (sst_brick, (start_val - 11):start_val),
+      min)
+
+    bt_max_r <- calc (
+      subset (bt_brick, (start_val - 11):start_val),
+      max)
+
+    
+    # calculate sst and bt dev
+    sst_dev_r <- multiFocal(sst_r, fun = function (x) sd (x, na.rm = TRUE))
+    bt_dev_r <- multiFocal(bt_r, fun = function (x) sd (x, na.rm = TRUE))
     
     # set values for year if these are terms in the model
     #values (year_r) <- year_vals[1]
     
     # stack all the predictor layers; this will change based on model terms ----
-    stack_1 <- stack (lat_r, lon_r, sst_r, bt_r, depth_r)
+    #stack_1 <- stack (lat_r, lon_r, sst_r, bt_r, depth_r)
     #stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
     #stack_1 <- stack (sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r)
+    stack_1 <- stack (borm_r, sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r, sst_dev_r, bt_dev_r)
     names (stack_1) <- stack_names
     
     # crop to Iceland EEZ
