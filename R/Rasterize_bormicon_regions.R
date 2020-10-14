@@ -116,14 +116,16 @@ subdiv_r <- fasterize (
 
 # reclassify to divisions ----
 
-# 115 is not in the prediction data at all. going to join with 113.not in borm table either 
-# also need to figure out something with 109
+# 115 is not in the prediction data at all. going to join with 113--eastern extension. 112 is not well represented in the data (only 41 points for data with sst min/max). Going to join with 111 as a northern extension. 110 also not well represented (only 36 points), but not super clear how to handle it--represents Greenland shelf. I think makes more sense to join with 111 and 112 than with 109 for a larger prediction, but the portion of 110 that's within the EEZ is much more similar to 109. Will convert to 109 for now. 
 
 # have to switch order of subdivision and division
 borm_div <- borm_coords %>%
   dplyr::select (subdivision, division) %>%
   unique() %>%
-  mutate (division = ifelse (division == 115, 113, as.numeric(division)))
+  mutate (division = case_when (division == 115 ~ 113,
+                                division == 112 ~ 111,
+                                division == 110 ~ 109,
+                                TRUE ~ as.numeric(division)))
 
 borm_matrix <- data.matrix (borm_div)
 
@@ -131,7 +133,7 @@ borm_matrix <- data.matrix (borm_div)
 borm_div_rcl <- raster::reclassify (subdiv_r, borm_matrix)
 plot (borm_div_rcl)
 
-# try to replace 109 gap
+# try to replace 109 gap--just didn't receive outlines for subdivision 1096. I'll define a box with the lat/lon boundaries of the gap, and fill any NA values in that box with 109
 # https://gis.stackexchange.com/questions/281556/changing-raster-values-in-specific-zone-only
 
 zone_109 <- extent(matrix (c(-30,59.5, -24, 63), nrow = 2))
@@ -148,20 +150,49 @@ borm_div_r <- writeRaster(borm_div_rcl, filename = "Data/bormicon_divisions.grd"
 
 ## plotting code from Pamela----
 
-test <- read.csv('Data/Raw_data/subdivision_coords2.csv')
+test <- read.csv('Data/Raw_data/subdivision_coords.csv')
+
+# with repaired data
+test <- borm_coords 
+
+# iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
+eez <- st_read("Data/eez.shp")
+isl_eez <- fortify (eez)
+
+# plot polygons with eez overlaid
+ggplot () +
+  geom_polygon(aes(lon,lat,group=SUBDIVISION, fill = as.factor(SUBDIVISION)),
+               data=test,
+               size = 0.3) +  
+  geom_point(col='yellow') +  
+  geom_path(aes(lon,lat,group=SUBDIVISION), 
+            data=test,
+            size = 0.3) +
+  geom_text(aes(lon,lat,label=SUBDIVISION),
+            data=summarise (group_by(test, SUBDIVISION, lat=mean(lat),
+                                     lon=mean(lon)))) +
+  geom_polygon(data = map_data("world",'Iceland'), 
+               aes(long,lat,group = group),
+               col = 'black' ,fill = 'gray70',size = 0.3) +
+  geom_polygon(data=map_data("world",'Greenland'), 
+               aes(long,lat,group = group), 
+               col = 'black', fill = 'gray70') +
+  geom_sf (data  = eez, fill = NA, lwd = 1.5) +
+  coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
+  theme_bw() 
 
 
 ggplot(data.frame(lat=0,lon=0), aes(lon,lat)) + 
   geom_polygon(aes(lon,lat,group=SUBDIVISION, fill = as.factor(SUBDIVISION)),
-               data=filter (test, SUBDIVISION %in% c(1091, 1092, 1093, 1094, 1095, 1145)),
+               data=test,
                size = 0.3) +  
   geom_point(col='yellow') +  
   geom_path(aes(lon,lat,group=SUBDIVISION), 
-            data=filter (test, SUBDIVISION %in% c(1091, 1092, 1093, 1094, 1095, 1146)),
+            data=test,
             size = 0.3) +
-  #  geom_text(aes(lon,lat,label=SUBDIVISION),
-  #            data=ddply(test,~SUBDIVISION, summarise, lat=mean(lat),
-  #              lon=mean(lon))) +
+   geom_text(aes(lon,lat,label=SUBDIVISION),
+             data=summarise (group_by(test, SUBDIVISION, lat=mean(lat),
+               lon=mean(lon)))) +
   geom_polygon(data = map_data("world",'Iceland'), 
                aes(long,lat,group = group),
                col = 'black' ,fill = 'gray70',size = 0.3) +
@@ -169,12 +200,13 @@ ggplot(data.frame(lat=0,lon=0), aes(lon,lat)) +
                aes(long,lat,group = group), 
                col = 'black', fill = 'gray70') +
 # this is my code, add ticks so I can see where the polygons meet
+  geom_sf (data  = eez, fill = NA, lwd = 1.5) +
   scale_x_continuous(breaks = seq(min(test$lon, na.rm = TRUE), 
                                   max(test$lon, na.rm = TRUE), by = 1)) +
   scale_y_continuous(breaks = seq(min(test$lat, na.rm = TRUE), 
                                   max(test$lat, na.rm = TRUE), 
                                   by = 0.5)
-  )
+  ) +
   # geom_polygon(data=geo::eyjar, col = 'black', fill = 'gray70',size = 0.3) +
   # geom_polygon(data=geo::faeroes, col = 'black', fill = 'gray70') +
   coord_map('mercator', xlim=c(-40,0),ylim=c(60,70)) +
