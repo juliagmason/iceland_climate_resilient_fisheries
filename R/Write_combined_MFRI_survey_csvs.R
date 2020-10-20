@@ -2,8 +2,11 @@
 # 6/22/2020
 # JGM
 
+library (tidyverse)
+library (lubridate)
+
 # write and save combined spring and autumn datasets
-spr_ds <- read_csv ("../Data/Raw_data/springsurvey.csv",
+spr_ds <- read_csv ("Data/Raw_data/springsurvey.csv",
                     col_types = cols(
                       sample_id = col_factor(),
                       species = col_factor(),
@@ -12,7 +15,7 @@ spr_ds <- read_csv ("../Data/Raw_data/springsurvey.csv",
                     )) %>%
   mutate (date = make_date (year, month))
 
-aut_ds <- read_csv ("../Data/Raw_data/autumnsurvey.csv",
+aut_ds <- read_csv ("Data/Raw_data/autumnsurvey.csv",
                     col_types = cols(
                       sample_id = col_factor(),
                       species = col_factor(),
@@ -26,7 +29,13 @@ comb_ds <- rbind (spr_ds, aut_ds)
 comb_ds$season = c(rep ("spring", nrow (spr_ds)), rep("autumn", nrow (aut_ds)))
 
 # fix repeated sebastes mentella
-comb_ds$species[which (comb_ds$species == 11)] <- 61
+# Valtysson: these are distinct
+#comb_ds$species[which (comb_ds$species == 11)] <- 61
+
+# fix Lycodes species groupings
+# Species 91 (Lycodes rossi) has been combined with another, species 59 (Lycodes reticulatus). Originally they were thought to be two species but are now considered the same.
+# Rossi only caught before 1990, reticulatus cauth later
+comb_ds$species[which (comb_ds$species == 91)] <- 59
 
 write.csv (comb_ds, file = "Data/MFRI_comb_survey.csv", row.names = FALSE)
 
