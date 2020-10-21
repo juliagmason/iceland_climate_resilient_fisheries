@@ -26,6 +26,24 @@ mfri_abun <- read_csv ("Data/MFRI_comb_survey.csv",
   mutate (n_log = log(n_tot),
           kg_log = log(kg_tot))
 
+# predictor variables
+# I compiled these in Build_MFRI_predictor_df.R. 
+mfri_pred <-  read_csv ("Data/MFRI_predictor_df.csv",
+                        col_types = cols(
+                          sample_id = col_factor(),
+                          stat_sq = col_factor(),
+                          bormicon_region = col_factor(),
+                          sst_dev = col_number(),
+                          bt_dev = col_number(),
+                          sst_max = col_number(),
+                          sst_min = col_number(),
+                          bt_max = col_number(),
+                          bt_min = col_number()
+                        )
+) %>%
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn")
+  )  # remove autumn 2011, 131 samples. Also cutting out autumn pre-2000 (as of 7/23/2020. so did this with MASE fitting, but not with original run through of full gams)
 
 # species list
 # This relates species IDs to scientific names
@@ -45,6 +63,10 @@ spp_list <- read_csv ("Data/species_eng.csv",
 var_levels = c("lat","bottom.temp", "tow.depth.begin","lon", "surface.temp")
 
 spp_annual_trends <- mfri_abun %>%
+  # remove species with only one observation
+  group_by (species) %>%
+  filter (n() > 1) %>%
+  ungroup() %>%
   left_join (mfri_pred, by = "sample_id") %>%
   select (species, kg_tot, year, season, surface_temp, bottom_temp, tow_depth_begin, lat, lon) %>%
   # rename columns to replace underscore with period. Summarise will append new column names with an underscore and I can't figure out how to change it there
