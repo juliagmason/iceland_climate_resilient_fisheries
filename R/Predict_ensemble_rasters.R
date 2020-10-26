@@ -84,7 +84,7 @@ borm_r <- raster ("Data/bormicon_divisions.grd")
 stack_names <- c("bormicon_region", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
 
 # tensor simple names
-stack_names <- c("lat", "lon", "surface_temp", "bottom_temp", "tow_depth_begin")
+#stack_names <- c("lat", "lon", "surface_temp", "bottom_temp", "tow_depth_begin")
 
 # Future predictions ----
 # function to go through each species, CM, scenario ----
@@ -133,6 +133,7 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
                          dim(sst_brick)[3] - length (year_vals) ,
                          dim(sst_brick)[3] - (length (year_vals) + 240)
     )
+    # start in 2061
     sst_r <- sst_brick[[start_val + 1]] 
     bt_r <- bt_brick[[start_val + 1]]
     
@@ -181,31 +182,34 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
     # for loop to stack for all years----
     #start_time <- Sys.time()
     for (i in 2:length(year_vals)) { # length of time series
-      
+
       # if doing the whole time series, progress report
       
       #if (i%%100 == 0) {print (i)}
       sst_i <- sst_brick[[i + start_val]]
       bt_i <- bt_brick[[i + start_val]]
       
-      # sst_max_i <- calc (
-      #   subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
-      #   max)
-      # 
-      # sst_min_i <- calc (
-      #   subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
-      #   min)
-      # 
-      # bt_max_i <- calc (
-      #   subset (bt_brick, (i + start_val - 12):(i + start_val -1)),
-      #   max)
-      
-      
+      sst_max_i <- calc (
+        subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
+        max)
+
+      sst_min_i <- calc (
+        subset (sst_brick, (i + start_val - 12):(i + start_val -1)),
+        min)
+
+      bt_max_i <- calc (
+        subset (bt_brick, (i + start_val - 12):(i + start_val -1)),
+        max)
+
+      # calculate sst and bt dev
+      sst_dev_i <- multiFocal(sst_i, fun = function (x) sd (x, na.rm = TRUE))
+      bt_dev_i <- multiFocal(bt_i, fun = function (x) sd (x, na.rm = TRUE))
       #values (year_r) <- year_vals[i]
       
-      stack_i <- stack (lat_r, lon_r, sst_i, bt_i, depth_r)
+      #stack_i <- stack (lat_r, lon_r, sst_i, bt_i, depth_r)
       #stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
       #stack_i <- stack (sst_i, bt_i, depth_r, sst_max_i, sst_min_i, bt_max_i)
+      stack_i <- stack (borm_r, sst_i, bt_i, depth_r, sst_max_i, sst_min_i, bt_max_i, sst_dev_i, bt_dev_i)
       names (stack_i) <- stack_names
       
       clip_i <- mask (stack_i, eez)
@@ -266,7 +270,10 @@ predict_brick_fun <- function (sci_name, GAM, scenario) {
 # test on one species 
 predict_brick_fun (sci_name = "Lepidorhombus_whiffiagonis", GAM = "Depth_Temp", scenario = 585)
 
+# ==================
 # run on full species list that I ran GAMs for----
+# ==================
+
 load ("Models/spp_Smooth_latlon.RData")
 
 GAM <- "Smooth_latlon"
@@ -297,7 +304,61 @@ te_spp_2 <- spp_Smooth_latlon$sci_name_underscore[37:65]
 te_spp_4 <- spp_Smooth_latlon$sci_name_underscore[53:65]
 sapply (te_spp_4, predict_brick_fun, GAM = "Tensor_simple", scenario = 585)
 
+# run on bormicon all temp, start with 25spp
+spp_25 <- read_csv ("Data/species_eng.csv") %>%
+  filter (n_autumn > 24 & n_spring > 35)
+
+# P platessa and m kitt didn't calculate mean but took all 5 models it looks like. come back to that one later?
+
+# take mean for m kitt and p platessa 585
+m_kitt_files <- list.files (path = "Models/Prediction_bricks", pattern = "Microstomus_kitt_Borm_14_alltemp.*_585_2061_2080.grd", full.names = TRUE)
+
+p_plat_files <- list.files (path = "Models/Prediction_bricks", pattern = "Pleuronectes_platessa_Borm_14_alltemp.*_585_2061_2080.grd", full.names = TRUE)
+CM_list = c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+for (CM in CM_list) {
+  file <- m_kitt_files[grep (CM, m_kitt_files)]
+  #file <- p_plat_files[grep (CM, p_plat_files)]
+  brick <- brick (file)
+  stack_name <- paste0 (CM, "_stack")
+  assign (stack_name, brick)
+  
+}
+
+ensemble_stack <- stack (gfdl_stack, cnrm_stack, ipsl_stack, mohc_stack, CM26_stack)
+# convert to brick to make stackapply go faster
+ensemble_brick <- raster::brick (ensemble_stack) # 2.4s for 10 years. 
+# take mean of all the climate models
+mean_brick <- stackApply (ensemble_brick, mean, indices = 1:length(year_vals)) # also ~2s
+# write mean prediction brick as raster
+save_path <- paste (sci_name, GAM, "ensemble_mean", scenario, year_vals[1], year_vals[length(year_vals)], sep = "_")
+
+writeRaster (mean_brick, file = paste0("Models/Prediction_bricks/", save_path, ".grd"), overwrite = TRUE)
+
+sapply (spp_25$sci_name_underscore[18:25], predict_brick_fun, GAM = "Borm_14_alltemp", scenario = 585)
+sapply (spp_25$sci_name_underscore, predict_brick_fun, GAM = "Borm_14_alltemp", scenario = 245) # each about 55 mins
+
+borm_addl <- spp_Smooth_latlon$sci_name_underscore[which (! spp_Smooth_latlon$sci_name_underscore %in% c(spp_25$sci_name_underscore, "Myoxocephalus_scorpius"))]
+sapply (borm_addl[34:39], predict_brick_fun, GAM = "Borm_14_alltemp", scenario = 585)
+sapply (borm_addl, predict_brick_fun, GAM = "Borm_14_alltemp", scenario = 245)
+# stopped at p blennoide
+
+# redo m kitt and s mentella
+redo_spp <- c ("Microstomus_kitt", "Sebastes_mentella")
+sapply (redo_spp, predict_brick_fun, GAM= "Borm_14_alltemp", scenario = 585)
+# do both scenarios for s mentella
+predict_brick_fun(GAM= "Borm_14_alltemp", scenario = 245, sci_name = "Sebastes_mentella")
+
+
+
+
+
+
+
+
+
+# ==================
 ## Historical period using GLORYS temperature ----
+# ==================
 
 year_vals <- rep (2000:2018, each = 12)
 
@@ -315,10 +376,10 @@ hist_brick_fun <- function (sci_name, GAM) {
   sst_brick <- brick ("Data/GLORYS_sst_hist.grd")
   bt_brick <- brick ("Data/GLORYS_bt_hist.grd")
   
-  # sst_max_brick <- brick ("Data/glorys_sst_month_max.grd")
-  # sst_min_brick <- brick ("Data/glorys_sst_month_min.grd")
-  # bt_max_brick <- brick ("Data/glorys_bt_month_max.grd")
-  
+  sst_max_brick <- brick ("Data/glorys_sst_month_max.grd")
+  sst_min_brick <- brick ("Data/glorys_sst_month_min.grd")
+  bt_max_brick <- brick ("Data/glorys_bt_month_max.grd")
+
     
     # make first prediction raster to start the stack
    
@@ -326,15 +387,21 @@ hist_brick_fun <- function (sci_name, GAM) {
     bt_r <- bt_brick[[1]]
     
     # need to subset year and take max/min. 1993-2018, so 12 mos prior to Jan 2000 [85] would be 73:84
-    # smax_r <- calc (subset (sst_max_brick, 73:84), max)
-    # smin_r <- calc (subset (sst_min_brick, 73:84), min)
-    # bmax_r <- calc (subset (bt_max_brick, 73:84), max)
+    sst_max_r <- calc (subset (sst_max_brick, 73:84), max)
+    sst_min_r <- calc (subset (sst_min_brick, 73:84), min)
+    bt_max_r <- calc (subset (bt_max_brick, 73:84), max)
+    
+    # calculate sst and bt dev
+    sst_dev_r <- multiFocal(sst_r, fun = function (x) sd (x, na.rm = TRUE))
+    bt_dev_r <- multiFocal(bt_r, fun = function (x) sd (x, na.rm = TRUE))
     
     #values (year_r) <- year_vals[1]
     
-    stack_1 <- stack (lat_r, lon_r, sst_r, bt_r, depth_r)
+    #stack_1 <- stack (lat_r, lon_r, sst_r, bt_r, depth_r)
     #stack_1 <- stack (lat_r, lon_r, year_r, sst_r, bt_r, depth_r)
     #stack_1 <- stack (sst_r, bt_r, depth_r, smax_r, smin_r, bmax_r)
+    stack_1 <- stack (borm_r, sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r, sst_dev_r, bt_dev_r)
+    
     names (stack_1) <- stack_names
     
     # crop to Iceland EEZ
@@ -360,15 +427,21 @@ hist_brick_fun <- function (sci_name, GAM) {
       sst_i <- sst_brick[[i]]
       bt_i <- bt_brick[[i]]
       
-      # smax_i <- calc (subset (sst_max_brick, (72 + i):(83 + i)), max)
-      # smin_i <- calc (subset (sst_min_brick, (72 + i):(83 + i)), min)
-      # bmax_i <- calc (subset (bt_max_brick, (72 + i):(83 + i)), max)
+      sst_max_i <- calc (subset (sst_max_brick, (72 + i):(83 + i)), max)
+      sst_min_i <- calc (subset (sst_min_brick, (72 + i):(83 + i)), min)
+      bt_max_i <- calc (subset (bt_max_brick, (72 + i):(83 + i)), max)
+      
+      # calculate sst and bt dev
+      sst_dev_i <- multiFocal(sst_i, fun = function (x) sd (x, na.rm = TRUE))
+      bt_dev_i <- multiFocal(bt_i, fun = function (x) sd (x, na.rm = TRUE))
       
       #values (year_r) <- year_vals[1]
       
-      stack_i <- stack (lat_r, lon_r, sst_i, bt_i, depth_r)
+      #stack_i <- stack (lat_r, lon_r, sst_i, bt_i, depth_r)
       #stack_i <- stack (sst_i, bt_i, depth_r, smax_i, smin_i, bmax_i)
       #stack_i <- stack (lat_r, lon_r, year_r, sst_i, bt_i, depth_r)
+      stack_i <- stack (borm_r, sst_i, bt_i, depth_r, sst_max_i, sst_min_i, bt_max_i, sst_dev_i, bt_dev_i)
+      
       names (stack_i) <- stack_names
       
       clip_i <- mask (stack_i, eez)
@@ -415,3 +488,10 @@ td_spp_names_2 <- td_spp_names[22:length(td_spp_names)]
 
 # tensor simple
 sapply (spp_Smooth_latlon$sci_name_underscore, hist_brick_fun, GAM = "Tensor_simple")
+
+# borm 14
+sapply (spp_25$sci_name_underscore, hist_brick_fun, GAM = "Borm_14_alltemp")
+
+# start additional spp
+borm_addl <- spp_Smooth_latlon$sci_name_underscore[which (! spp_Smooth_latlon$sci_name_underscore %in% c(spp_25$sci_name_underscore, "Myoxocephalus_scorpius"))]
+sapply(borm_addl, hist_brick_fun, GAM = "Borm_14_alltemp") # ~ 12 mins each
