@@ -69,7 +69,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
   # spp_names should be scientific names separated by an underscore
   
   # empty data frame for saving variable importance info
-  var_imp_all_spp <- data.frame()
+  #var_imp_all_spp <- data.frame()
 
   # empty data frame for saving model summary statistics
   model_stats <- data.frame()
@@ -110,94 +110,97 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
    # Fit full GAM ----
    # ==================
    
-    set.seed(10) # needed for gamma maybe? used in Morely code. 
-   
-   # Presence-absence model
-   formula_PA <- as.formula (paste0 ("Presence ~", (paste (model_terms, collapse = " + "))))
-   gam_PA <- gam (formula_PA,
-                  family = "binomial",
-                  data = spp_PA,
-                  gamma = gamma_PA)
+   #  set.seed(10) # needed for gamma maybe? used in Morely code.
+   # 
+   # # Presence-absence model
+   # formula_PA <- as.formula (paste0 ("Presence ~", (paste (model_terms, collapse = " + "))))
+   # gam_PA <- gam (formula_PA,
+   #                family = "binomial",
+   #                data = spp_PA,
+   #                gamma = gamma_PA)
+   # 
+   # 
+   # # log biomass model:
+   #  formula_LB <- as.formula (paste0 ("kg_log ~", (paste (model_terms, collapse = " + "))))
+   #  gam_LB <- gam (formula_LB,
+   #                 family = "gaussian",
+   #                 data = spp_B,
+   #                 gamma = gamma_B)
+   # 
+   # 
+   # 
+   #  # save models in appropriate folder
+   #  save (gam_PA, file = paste0("Models/", directory, "/", spp_names[i], "_PA.Rdata"))
+   #  save (gam_LB, file = paste0("Models/", directory, "/", spp_names[i], "_LB.Rdata"))
+   # #  
+   # 
+   #  already fit models, just load
+    load (file.path("Models", directory, paste0(spp_names[i], "_PA.Rdata"))) # drop _full for depth_temp and bormicon
+    load (file.path("Models", directory, paste0(spp_names[i], "_LB.Rdata")))
 
-   
-   # log biomass model:
+    formula_PA <- as.formula (paste0 ("Presence ~", (paste (model_terms, collapse = " + "))))
     formula_LB <- as.formula (paste0 ("kg_log ~", (paste (model_terms, collapse = " + "))))
-    gam_LB <- gam (formula_LB,
-                   family = "gaussian",
-                   data = spp_B,
-                   gamma = gamma_B)
 
-    
-
-    # save models in appropriate folder
-    save (gam_PA, file = paste0("Models/", directory, "/", spp_names[i], "_PA.Rdata"))
-    save (gam_LB, file = paste0("Models/", directory, "/", spp_names[i], "_LB.Rdata"))
-    
-    
-    # # already fit models, just load
-    # load (file.path("Models", directory, paste0(spp_names[i], "_PA.Rdata"))) # drop _full for depth_temp and bormicon
-    # load (file.path("Models", directory, paste0(spp_names[i], "_LB.Rdata")))
-    
     
     # ==================
     # Calculate variable importance ----
     # ==================
     
-    # defining as the deviance explained in full model minus deviance explained in model dropping the variable of interest. e.g. McHenry et al. 2019
-    var_imp <- data.frame()
-
-
-    for (x in model_terms) {
-
-      # single variable model
-      G_PA <- gam (as.formula (paste0 ("Presence ~", x)),
-                   family = gaussian,
-                   data = spp_PA,
-                   gamma = gamma_PA)
-
-      G_LB <- gam (as.formula (paste0 ("kg_log ~", x)),
-                family = gaussian,
-                data = spp_B,
-                gamma = gamma_B)
-
-      # full model without that variable
-
-      G_drop_PA <- gam (as.formula (paste0 ("Presence ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
-                        family = gaussian,
-                        gamma = gamma_PA,
-                        data = filter (spp_PA, !is.na (x))
-                        )
-
-      G_drop_LB <- gam (as.formula (paste0 ("kg_log ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
-                     family = gaussian,
-                     gamma = gamma_B,
-                     data = filter (spp_B, !is.na (x)))
-
-
-      # extract summaries, put together in temporary df. two rows, for lb and pa
-      df <- data.frame (species = rep(spp_names[i], 2),
-                        Var = rep(x, 2),
-                        GAM = c("PA", "LB"),
-                        R2_s = c(round (summary(G_PA)$dev.expl * 100, digits = 2),
-                                 round (summary(G_LB)$dev.expl * 100, digits = 2)
-                                 ),
-
-                        R2_d =  c(round (summary(G_drop_PA)$dev.expl * 100, digits = 2),
-                                  round (summary(G_drop_LB)$dev.expl * 100, digits = 2)
-                                  ),
-
-                        Diff_f = c(round (summary (gam_PA)$dev.expl * 100 - summary(G_drop_PA)$dev.expl * 100, 2),
-                                   round (summary (gam_LB)$dev.expl * 100 - summary(G_drop_LB)$dev.expl * 100, 2)
-                                   )
-                        ) # end df
-
-      # rbind to full data frame
-      var_imp <- rbind (var_imp, df)
-
-    } # end variable importance loop
-    
-    # rbind to build var_imp table
-    var_imp_all_spp <- rbind (var_imp_all_spp, var_imp)
+    # # defining as the deviance explained in full model minus deviance explained in model dropping the variable of interest. e.g. McHenry et al. 2019
+    # var_imp <- data.frame()
+    # 
+    # 
+    # for (x in model_terms) {
+    # 
+    #   # single variable model
+    #   G_PA <- gam (as.formula (paste0 ("Presence ~", x)),
+    #                family = gaussian,
+    #                data = spp_PA,
+    #                gamma = gamma_PA)
+    # 
+    #   G_LB <- gam (as.formula (paste0 ("kg_log ~", x)),
+    #             family = gaussian,
+    #             data = spp_B,
+    #             gamma = gamma_B)
+    # 
+    #   # full model without that variable
+    # 
+    #   G_drop_PA <- gam (as.formula (paste0 ("Presence ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
+    #                     family = gaussian,
+    #                     gamma = gamma_PA,
+    #                     data = filter (spp_PA, !is.na (x))
+    #                     )
+    # 
+    #   G_drop_LB <- gam (as.formula (paste0 ("kg_log ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
+    #                  family = gaussian,
+    #                  gamma = gamma_B,
+    #                  data = filter (spp_B, !is.na (x)))
+    # 
+    # 
+    #   # extract summaries, put together in temporary df. two rows, for lb and pa
+    #   df <- data.frame (species = rep(spp_names[i], 2),
+    #                     Var = rep(x, 2),
+    #                     GAM = c("PA", "LB"),
+    #                     R2_s = c(round (summary(G_PA)$dev.expl * 100, digits = 2),
+    #                              round (summary(G_LB)$dev.expl * 100, digits = 2)
+    #                              ),
+    # 
+    #                     R2_d =  c(round (summary(G_drop_PA)$dev.expl * 100, digits = 2),
+    #                               round (summary(G_drop_LB)$dev.expl * 100, digits = 2)
+    #                               ),
+    # 
+    #                     Diff_f = c(round (summary (gam_PA)$dev.expl * 100 - summary(G_drop_PA)$dev.expl * 100, 2),
+    #                                round (summary (gam_LB)$dev.expl * 100 - summary(G_drop_LB)$dev.expl * 100, 2)
+    #                                )
+    #                     ) # end df
+    # 
+    #   # rbind to full data frame
+    #   var_imp <- rbind (var_imp, df)
+    # 
+    # } # end variable importance loop
+    # 
+    # # rbind to build var_imp table
+    # var_imp_all_spp <- rbind (var_imp_all_spp, var_imp)
     
     
     
@@ -251,7 +254,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     
     # for biomass, issue with bormicon regions, where model breaks if test data has regions not in the training data. just filter out new bormicon regions from test data? This means I'll have several sets of predictions I'm using. One on the full test data to use for P/A validation--AUC, TSS etc. And for bormicon models, a smaller set to compare thermpred predictions. 
     
-    if (grepl ("bormicon", model_terms)) {
+    if ("bormicon_region" %in%  model_terms) {
       
       # subset testing data for only bormicon regions the model was trained on
       test_spp_Borm <- test_spp %>%
@@ -303,7 +306,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     # ==================
     
     ## Random walk forecast ----
-    if (grepl ("bormicon", naive_terms)) {
+    if ("bormicon_region" %in%  naive_terms) {
       
       RWF_forecast <- rwf (train_spp_B$kg_tot, drift = T, h = nrow (test_spp_Borm), lambda = NULL, biasadj = F) 
       
@@ -328,7 +331,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     
     # same issue for biomass
     # for biomass, issue with bormicon regions. just filter out new bormicon regions from test data?
-    if (grepl ("bormicon", naive_terms)) {
+    if ("bormicon_region" %in%  model_terms) {
       
       gampred_LB_naive_borm <- predict.gam (gam_LB_naive, test_spp_Borm, type = "response")
       
@@ -350,7 +353,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
   
     ## Calculate MAE for MASE ----
     # Mean absolute error, absolute value of expected - observed. Use total instead of log because exponentiated the GAM predictions
-    if (grepl ("bormicon", model_terms)) {
+    if ("bormicon_region" %in%  model_terms) {
       MAE_gam <- abs(ThermPred_spp - test_spp_Borm$kg_tot) 
       
       MAE_gam_naive <- abs (ThermPred_spp_naive - test_spp_Borm$kg_tot)
@@ -368,7 +371,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     ## Diebold-Mariano test  ----
     
     # gam vs naive gam
-    if (grepl ("bormicon", model_terms)) {
+    if ("bormicon_region" %in%  model_terms) {
       E1 <- ThermPred_spp_naive - test_spp_Borm$kg_tot
       E2 <- ThermPred_spp - test_spp_Borm$kg_tot
     } else {
@@ -383,7 +386,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     dm_gam <- dm.test (E1_cc, E2_cc, h = 1, power = 1, alternative = "greater")
     
     # gam vs rwf
-    if (grepl ("bormicon", model_terms)) {
+    if ("bormicon_region" %in%  model_terms) {
       E1_rw <- RWF_forecast$mean - test_spp_Borm$kg_tot
       E2_rw <- ThermPred_spp - test_spp_Borm$kg_tot
     } else {
@@ -433,13 +436,13 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
       
       # MASE is ratio of MAE from full gam and naive GAM. Want < 1 to trust full GAM. 
       # for Naive GAM
-      MASE_GAM = round (mean (MAE_gam, na.rm = TRUE) / mean (MAE_gam_naive, na.rm = TRUE), 2),
+      MASE_GAM = mean (MAE_gam, na.rm = TRUE) / mean (MAE_gam_naive, na.rm = TRUE),
       DM_GAM_p = round (dm_gam$p.value, 2),
       DM_GAM_stat = round (dm_gam$statistic, 2),
       
       
       # for Random walk
-      MASE_RWF = round (mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE), 2),
+      MASE_RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE),
       DM_RW_p = round (dm_rw$p.value, 2),
       DM_RW_stat = round (dm_rw$statistic, 2)
       
@@ -453,7 +456,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
   } # end species for loop
   
   # save variable importance and model stats to csv
-  write.csv (var_imp_all_spp, file = paste0 ("Models/var_imp_", directory, ".csv"), row.names = FALSE)
+ # write.csv (var_imp_all_spp, file = paste0 ("Models/var_imp_", directory, ".csv"), row.names = FALSE)
   write.csv (model_stats, file = paste0("Models/GAM_performance_", directory, ".csv"), row.names = FALSE)
   
 } # end function 
@@ -558,17 +561,22 @@ borm14_naive <- c("bormicon_region", "s(tow_depth_begin)")
 
 # broke for 45 myoxechpalus, in all circumstances
 borm_spp <- filter (spp_Smooth_latlon, 
-                    sci_name_underscore != "Myoxocephalus_scorpius")
+                    ! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis"))
 
 # make life a bit easier by taking out NAs for GLORYS temps
 mfri_pred <-  mfri_pred %>%
   filter (!is.na (sst_max)) # 20721
 
+# broke on A. hyperborea for the variable importance or something. just going to fit the gams for the rest
 
 fit_gam_fun(model_terms = Borm_14_alltemp_terms, 
             naive_terms = borm14_naive,
             directory = "Borm_14_alltemp", 
-            spp_names = borm_spp$sci_name_underscore)
+            spp_names = rev(borm_spp$sci_name_underscore))
+
+
+
+
 
 # ==================
 ### Compare dev expl and AIC across all models, on standard dataset ----
@@ -671,7 +679,7 @@ compare_GAM_performance_fun (
 ## plot ----
 model_comp_std <- read_csv ("Models/GAM_overall_std_performance_25spp.csv")
 
-png ("../Figures/model_std_comp_AIC.png", width = 16, height = 9, units = "in", res = 300)
+png ("Figures/model_std_comp_AIC.png", width = 16, height = 9, units = "in", res = 300)
 model_comp_std %>%
   ggplot (aes (x = reorder(model_name, AIC, mean), y = AIC)) +
   geom_boxplot () +
@@ -691,7 +699,7 @@ model_comp_std %>%
   )
 dev.off()
 
-png ("../Figures/model_std_comp_devexp.png", width = 16, height = 9, units = "in", res = 300)
+png ("Figures/model_std_comp_devexp.png", width = 16, height = 9, units = "in", res = 300)
 model_comp_std %>%
   ggplot (aes (x = reorder(model_name, dev_exp, mean), y = dev_exp)) +
   geom_boxplot () +
