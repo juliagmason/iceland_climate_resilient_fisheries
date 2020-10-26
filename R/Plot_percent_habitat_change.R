@@ -7,78 +7,300 @@ library (tidyverse)
 #library (rgeos)
 
 
-hist_files <- list.files (path = "Models/Prediction_bricks", pattern = ".*Smooth_latlon.*2000_2018.grd")
-pred_files_245 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Smooth_latlon_245_2061_2080.grd")
-pred_files_585 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Smooth_latlon_585_2061_2080.grd")
+# I'm using the Morely et al. 2018 method for now, sum of predictions values for each cell. I'm going to calculate the sum standardized by area for each year in the historical period, then take the mean. Then I'm going to do the same for each of the climate models. I will then calculate the percent difference (projection mean minus hist mean over hist mean) for each model. Then I'll take the mean and standard deviation of those percent difference values. 
 
 
-hist_files <- list.files (path = "Models/Prediction_bricks", pattern = ".*Depth_Temp.*2000_2018.grd")
-pred_files_245 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Depth_Temp_245_2061_2080.grd")
-pred_files_585 <- list.files (path = "Models/Prediction_bricks", pattern = ".*Depth_Temp_585_2061_2080.grd")
+# ==================
+# function to run this for each GAM I've fit ----
+# ==================
 
+calculate_perc_hab_change <- function (GAM) {
+  # GAM is the name of the model/folder where prediction bricks are saved
+  # Could also change year range if I look at different ranges
+  
+  # make an empty data frame to store mean and sd perc habitat change for each species and scenario
+  hab_change <- data.frame ()
+  
+  # find the historical brick files
+  hist_files <- list.files (path = "Models/Prediction_bricks", 
+                            pattern = paste0(".*", GAM, ".*2000_2018.grd")
+                            )
 
-
-# list of species names in Models folder
-#load ("Models/spp_Smooth_latlon.RData")
-load ("Models/spp_Depth_Temp.RData") # td_spp_names. same, just squid and myctophids
-
-# make data table: species, scenario, period, mean, sd
-
-# just morely method for now
-hab_change <- data.frame ()
-
-for (i in 1:length(hist_files)) {
-  
-  # load files as raster brick. reasonably sure they're in the same order
-  br_hist <- brick (file.path ("Models/Prediction_bricks", hist_files[i]))
-  br_pred_245 <- brick (file.path ("Models/Prediction_bricks", pred_files_245[i]))
-  br_pred_585 <- brick (file.path ("Models/Prediction_bricks", pred_files_585[i]))
-  
-  #projection (br) <- CRS('+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0')
-  
-  # Morely et al. 2018 just use sum of values for each year, then takes mean
-  sum_hist <- cellStats(br_hist, stat = 'sum')
-  mean_hist <- mean (sum_hist)
-  #var_hist <- var (sum_hist)
-  
-  sum_pred_245 <- cellStats(br_pred_245, stat = 'sum')
-  mean_pred_245 <- mean (sum_pred_245)
-  #var_pred <- var (sum_pred)
-  
-  sum_pred_585 <- cellStats(br_pred_585, stat = 'sum')
-  mean_pred_585 <- mean (sum_pred_585)
-  
-  # break up elements of filename to make it easier to parse
-  file_split <- strsplit (hist_files[i], "_")[[1]]
-  
-  # fill out temporary df with two rows for both scenarios
-  
-  hab_df <- data.frame (
-    # species name will be first two elements of file_split. except squid and myctophidae
-    species = ifelse (file_split[1] %in% c ("Squid", "Myctophidae"), 
-                      rep (file_split[1], 2),
-                      rep (paste (file_split[1], file_split[2], sep = "_"), 2)
-                      ),
+  for (i in 1:length(hist_files)) {
     
-    # scenario will be third from last [models might have variable descriptors]
-    scenario = c(245, 585),
+    ### break up elements of filename to make it easier to parse
+    file_split <- strsplit (hist_files[i], "_")[[1]]
     
-    # perc change will be (pred - hist)/hist * 100
-    perc_change_Morely =  c(100 * (mean_pred_245 - mean_hist)/mean_hist,
-                            100 * (mean_pred_585 - mean_hist)/mean_hist)
+    spp_name = ifelse (file_split[1] %in% c ("Squid", "Myctophidae"), 
+                      file_split[1],
+                      paste (file_split[1], file_split[2], sep = "_")
+                      )
     
-    )
+
+    # ==================
+    # calculate historical habitat, standardized by area
+    # ==================
+    
+    # load files as raster brick
+    br_hist <- brick (file.path ("Models/Prediction_bricks", hist_files[i]))
+    
+    # for Bormicon region models, would need to standardize by area. It looks like the area is slightly different between historical and different scenarios, which is weird. 
+    # https://www.researchgate.net/post/is_there_an_easy_way_to_determine_the_area_of_a_raster_inside_a_polygon_shapefile
+    # I don't fully understand what this is doing. But it seems to be scaling appropriately for predictions that cover more/less area. 
+    area_hist <- cellStats(raster::area(br_hist[[1]], na.rm = TRUE), stat = sum)
+    
+    # this is the sum of all the cells for each time step, should have 228 values for 2000-2018
+    sum_hist <- cellStats(br_hist, stat = 'sum') * area_hist
+    mean_hist <- mean (sum_hist)
+    
+    # ==================
+    # bring in predictions and calculate percent change, for both scenarios
+    # ==================
+    
+    scen_df <- data.frame()
+    
+    for (scen in c(245, 585)) {
+      
+      # list appropriate files for species and scenario
+      pred_files <- list.files (path = "Models/Prediction_bricks", 
+                                    pattern = paste0(spp_name, "_", GAM, ".*", scen, "_2061_2080.grd"),
+                                    full.names = TRUE
+                                    )
+      
+      # I have a different set of models for both scenarios
+      if (scen == 585) {
+        CM_list = c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+      } else {CM_list = c("gfdl", "cnrm", "ipsl", "mohc") }
+      
+      
+      # ==================
+      # calculate percent change for each model, using helper function
+      # ==================
+
+      calc_CM_perc_change <- function (hist_mean, pred_files, CM) {
+        # hist_mean is a single value, calculated below
+        #pred_files are the bricks for each species and scenario, specified below
+        # CM is the name of the climate model
+        
+        br_pred <- brick (pred_files[grep(CM, pred_files)])
+        area_pred <- cellStats(raster::area(br_pred[[1]], na.rm = TRUE), stat = sum)
+        sum_pred <- cellStats(br_pred, stat = 'sum') * area_pred
+        mean_pred <- mean (sum_pred)
+        
+        perc_change <- (mean_pred - mean_hist)/mean_hist * 100
+        
+      }
+      
+      
+      
+      perc <- sapply (CM_list, calc_CM_perc_change,
+              hist_mean = mean_hist,
+              pred_files = pred_files
+              )
+      
+      # keep all values
+      spp_df <- data.frame (
+        species = spp_name,
+        model = CM_list,
+        scenario = scen,
+        perc_change = perc
+      )
+      
+      
+      
+      scen_df <- rbind (scen_df, spp_df)
+      
+    } # end scenario loop
+    
+    hab_change <- rbind (hab_change, scen_df)
+    
+  } # end hist_files i loop
   
-  hab_change <- rbind (hab_change, hab_df)
+  # save
+  save (hab_change, file = paste0("Data/perc_hab_change_Morely_", GAM, ".RData"))
+  
+  print (Sys.time())
+  
+} # end function
 
-} # end for loop
+   
+calculate_perc_hab_change ("Borm_14_alltemp")  
+    
+    
 
-# save for now
-save (hab_change, file = "Data/perc_hab_change_Morely_smoothlatlon.RData")
-save (hab_change, file = "Data/perc_hab_change_Morely_depthtemp.RData")
 
+# ==================
 # load and plot ----
+# ==================
+
+# species list with categories
+
+spp_list <- read_csv ("Data/species_eng.csv",
+                      col_types = cols(
+                        Spp_ID = col_factor()
+                      )) %>%
+  rename (species = sci_name_underscore) # rename to match species column
+
+# function to plot by quota status ----
+plot_hab_change_quota_fun <- function (GAM, hab_change_df, spp_order) {
+  
+  MASE <- read_csv (paste0("Models/GAM_performance_", GAM, ".csv"))
+  
+  png (file = paste0("Figures/Percent_hab_change_by_quota_", GAM, ".png"), width = 16, height = 9, units = "in", res = 300)
+  
+  print (
+    
+    hab_change %>% 
+      left_join (spp_list, by = "species") %>% 
+      left_join (MASE, by = "species") %>% 
+      mutate (Model_suitable = ifelse (
+        MASE_GAM < 1 & DM_GAM_p < 0.05, 
+        "1", 
+        "0"
+      )) %>%
+      filter (!is.na (Model_suitable)) %>%
+      # create column to manipulate fill based on quota and model
+      # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
+      mutate (species = factor(species, levels = spp_order$species),
+              Quota = factor(Quota),
+              fill_col = case_when(
+                Model_suitable == 0 ~ "Model unsuitable",
+                Model_suitable == 1 & Quota == 1 ~ "Quota",
+                Model_suitable == 1 & Quota == 0 ~ "Non-Quota"
+              ) 
+      ) %>% 
+      ggplot (aes (x = species, 
+                   y = perc_change,
+                   color = Quota, 
+                   fill = fill_col,
+                   width = 0.85)) +
+
+      guides (color = FALSE) +
+      geom_boxplot() +
+  
+      geom_hline (yintercept = 0, lty = 2, col = "dark gray") +
+      # geom_col () +
+      # geom_errorbar (aes (ymin = mn_change - sd_change, ymax = mn_change + sd_change), col = "black") +
+      coord_flip() + 
+      facet_wrap (~scenario, scales = "free") +
+      theme_bw() +
+      scale_fill_manual (values = alpha (c("lightgray",  "#F8766D", "#00BFC4"), 0.5)) +
+      labs (fill = "",
+            y = "Percent habitat change") +
+      ggtitle (paste(GAM, "Percent habitat change, 2000-2018 vs. 2061-2080"))
+   
+     
+  )
+  
+  dev.off()
+                    
+  
+} # end function
+
+
+# function to plot by TB and Steno ----
+plot_hab_change_TB_steno_fun <- function (GAM, hab_change_df, spp_order) {
+  
+  MASE <- read_csv (paste0("Models/GAM_performance_", GAM, ".csv"))
+  
+  png (file = paste0("Figures/Percent_hab_change_vs_TB_", GAM, ".png"), width = 16, height = 9, units = "in", res = 300)
+  
+  print (
+      
+      hab_change %>% 
+      group_by (species, scenario) %>%
+      summarise (mn_change = mean(perc_change),
+                 sd_change = sd (perc_change)) %>%
+      left_join (spp_list, by = "species") %>% 
+      left_join (MASE, by = "species") %>% 
+      mutate (Model_suitable = case_when (
+        MASE_GAM < 1 & DM_GAM_p < 0.05 ~ "1", 
+        is.na (MASE_GAM) ~ "0",
+        TRUE ~ "0")
+        ) %>% 
+      ggplot (aes (x = mean_TB, 
+                   y = mn_change,
+ 
+                   col = Model_suitable)) +
+      
+        geom_smooth (method = "lm", alpha = 0.2) +
+        geom_point() +
+      facet_wrap (~scenario, scales = "free") +
+      theme_bw() +
+
+      scale_color_manual (values = c ("gray", "black")) +
+      ggtitle (paste(GAM, "Thermal bias vs. Percent habitat change (2000-2018 vs. 2061-2080)"))
+    
+    
+  )
+  
+  dev.off()
+  
+  png (file = paste0("Figures/Percent_hab_change_vs_Steno_", GAM, ".png"), width = 16, height = 9, units = "in", res = 300)
+  
+  hab_change %>% 
+    group_by (species, scenario) %>%
+    summarise (mn_change = mean(perc_change),
+               sd_change = sd (perc_change)) %>%
+    left_join (spp_list, by = "species") %>% 
+    left_join (MASE, by = "species") %>% 
+    mutate (Model_suitable = case_when (
+      MASE_GAM < 1 & DM_GAM_p < 0.05 ~ "1", 
+      is.na (MASE_GAM) ~ "0",
+      TRUE ~ "0"),
+      
+      Therm_pref = case_when (
+        mean_TB > 0 ~ "Warm",
+        between (mean_TB, -3, 0) ~ "Cool",
+        mean_TB < 0 ~ "Cold"
+      )
+    ) %>% 
+    ggplot (aes (x = mean_Steno, 
+                 y = mn_change,
+                 color = Therm_pref,
+                 fill = Model_suitable,
+                 shape = Model_suitable)
+    ) +
+    #geom_smooth (method = "lm", alpha = 0.2) +
+    geom_point() +
+    facet_wrap (~scenario, scales = "free") +
+    theme_bw() +
+    geom_hline (yintercept = 0, lty = 2, col = "dark gray") +
+    scale_shape_manual (values = c (21, 19)) +
+    scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
+    scale_fill_manual (values = c ("white", "black")) +
+    ggtitle (paste(GAM, "Steno index vs. Percent habitat change (2000-2018 vs. 2061-2080)"))
+  
+  dev.off()
+  
+} # end function
+
+
+
+# ==================
+# Borm 14 all temp ----
+
+load ("Data/perc_hab_change_Morely_Borm_14_alltemp.RData")
+
+spp_order <- hab_change %>%
+  filter (scenario == 245) %>%
+  group_by (species) %>%
+  summarise (mn_change = mean (perc_change)) %>%
+  arrange (mn_change)
+
+plot_hab_change_quota_fun (GAM = "Borm_14_alltemp",
+                      hab_change_df = hab_change,
+                      spp_order = spp_order)
+
+plot_hab_change_TB_steno_fun (GAM = "Borm_14_alltemp",
+                              hab_change_df = hab_change,
+                              spp_order = spp_order)
+
+# ==================
+# smooth lat/lon ----
+
 load ("Data/perc_hab_change_Morely_smoothlatlon.RData")
+
 
 head (hab_change)
 
@@ -120,6 +342,8 @@ quota_status <- read_csv ("Data/species_eng.csv") %>%
 # fill based on certainty
 smoothLL_MASE <- read_csv ("Models/GAM_diagnostics_all_spp.csv") %>%
   rename (species = Species)
+
+
 
 
 png (file = "Figures/Percent_hab_change_by_quota_SmoothLatlon_6000.png", width = 16, height = 9, units = "in", res = 300)
@@ -258,8 +482,10 @@ hab_change %>%
   ggtitle ("Smoothed lat/lon Percent habitat change, 2000-2018 vs 2061-2080")
 dev.off()
 
-
+# ==================
 # depth/temp ----
+# ==================
+
 load ("Data/perc_hab_change_Morely_depthtemp.RData")
 
 spp_order <- hab_change %>%
@@ -309,6 +535,9 @@ mutate (Model_suitable = ifelse (
   ggtitle ("Depth/Temp model Percent habitat change, 2000-2018 vs. 2061-2080")
 
 dev.off()
+
+
+
 
   
  # # SDMTools patchstat test ----
