@@ -229,13 +229,15 @@ spp_therm <- mfri_abun %>%
   filter (!is.na (bottom_temp)) %>%
   group_by (species, season) %>%
   summarise (Therm = weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE),
-             Steno = weighted.quantile (bottom_temp, w = kg_tot, probs = 0.95, na.rm = TRUE) - weighted.quantile (bottom_temp, w = kg_tot, probs = 0.05, na.rm = TRUE)
+             Steno = weighted.quantile (bottom_temp, w = kg_tot, probs = 0.95, na.rm = TRUE) - weighted.quantile (bottom_temp, w = kg_tot, probs = 0.05, na.rm = TRUE),
+             Depth = weighted.median (tow_depth_begin, w = kg_tot, na.rm = TRUE)
   ) %>%
   left_join (med_seas, by = "season") %>%
   mutate (TB = Therm - med) %>%
   group_by(species) %>%
   summarise (mean_TB = mean (TB),
-             mean_Steno = mean(Steno)) %>%
+             mean_Steno = mean(Steno),
+             mean_depth = mean(Depth)) %>%
   mutate (Spp_ID = as.numeric(as.character(species)), .keep = "unused") # rename to match other tables
 
 # campana only did years 1996-2018, only autumn?
