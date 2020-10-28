@@ -15,8 +15,8 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   
   # load bricks, which have a layer for each month and year
   br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model_name, "_2000_2018.grd"))
-  br_245 <- brick (paste0("Models/Prediction_bricks/",  sci_name, "_", model_name,"_245_2061_2080.grd"))
-  br_585 <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model_name, "_585_2061_2080.grd"))
+  br_245 <- brick (paste0("Models/Prediction_bricks/",  sci_name, "_", model_name,"_ensemble_mean_245_2061_2080.grd"))
+  br_585 <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model_name, "_ensemble_mean_585_2061_2080.grd"))
   
   # calculate a mean, so just one layer
   mn_hist <- calc (br_hist, mean)
@@ -27,11 +27,15 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   
   spp_breaks <- quantile (getValues(overall_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
   
-  par (mfrow = c (1, 3))
+
   
+  png (paste0("Figures/Thermpred_map_", sci_name, "_", model_name, ".png"), width = 16, height = 9, units = "in", res = 300)
+  
+  par (mfrow = c (1, 3))
   plot (mn_hist, 
         breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
         xlim = c (-32, -3), ylim = c (60, 69),
+        cex.main = 2,
         legend = FALSE,
         main = paste0(sci_name, " historical"))
   
@@ -40,6 +44,7 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   plot (mn_245, 
         breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
         xlim = c (-32, -3), ylim = c (60, 69),
+        cex.main = 2,
         legend = FALSE,
         main = paste0(sci_name, " 245"))
   map('worldHires',add=TRUE, col='grey90', fill=TRUE)
@@ -47,12 +52,39 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   plot (mn_585, 
         breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
         xlim = c (-32, -3), ylim = c (60, 69),
+        cex.main = 2,
         main = paste0(sci_name, " 585"))
   map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+  
+  dev.off()
 }
 
 plot_pred_maps_fun (sci_name = "Gadus_morhua", 
-                    model_name = "Smooth_latlon")
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Cyclopterus_lumpus", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Anarhichas_lupus", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Argentina_silus", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Eutrigla_gurnardus", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Micromesistius_poutassou", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Pollachius_virens", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Lepidorhombus_whiffiagonis", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Pleuronectes_platessa", 
+                    model_name = "Borm_14_alltemp")
 
 plot_pred_maps_fun (sci_name = "Lophius_piscatorius", 
                     model_name = "Smooth_latlon")
@@ -62,6 +94,80 @@ plot_pred_maps_fun (sci_name = "Lophius_piscatorius",
 plot_pred_maps_fun (sci_name = "Melanogrammus_aeglefinus", 
                     model_name = "Smooth_latlon")
 # test maps ----
+
+# cod and pollock for science deep dive
+cod_hist_br <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_2000_2018.grd")
+cod_245_br <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_245_2061_2080.grd")
+cod_585_br <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_585_2061_2080.grd")
+
+cod_hist_mn <- calc (cod_hist_br, mean)
+cod_245_mn <- calc (cod_245_br, mean)
+cod_585_mn <- calc (cod_585_br, mean)
+
+cod_vals <- stack (cod_hist_mn, cod_245_mn, cod_585_mn) 
+cod_breaks <- quantile (getValues(cod_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
+
+pol_hist_br <- brick ("Models/Prediction_bricks/Pollachius_virens_Smooth_latlon_2000_2018.grd")
+pol_245_br <- brick ("Models/Prediction_bricks/Pollachius_virens_Smooth_latlon_245_2061_2080.grd")
+pol_585_br <- brick ("Models/Prediction_bricks/Pollachius_virens_Smooth_latlon_585_2061_2080.grd")
+
+pol_hist_mn <- calc (pol_hist_br, mean)
+pol_245_mn <- calc (pol_245_br, mean)
+pol_585_mn <- calc (pol_585_br, mean)
+
+pol_vals <- stack (pol_hist_mn, pol_245_mn, pol_585_mn) 
+pol_breaks <- quantile (getValues(pol_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
+
+png ("Figures/Thermpred_map_cod_pollock_Borm_14.png", width = 16, height = 9, units = "in", res = 300)
+par (mfrow = c (2, 3))
+plot (cod_hist_mn, 
+      breaks = cod_breaks, col = viridis(length(cod_breaks) -1),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      cex.main = 2,
+      legend = FALSE,
+      main = "Cod, historical")
+
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+plot (cod_245_mn, 
+      breaks = cod_breaks, col = viridis(length(cod_breaks) -1),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      legend = FALSE,
+      cex.main = 2,
+      main = "Cod, SSP 245")
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+plot (cod_585_mn, 
+      breaks = cod_breaks, col = viridis(length(cod_breaks) -1),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      cex.main = 2,
+      main = "Cod, SSP 585")
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+plot (pol_hist_mn, 
+      breaks = pol_breaks, col = viridis(length(pol_breaks) -1),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      legend = FALSE,
+      cex.main = 2,
+      main = "Pollock, historical")
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+plot (pol_245_mn, 
+      breaks = pol_breaks, col = viridis(length(pol_breaks) -1),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      legend = FALSE,
+      cex.main = 2,
+      main = "Pollock, SSP 245")
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+plot (pol_585_mn, 
+      breaks = pol_breaks, col = viridis(length(pol_breaks) -1),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      cex.main = 2,
+      main = "Pollock, SSP 585")
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+dev.off()
+
 
 # haddock for smast seminar
 png (file = "Figures/Haddock_thermpred_map.png", width = 6, height = 4, units = "in", res = 300)
