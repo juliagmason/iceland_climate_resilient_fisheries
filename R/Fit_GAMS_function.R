@@ -24,7 +24,7 @@ mfri_abun <- read_csv ("Data/MFRI_comb_survey.csv",
                          species = col_factor(),
                          stat_sq = col_factor()
                        )
-)%>%
+) %>%
   filter (!(year == 2011 & season == "autumn"),
           !(year < 2000 & season == "autumn")) %>% # remove autumn 2011 [labor strike] and pre-2000 autumn [sites weren't standard yet]
   group_by (sample_id, species) %>%
@@ -90,7 +90,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     #Presence/absences for selected species, attach to predictor df. Select based on sci_name
    spp_PA <- mfri_pa %>%
      dplyr::select (sample_id, all_of(spp_names[i])) %>%
-     left_join (mfri_pred, by = "sample_id")
+     right_join (mfri_pred, by = "sample_id") # use right join to cut out faulty fall samples
    colnames (spp_PA)[2] <- "Presence"
 
 
@@ -132,7 +132,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
    #  # save models in appropriate folder
    #  save (gam_PA, file = paste0("Models/", directory, "/", spp_names[i], "_PA.Rdata"))
    #  save (gam_LB, file = paste0("Models/", directory, "/", spp_names[i], "_LB.Rdata"))
-   # #  
+
    # 
    #  already fit models, just load
     load (file.path("Models", directory, paste0(spp_names[i], "_PA.Rdata"))) # drop _full for depth_temp and bormicon
@@ -207,13 +207,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     # ==================
     # Validate model with training/testing ----
     # ==================
-    
-    # combine PA and biomass data for splitting training/testing
-    full_data_spp <- spp_PA %>%
-      left_join (spp_B, by = "sample_id") %>% # add abundance data
-      replace_na (list(n_tot = 0, kg_tot = 0, n_log = 0, kg_log = 0)) %>% # replace all NAs (absences) with zero. [what about biomass of 1? none have]
-      right_join (mfri_pred, by = "sample_id") # add predictor variables and cut out faulty autumn samples. should have 27524 
-    
+
     # models with salinity only go up to 2012
     #cutoff_yr <- ifelse (grepl ("sal", model_terms), 2007, 2013)
     
@@ -234,6 +228,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     gamma_PA_train <- log (nrow (train_spp_PA)) / 2
     gamma_B_train <- log (nrow (train_spp_B)) / 2
     
+    set.seed (10)
     # Presence-absence model
     gam_PA_train <- update (gam_PA, 
                             data = train_spp_PA,
@@ -324,7 +319,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
     
     formula_LB_naive <- as.formula (paste0 ("kg_log ~", (paste (naive_terms, collapse = " + "))))
     gam_LB_naive <- update (gam_LB_train,
-                            forumla = formula_LB_naive) 
+                            formula = formula_LB_naive) 
    
     # Residuals and thermpred for naive gam
     Eresid_naive <- mean (exp (residuals.gam (gam_LB_naive)))
@@ -437,14 +432,14 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
       # MASE is ratio of MAE from full gam and naive GAM. Want < 1 to trust full GAM. 
       # for Naive GAM
       MASE_GAM = mean (MAE_gam, na.rm = TRUE) / mean (MAE_gam_naive, na.rm = TRUE),
-      DM_GAM_p = round (dm_gam$p.value, 2),
-      DM_GAM_stat = round (dm_gam$statistic, 2),
+      DM_GAM_p = dm_gam$p.value,
+      DM_GAM_stat = dm_gam$statistic,
       
       
       # for Random walk
       MASE_RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE),
-      DM_RW_p = round (dm_rw$p.value, 2),
-      DM_RW_stat = round (dm_rw$statistic, 2)
+      DM_RW_p = dm_rw$p.value,
+      DM_RW_stat = dm_rw$statistic
       
       
     ) # end stats df
@@ -477,6 +472,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, spp_names) {
 # fit on temp/depth model ----
 # I already fit 25 spp on temp_depth with all temp variables (now excluding bt_min), but will overwrite. Directory would be Depth_Temp
 td_model_terms <- c("s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_max)",  "s(sst_min)", "s(bt_max)")
+td_naive <- "s(tow_depth_begin)"
 
 td_spp <-
   mfri_abun %>%
@@ -484,7 +480,7 @@ td_spp <-
   summarize (count = n()) %>%
   # match levels to spp_list to fix factor issue
   #mutate (species = factor (species, levels = levels(spp_list$Spp_ID))) %>%
-  filter (count > 60, !species %in% c(41, 92)) %>%
+  filter (count > 60, !species %in% c(41, 49, 72, 92, 97)) %>%
   rename (Spp_ID = species) %>%
   left_join (spp_list, by = 'Spp_ID')
 
@@ -494,7 +490,9 @@ save (td_spp_names, file = "Models/spp_Depth_Temp.RData")
 
 load ("Models/spp_Depth_Temp.RData")
 
+# broke on C. ascanii, 57th, Hyperoplus_lanceolatus, Hoplostethus_atlanticus
 fit_gam_fun(model_terms = td_model_terms, 
+            naive_terms = td_naive,
             directory = "Depth_Temp", 
             spp_names = td_spp_names)
 
@@ -504,6 +502,16 @@ load ("Models/spp_Smooth_latlon.RData")
 
 fit_gam_fun (model_terms = sll_terms,
              directory = "Smooth_latlon", 
+             spp_names = spp_Smooth_latlon$sci_name_underscore)
+
+# smooth lat/lon drop year ----
+sll_terms <- c ("s(lat, lon)", "s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)")
+sll_naive <- c ("s(lat, lon)", "s(tow_depth_begin)")
+load ("Models/spp_Smooth_latlon.RData")
+
+fit_gam_fun (model_terms = sll_terms,
+             naive_terms = sll_naive,
+             directory = "Smooth_latlon_drop_year", 
              spp_names = spp_Smooth_latlon$sci_name_underscore)
 
 # full model with season, salinity, year ----
@@ -530,8 +538,10 @@ fit_gam_fun(model_terms = borm_terms,
 dir.create ("Models/Tensor_simple")
 load ("Models/spp_Smooth_latlon.RData")
 te_simple_terms <- c ("te(lon, lat)", "s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)")
+te_simple_naive <- c ("te(lon, lat)", "s(tow_depth_begin)")
 
 fit_gam_fun(model_terms = te_simple_terms, 
+            naive_terms = te_simple_naive,
             directory = "Tensor_simple", 
             spp_names = spp_Smooth_latlon$sci_name_underscore)
 
