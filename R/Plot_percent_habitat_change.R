@@ -146,7 +146,7 @@ plot_hab_change_quota_fun <- function (GAM, hab_change_df, spp_order) {
   
   MASE <- read_csv (paste0("Models/GAM_performance_", GAM, ".csv"))
   
-  png (file = paste0("Figures/Percent_hab_change_by_quota_boxplot_", GAM, ".png"), width = 16, height = 11, units = "in", res = 300)
+  png (file = paste0("Figures/Percent_hab_change_by_quota_boxplot_portrait", GAM, ".png"), width = 8.5, height = 11, units = "in", res = 300)
   
   print (
     
@@ -157,8 +157,8 @@ plot_hab_change_quota_fun <- function (GAM, hab_change_df, spp_order) {
         MASE_GAM < 1 & DM_GAM_p < 0.05, 
         "1", 
         "0"
-      )) %>%
-      filter (!is.na (Model_suitable)) %>%
+      )) %>% 
+      filter (!is.na (Model_suitable)) %>% 
       # create column to manipulate fill based on quota and model
       # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
       mutate (species = factor(species, levels = spp_order$species),
@@ -189,15 +189,24 @@ plot_hab_change_quota_fun <- function (GAM, hab_change_df, spp_order) {
             x = "Percent habitat change") +
       #ggtitle (paste(GAM, "Percent habitat change, 2000-2018 vs. 2061-2080")) +
       ggtitle ("Percent habitat change, 2000-2018 vs. 2061-2080") +
-      theme (
-        axis.text.x = element_text (size = 20),
-        axis.text.y = element_text (size = 14),
-        axis.title = element_text (size = 20),
-        plot.title = element_text (size = 24),
-        strip.text = element_text (size = 20),
-        legend.text = element_text (size = 20),
-        legend.position = c(0.87, 0.15)
-      ) 
+      # theme (
+      #   axis.text.x = element_text (size = 20),
+      #   axis.text.y = element_text (size = 14),
+      #   axis.title = element_text (size = 20),
+      #   plot.title = element_text (size = 24),
+      #   strip.text = element_text (size = 20),
+      #   legend.text = element_text (size = 20),
+      #   legend.position = c(0.87, 0.15)
+      # ) 
+    theme (
+      axis.text.x = element_text (size = 14),
+      axis.text.y = element_text (size = 12),
+      axis.title = element_text (size = 14),
+      plot.title = element_text (size = 16),
+      strip.text = element_text (size = 14),
+      legend.text = element_text (size = 14),
+      legend.position = c(0.83, 0.15)
+    ) 
    
      
   )
@@ -294,7 +303,7 @@ plot_hab_change_TB_steno_fun <- function (GAM, hab_change_df, spp_order) {
 load ("Data/perc_hab_change_Morely_Borm_14_alltemp.RData")
 
 spp_order <- hab_change %>%
-  filter (scenario == 245) %>%
+  filter (scenario == 585) %>%
   group_by (species) %>%
   summarise (mn_change = mean (perc_change)) %>%
   arrange (mn_change)
@@ -306,6 +315,81 @@ plot_hab_change_quota_fun (GAM = "Borm_14_alltemp",
 plot_hab_change_TB_steno_fun (GAM = "Borm_14_alltemp",
                               hab_change_df = hab_change,
                               spp_order = spp_order)
+
+# plot portrait with TB for Cat
+
+png (file = paste0("Figures/Percent_hab_change_TB_boxplot_portrait_", GAM, ".png"), width = 8.5, height = 11, units = "in", res = 300)
+
+png (file = paste0("Figures/Percent_hab_change_TB_boxplot_", GAM, ".png"), width = 16, height = 9, units = "in", res = 300)
+
+print (
+  
+  hab_change %>% 
+    left_join (spp_list, by = "species") %>% 
+    left_join (MASE, by = "species") %>% 
+    mutate (Model_suitable = ifelse (
+      MASE_GAM < 1 & DM_GAM_p < 0.05, 
+      "1", 
+      "0"
+    )) %>%
+    filter (!is.na (Model_suitable)) %>%
+    # create column to manipulate fill based on quota and model
+    # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
+
+      
+    mutate (species = factor(species, levels = spp_order$species),
+            Therm_pref = case_when (
+              mean_TB > 0 ~ "Warm",
+              between (mean_TB, -3, 0) ~ "Cool",
+              mean_TB < 0 ~ "Cold"
+            ),
+            fill_col = case_when(
+              Model_suitable == 0 ~ "*Model unsuitable",
+              Model_suitable == 1 & mean_TB > 0 ~ "Warm",
+              Model_suitable == 1 & between (mean_TB, -3, 0) ~ "Cool",
+              Model_suitable == 1 &  mean_TB < 0 ~ "Cold"
+            ),
+            scen_long = case_when (
+              scenario == 245 ~ "Optimistic scenario",
+              scenario == 585 ~ "Worst case scenario"
+            )
+    ) %>% 
+    ggplot (aes (y = species, 
+                 x = perc_change,
+                 color = Therm_pref, 
+                 fill = fill_col,
+                 width = 0.85)) +
+    
+    guides (color = FALSE) +
+    geom_boxplot() +
+    
+    geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
+    # geom_col () +
+    # geom_errorbar (aes (ymin = mn_change - sd_change, ymax = mn_change + sd_change), col = "black") +
+    #coord_flip() + 
+    facet_wrap (~scen_long, scales = "free_x") +
+    theme_bw() +
+    scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
+    scale_fill_manual (values = alpha (c("lightgray", "blue", "deepskyblue", "red2"), 0.5)) +
+    labs (fill = "",
+          x = "Percent habitat change") +
+    #ggtitle (paste(GAM, "Percent habitat change, 2000-2018 vs. 2061-2080")) +
+    ggtitle ("Percent habitat change, 2000-2018 vs. 2061-2080") +
+
+    theme (
+      axis.text.x = element_text (size = 14),
+      axis.text.y = element_text (size = 12),
+      axis.title = element_text (size = 14),
+      plot.title = element_text (size = 16),
+      strip.text = element_text (size = 14),
+      legend.text = element_text (size = 14),
+      legend.position = c(0.80, 0.12)
+    ) 
+  
+  
+)
+
+dev.off()
 
 # ==================
 # smooth lat/lon ----
