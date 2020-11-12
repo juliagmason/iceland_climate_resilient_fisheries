@@ -219,6 +219,97 @@ grid.arrange (sst_p, bt_p, sal_p, lat_p, lon_p, depth_p, nrow = 2)
 ```
 u pup up down down down
 
+
+### Time series of temperature and salinity for witch samples
+```{r witch_temp_ts}
+png (file = "../Figures/Witch_presence_GINS_salinity_ts.png", width = 16, height = 9, units = "in", res = 300)
+witch_samp %>%
+  select (sample_id) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  group_by (date) %>%
+  summarise (
+    count = n(),
+    mn_sal = mean(gins_sal, na.rm = TRUE),
+    se_sst = sd (gins_sal, na.rm = TRUE)/sqrt(count),
+  ) %>% 
+  mutate (season = ifelse (month(date) %in% c(2:4), "spring", "fall")) %>%
+  ggplot (aes (x = date, y = mn_sal, col = season)) +
+    geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    plot.title = element_text (size = 24)
+  ) +
+  ggtitle ("Witch presence Mean monthly salinity (from GINS climatology), MFRI trawl")
+dev.off()
+
+png (file = "../Figures/Witch_presence_SST_ts.png", width = 16, height = 9, units = "in", res = 300)
+witch_samp %>%
+  select (sample_id) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  group_by (date) %>%
+  summarise (
+    count = n(),
+    mn_sst = mean(surface_temp, na.rm = TRUE),
+    se_sst = sd (surface_temp, na.rm = TRUE)/sqrt(count),
+  ) %>% 
+  mutate (season = ifelse (month(date) %in% c(2:4), "spring", "fall")) %>%
+  ggplot (aes (x = date, y = mn_sst, col = season)) +
+    geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    plot.title = element_text (size = 24)
+  ) +
+  ggtitle ("Witch presence Mean monthly SST, MFRI trawl")
+dev.off()
+
+png (file = "../Figures/Witch_presence_BT_ts.png", width = 16, height = 9, units = "in", res = 300)
+witch_samp %>%
+  select (sample_id) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  group_by (date) %>%
+  summarise (
+    count = n(),
+    mn_bt = mean(bottom_temp, na.rm = TRUE),
+    se_bt = sd (bottom_temp, na.rm = TRUE)/sqrt(count),
+  ) %>% 
+  mutate (season = ifelse (month(date) %in% c(2:4), "spring", "fall")) %>%
+  ggplot (aes (x = date, y = mn_bt, col = season)) +
+    geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    plot.title = element_text (size = 24)
+  ) +
+  ggtitle ("Witch presence Mean monthly bottom temp, MFRI trawl")
+dev.off()
+
+# extreme low bottom temp fall 2014
+witch_samp %>%
+  select (sample_id) %>%
+  left_join (mfri_pred, by = "sample_id") %>%
+  filter (year == 2014, bottom_temp < 6) %>% 
+  View()
+
+```
+
+
 ### Model results
 ```{r model_explore}
 library (mgcv)
