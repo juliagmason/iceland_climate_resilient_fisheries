@@ -7,6 +7,8 @@ output: html_notebook
 I'm using this notebook to examine GAM model outputs and compare GAMs. I'm actually running/fitting the gams in Fit_GAMS_fun.R
 
 ```{r setup, eval = FALSE}
+# switching eval to false up here so it doesn't run every time I try to check something quickly. Change if knitting. 
+
 library (mgcv)
 library (tidyverse)
 
@@ -34,13 +36,13 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
   filter (!(year == 2011 & season == "autumn"),
           !(year < 2000 & season == "autumn"))  # remove autumn 2011, 131 samples. Also cutting out autumn pre-2000 (as of 7/23/2020. so did this with MASE fitting, but not with original run through of full gams)
 
-# presence absence data. this would still have 2011 and pre-2000 autumn samples
+# presence absence data. this would still have 2011 and pre-2000 autumn samples. Should have 29002 rows
 mfri_pa <- read_csv ("../Data/PA_MFRI.csv",
                      col_types = cols(
                        sample_id = col_factor()
                      ))
 
-# abundance data
+# abundance data. should have 27524 unique sample_id after removing autumn 2011 bc of labor strike and autumn before 2000 bc less trustworthy
 mfri_abun <- read_csv ("../Data/MFRI_comb_survey.csv",
                       col_types = cols(
                       sample_id = col_factor(),
@@ -404,7 +406,7 @@ kap_tr <- e@kappa[e.ind.train]
 tss_tr <- with (conf[e.ind.train,], (tp/(tp + fn) + (tn)/(tn+fp) - 1))
 ```
 
-for biomass, he looked at dev explained but als opredicted vs observed biomass when present==correlation cor^2
+for biomass, he looked at dev explained but also predicted vs observed biomass when present==correlation cor^2
 ```{r morely_Biomass_Cor}
 
 cor_B <- cor (gampred_LB[which (test_spp$Presence ==1 & !is.na(gampred_LB))], test_spp$kg_log[which (test_spp$Presence == 1 & !is.na(gampred_LB))])^2
@@ -426,7 +428,9 @@ dm_gam <- dm.test (E1_cc, E2_cc, h = 1, power = 1, alternative = "greater")
 dm_gam
 
 ```
-### interpret results from gam diagnostics 7/35
+
+### interpret results from gam diagnostics 7/25
+this is SLL I think? Not 100% sure what model this refers to. 
 ```{r gam_diag}
 
 gam_diag <- read_csv ("../Models/GAM_diagnostics_all_spp.csv")
@@ -435,7 +439,7 @@ suitable_spp <- gam_diag %>%
   filter (MASE_GAM < 1 & DM_GAM_p < 0.05)
 
 ```
-28 species, doesn't include cod?? really very few species out perform random walk. 
+28 species, doesn't include cod?? really very few species outperform random walk. 
 
 # tensor simple model after call with pat
 s(latlon) but tensor instead. drop season, salinity, year
@@ -740,11 +744,9 @@ for (spp in spp_25$Spp_ID) {
   
 }
 
-write.csv (temp_AIC, file = "../Models/temperature_AIC_check.csv", row.names = FALSE)
+#write.csv (temp_AIC, file = "../Models/temperature_AIC_check.csv", row.names = FALSE)
     
-
-```
-```{r explor_AIC_temp}
+# explore
 temp_AIC <- read_csv ("../Models/temperature_AIC_check.csv")
 
 temp_AIC_long <- temp_AIC %>%
@@ -781,14 +783,7 @@ temp_AIC_long %>%
 dev.off()
 ```
 AIC is drop minus full. So a positive value means dropping > full, so that's worse. 
-### Fit Temperature and depth only model for all species
 
-did this in fit_GAMS_function
-```{r run_temp_depth_model}
-
-dir.create ()
-
-```
 
 ### EXplore variable importance
 added code to do drop variable dev expl for each term in models. 
@@ -1064,6 +1059,12 @@ borm_diag %>%
 dev.off()
 
 ```
+
+```{r borm_14_diag}
+
+```
+
+
 ### compare AIC and dev expl across models
 ```{r model_comparisons}
 # te_full
@@ -1194,6 +1195,78 @@ summary (b14_t_pa$AIC)
 ```
 not really comparable though because SST variables from GLORYS are only 1993-2018. 
 
+### actually comparable dataset on 25 spp
+```{r}
+ gam_perf <- read_csv("Models/GAM_overall_std_performance_25spp.csv")
+gam_perf %>% group_by (model_name, response_var) %>% summarise (mean = mean(AIC), med = median(AIC))
+gam_perf %>% group_by (model_name, response_var) %>% summarise (mean = mean(dev_exp), med = median(dev_exp))
+                                                  
+```
+Candidates: borm_14 all temp. and then tensor simple vs sll drop year?
+tensor simple: AIC: PA mean 7748.167, med 7167.592	. sll drop: 7777.391, 7230.591. so tensor better for PA, but worse for LB. 
+dev exp, tensor simple is basically the same for PA, slightly better. slightly worse for LB. 
+
+```{r simple_sll_vs_te}
+te_gam_perf <- read_csv ("../Models/GAM_performance_Tensor_simple.csv")
+sll_gam_perf <- read_csv ("../Models/GAM_performance_Smooth_latlon_drop_year.csv")
+
+summary (te_gam_perf$PA_dev)
+sd (te_gam_perf$PA_dev)
+
+summary (te_gam_perf$LB_dev)
+sd (te_gam_perf$LB_dev)
+
+te_gam_perf %>% filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>% nrow()
+
+summary (sll_gam_perf$PA_dev)
+sd (sll_gam_perf$PA_dev)
+
+summary (sll_gam_perf$LB_dev)
+sd (sll_gam_perf$LB_dev)
+
+sll_gam_perf %>% filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>% nrow()
+```
+
+```{r borm_14}
+
+borm_14_gam_perf <- read_csv ("../Models/GAM_performance_Borm_14_alltemp.csv")
+summary (borm_14_gam_perf$PA_dev)
+sd (borm_14_gam_perf$PA_dev)
+
+summary (borm_14_gam_perf$LB_dev)
+sd (borm_14_gam_perf$LB_dev)
+
+
+borm_14_gam_perf %>% filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>% nrow()
+```
+
+```{r td}
+td_gam_perf <- read_csv ("../Models/GAM_performance_Depth_Temp.csv")
+
+summary (td_gam_perf$PA_dev)
+sd (td_gam_perf$PA_dev)
+
+summary (td_gam_perf$LB_dev)
+sd (td_gam_perf$LB_dev)
+
+
+td_gam_perf %>% filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>% nrow()
+```
+Okay WHY are things different between GAM diagnostics tables and GAM performance (updated) tables. Found one issue where the n_presences are not accurate with GAM_performance tables because i was left_joining instead of right_joining. but why are the MASE results so different.
+```{r td_table_mase_check}
+td_old_table <- read_csv ("../Models/Temp_Depth_GAM_diagnostics.csv")
+td_new_table <- read_csv ("../Models/GAM_performance_Depth_Temp.csv")
+
+which (!td_old_table$species %in% td_new_table$species) # same spp at least
+
+mase_comp <- td_old_table %>%
+  dplyr::select (species, MASE_GAM) %>%
+  left_join (td_new_table, by = "species") %>%
+  dplyr::select (species, MASE_GAM.x, MASE_GAM.y)
+
+
+```
+original gam diagnostics for dev expl and AIC were just on trainig models, so that makes sense. but no idea why MASE would be so different, that's just with training/testing data! okay it was literally a typo. forumla instead of formula, so naive LB model didn't actually update, tipped the balance in favor of naive model. 
 ### Cod
 ```{r cod_data}
 #subset cod presence and absence
@@ -1289,12 +1362,12 @@ gamma_B <- log (nrow (cod_B)) / 2
   gam.check (cod_gam1_B)
   gam.check (cod_gamma1_B) # neither looks great tbh
   
-  plot (cod_gam1_B, residuals = TRUE, 
+  plot (cod_gam1_B,  = TRUE, 
       select = 2, 
       #ylim = c (-5, 5), 
       ylab = "", xlab = "", 
       main = paste ("s(sst)", round (summary (cod_gam1_B)$edf[2], 2), sep = ", "))
-    plot (cod_gamma1_B, residuals = TRUE, 
+    plot (cod_gamma1_B,  = TRUE, 
       select = 2, 
       #ylim = c (-5, 5), 
       ylab = "", xlab = "", 
@@ -1313,21 +1386,21 @@ cod_full <- gam (Presence ~ te(lon, lat) + year + season + s(surface_temp) + s(b
 summary (cod_full)
 
 par (mfrow = c (2, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
-plot (cod_full, residuals = TRUE, 
+plot (cod_full,  = TRUE, 
       select = 1, 
       ylab = "", xlab = "", 
       main = paste ("te(Lon, Lat)", round (summary (cod_full)$edf[1], 2), sep = ", "))
-plot (cod_full, residuals = TRUE, 
+plot (cod_full,  = TRUE, 
       select = 2, 
       #ylim = c (-5, 5), 
       ylab = "", xlab = "", 
       main = paste ("s(sst)", round (summary (cod_full)$edf[2], 2), sep = ", "))
-plot (cod_full, residuals = TRUE, 
+plot (cod_full,  = TRUE, 
       select = 3, 
       #ylim = c (-10, 10), 
       ylab = "", xlab = "", 
       main = paste ("s(bt)", round (summary (cod_full)$edf[3], 2), sep = ", "))
-plot (cod_full, residuals = TRUE, 
+plot (cod_full,  = TRUE, 
       select = 4, 
       #ylim = c (-10, 15), 
       ylab = "", xlab = "", 
@@ -1499,6 +1572,77 @@ s(lat,lon) seems like a good choice. Doesn't appear to be making any weird disto
 
 Going to move forward with s(lat, lon) and gamma. Redoing model fitting and predicitons starting 8/10. 
 
+```{r cod_borm_14_partial_plots}
+
+load ("../Models/Borm_14_alltemp/Gadus_morhua_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Gadus_morhua_LB.Rdata")
+
+
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA,  
+      select = 1, 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,  
+      select = 2, 
+      #ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA, 
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA, 
+      select = 4, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, 
+      select = 5, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+plot (gam_PA,  
+      select = 6, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_PA)$edf[6], 2), sep = ", "))
+plot (gam_PA,  
+      select = 7, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_PA)$edf[7], 2), sep = ", "))
+plot (gam_PA,   
+      select = 8, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_PA)$edf[8], 2), sep = ", "))
+
+
+
+
+# quick plot of just the first 3 for science pres
+par (mfrow = c (1, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA,  
+      select = 1, 
+      ylim = c (-3, 1),
+      ylab = "", xlab = "", 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,  
+      select = 2, 
+      ylim = c (-3, 3), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA, 
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+```
+
+
+
 ### incorporating habitat proxy variables
 
 8/26/2020
@@ -1538,3 +1682,53 @@ AIC (borm_only_gam_PA, borm_only_gam_LB) # 6056, 81081. worse than s(lat,lon)
 
 ```
 
+
+## Borm 14--monkfish decreasing. what's going on in partial plots
+```{r monkfish_borm_14}
+load ("../Models/Borm_14_alltemp/Lophius_piscatorius_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Lophius_piscatorius_LB.Rdata")
+
+
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,   
+      select = 2, 
+      #ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA,  
+      select = 4, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, 
+      select = 5, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+plot (gam_PA, 
+      select = 6, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_PA)$edf[6], 2), sep = ", "))
+plot (gam_PA,   
+      select = 7, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_PA)$edf[7], 2), sep = ", "))
+plot (gam_PA, 
+      select = 8, 
+      #ylim = c (-10, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_PA)$edf[8], 2), sep = ", "))
+
+```
+showing a slight negative rltp with sst. might be that catch has been going down although temperatures have been going up so model is confused?
