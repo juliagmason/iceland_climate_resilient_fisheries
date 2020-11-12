@@ -10,7 +10,7 @@ Beaugrand et al. 2008 puts ideal cod "regime" as high Chl, low diversity but lar
 
 MFRI advice report: https://www.hafogvatn.is/static/extras/images/01-cod1206941.pdf
 
-```{r setup_data}
+```{r setup_data, eval = FALSE}
 library(tidyverse)
 library(gridExtra)
 library (rfishbase)
@@ -20,7 +20,7 @@ cod_pa <- read_csv ("../Data/PA_MFRI.csv",
                      col_types = cols(
                        sample_id = col_factor()
                      )) %>%
-  select (sample_id, Gadus_morhua)
+  dplyr::select (sample_id, Gadus_morhua)
 
 # full MFRI info for all cod presences, retaining length data
 cod_samp_full <- read_csv ("../Data/MFRI_comb_survey.csv",
@@ -46,6 +46,27 @@ cod_samp <- cod_samp_full %>%
   ) %>%
   mutate (n_log = log (n_tot),
           kg_log = log(kg_tot))
+
+
+# # predictor variables
+# I compiled these in Build_MFRI_predictor_df.R. 
+mfri_pred <-  read_csv ("../Data/MFRI_predictor_df.csv",
+                        col_types = cols(
+                          sample_id = col_factor(),
+                          stat_sq = col_factor(),
+                          bormicon_region = col_factor(),
+                          sst_dev = col_number(),
+                          bt_dev = col_number(),
+                          sst_max = col_number(),
+                          sst_min = col_number(),
+                          bt_max = col_number(),
+                          bt_min = col_number()
+                        )
+) %>%
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn")
+  )  # remove autumn 2011, 131 samples. Also cutting out autumn pre-2000 (as of 7/23/2020. so did this with MASE fitting, but not with original run through of full gams)
+
 ```
 
 ### Fishbase stats
@@ -114,6 +135,44 @@ grid.arrange (biomass_ts, ab_ts, nrow = 1)
 ```{r}
 cod_samp_full %>%
   filter (sample_id == 379179) %>% View()
+```
+## Spatial distribution
+
+```{r plot_PA_points}
+
+library (maps)
+library (mapdata)
+library (sf)
+library (rnaturalearth)
+library (rnaturalearthdata)
+library (rgeos)
+library (viridis)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+ spp_PA <- cod_pa %>%
+    left_join (mfri_pred, by = "sample_id") 
+
+png (file = "../Figures/Cod_PA_points.png", width = 6, height = 4, units = "in", res = 300)
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point(data = spp_PA, pch = 21,
+             aes (x = lon, y = lat, 
+                  fill = as.factor(Gadus_morhua))) +
+    scale_fill_manual (values = c ("white", "black"), name = "", guide = "none") +
+    theme_bw() +
+  labs(x = "", y = "") +
+  theme(
+    axis.text = element_blank(),
+    plot.title = element_text (size = 24)
+    #legend.text = element_text (size = 18),
+    #legend.title = element_text (size = 20),
+    #legend.position = c(0.9, 0.9)
+  ) +
+    ggtitle ("Groundfish survey tows")
+dev.off()
+
 ```
 
 ```{r}

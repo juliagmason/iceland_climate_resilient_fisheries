@@ -138,6 +138,34 @@ grid.arrange (biomass_ts, ab_ts, nrow = 1)
 Big influx in mid-2000s (2000-2010, peak around 2005). Patterns of biomass and abundance look quite similar. Possible exception is a more drastic dip in fall abundance after 2010. also spring abundance. abundance seems to dip below pre-2000 levels before leveling off, whereas biomass is slightly higher. 
 
 ### Spatial distribution
+```{r PA_points}
+ spp_PA <- had_pa %>%
+    left_join (mfri_pred, by = "sample_id") %>%
+  mutate (Haddock = ifelse
+          (Presence == 0, "Absent", "Present"))
+
+png (file = "../Figures/Haddock_PA_points.png", width = 6, height = 4, units = "in", res = 300)
+ggplot(data = world) +
+  geom_sf() +
+  coord_sf (xlim = c(-30, -8), ylim = c (62,70), expand = FALSE ) +
+  geom_point(data = spp_PA, pch = 21,
+             aes (x = lon, y = lat, 
+                  fill = Haddock)) +
+    scale_fill_manual (values = c ("white", "black"), name = "", guide = "none") +
+    theme_bw() +
+  labs(x = "", y = "") +
+  theme(
+    axis.text = element_blank(),
+    plot.title = element_text (size = 24)
+    #legend.text = element_text (size = 18),
+    #legend.title = element_text (size = 20),
+    #legend.position = c(0.9, 0.9)
+  ) +
+    ggtitle ("Groundfish survey tows")
+dev.off()
+
+```
+
 
 ```{r season_distrib}
 
@@ -217,14 +245,43 @@ See a positive relationship with temperature (and sal) and negative with lat--th
 
 ### Model specs
 ```{r model_explore}
-
-load ("../Models/PresAbs/Melanogrammus_aeglefinus_PA_full.Rdata")
+library (mgcv)
+load ("../Models/Smooth_latlon/Melanogrammus_aeglefinus_PA_full.Rdata")
 summary (gam_PA)
 
 ```
 65% deviance explained, 69 r2. All variables significant. 
 
 PArtial plots
+```{r save partial plot for SMAST seminar}
+png ("../Figures/Partial_plots_haddock_smoothLL.png", width = 6, height = 4, units = "in", res = 300)
+par (mfrow = c (1, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, residuals = FALSE, 
+      select = 2, 
+      ylim = c (-5, 2), 
+      ylab = "", xlab = "", 
+      cex.axis = 1.5,
+      cex.main = 2,
+      main = "SST")
+plot (gam_PA, residuals = FALSE, 
+      select = 3, 
+      ylim = c (-5, 2), 
+      ylab = "", xlab = "", 
+      cex.axis = 1.5,
+        cex.main = 2,
+      main = "Bottom temp")
+plot (gam_PA, residuals = FALSE, 
+      select = 4, 
+      ylim = c (-10, 5), 
+      ylab = "", xlab = "", 
+      cex.axis = 1.5,
+        cex.main = 2,
+      main = "Depth")
+
+dev.off()
+
+```
+
 ```{r partial_plots_PA}
 
 par (mfrow = c (2, 3), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
