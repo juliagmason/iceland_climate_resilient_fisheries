@@ -360,17 +360,39 @@ summary (sst_fall_fit) # y = 5.05 + 1.6e-04x, adj R2 = 0.035
 sst_spr_fit <- lm (surface_temp ~ date, data = filter (comb_samples, season == "spring"))
 summary (sst_spr_fit) # y = 3.27 + 9.67e-05x, adj R2 = 0.028
 
+png (file = "../Figures/MFRI_sample_SST.png", width = 16, height = 9, units = "in", res = 300)
 temp_month_ts %>%
   ggplot (aes (x = date, y = mn_sst, col = season)) +
   geom_point() +
   geom_line() +
-  geom_smooth (method = "lm")
+  geom_smooth (method = "lm") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    plot.title = element_text (size = 24)
+  )+
+  ggtitle ("Mean monthly SST, MFRI trawl")
+dev.off()
 
+png (file = "../Figures/MFRI_sample_BT.png", width = 16, height = 9, units = "in", res = 300)
 temp_month_ts %>%
   ggplot (aes (x = date, y = mn_bt, col = season)) +
   geom_point() +
   geom_line() +
-  geom_smooth (method = "lm")
+  geom_smooth (method = "lm") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    plot.title = element_text (size = 24)
+  )+
+  ggtitle ("Mean monthly bottom temp, MFRI trawl")
+dev.off()
 ```
 SST increasing in both seasons. BT too, much more variable. 
 ```{r sst_map}
@@ -716,6 +738,33 @@ mfri_pred <- read_csv ("../Data/MFRI_predictor_df.csv",
 
                       stat_sq = col_factor())
 )
+
+
+# salinity time series plot
+ 
+png (file = "../Figures/MFRI_sample_GINS_salinity.png", width = 16, height = 9, units = "in", res = 300)
+mfri_pred %>%
+  group_by(date) %>%
+  summarise (
+    count = n(),
+    mn_sal = mean(gins_sal, na.rm = TRUE),
+    se_sst = sd (gins_sal, na.rm = TRUE)/sqrt(count),
+  ) %>% 
+  mutate (season = ifelse (month(date) %in% c(2:4), "spring", "fall")) %>%
+  ggplot (aes (x = date, y = mn_sal, col = season)) +
+    geom_point() +
+  geom_line() +
+  geom_smooth (method = "lm") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    plot.title = element_text (size = 24)
+  ) +
+  ggtitle ("Mean monthly salinity (from GINS climatology), MFRI trawl")
+dev.off()
 
 
 mfri_pred_vars <- mfri_pred %>%
