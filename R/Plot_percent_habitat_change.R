@@ -7,12 +7,193 @@ library (tidyverse)
 #library (rgeos)
 
 
+## Compare total biomass of important landed species in historical vs. future
+
+spp_list <- read_csv ("Data/species_eng.csv") %>%
+  rename (species = sci_name_underscore) # rename to match species column
+
+# spp I ran models for
+load ("Models/spp_Smooth_latlon.RData")
+
+# just take names of species that have landings data and that I ran models for 
+landed_spp <- spp_list %>%
+  filter (!is.na (Landed_name) & species %in% spp_Smooth_latlon$sci_name_underscore) %>%
+  dplyr::pull (species)
+
+# doing both historical and future at the same time takes >2x longer, because repeating the historical one 4-5 times. Instead, make separate df for historical and future, and combine with left_join. 
+
+sum_habitat_hist <- function (sci_name) {
+  
+  # load raster brick for historical period
+  hist_br <- brick (file.path ("Models/Prediction_bricks", 
+                               paste(sci_name, "Borm_14_alltemp", "2000_2018.grd", sep = "_"))
+  )
+  
+  # take sum of all the cells for each time step, for Morely et al. 2018 method
+  sum_hist <- cellStats(hist_br, stat = 'sum') 
+  
+  df <- data.frame (species = sci_name,
+                    hist_mean = mean (sum_hist),
+                    hist_med = median (sum_hist),
+                    hist_sd = sd (sum_hist))
+  
+}
+
+
+
+# base r method:
+
+landed_hist_hab <- do.call(rbind, lapply(landed_spp, sum_habitat_hist, GAM = "Borm_14_alltemp"))
+
+# purr method:
+hist_hab <- map_df (landed_spp, sum_habitat_hist)
+
+# future
+sum_habitat_future <- function (sci_name, CM, scenario) {
+  # CM is 4-letter lowercase climate model abbreviation
+  # scenario is 245 or 585
+  pred_br <- brick (file.path ("Models/Prediction_bricks", 
+                               paste(sci_name, "Borm_14_alltemp", CM, scenario, "2061_2080.grd", sep = "_")
+                               )
+  )
+  sum_pred <- cellStats(pred_br, stat = 'sum')
+  
+  df <- data.frame (species = sci_name,
+                    model = CM,
+                    scenario = scenario, 
+                    pred_mean = mean (sum_pred),
+                    pred_med = median (sum_pred),
+                    pred_sd = sd (sum_pred)
+                    )
+
+  
+} # end pred function 
+
+CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+
+# list of all the possible combinations of species, CM, and scenario. I couldn't figure out how to use cross and filter to get rid of the CM2.6 and 245 combination
+cm_expand <- expand_grid (sci_name = landed_spp,
+                          CM = CM_list,
+                          scenario = c(245, 585)) %>%
+  filter (!(CM == "CM26" & scenario == 245)) %>% 
+  as.list() # convert to list to feed to pmap
+
+
+pred_hab <- pmap_dfr (cm_expand_list, sum_habitat_future)
+
+
+# plot total change in biomass
+
+# version with 3 bars for hist, 245, 585
+pred_hab %>%
+  left_join (hist_hab, by = "species") %>% 
+  # could I use map here instead?
+  group_by (species, scenario) %>%
+  summarise (hab_future = mean(pred_mean),
+             hab_hist = first (hist_mean)) %>% 
+  pivot_wider (names_from = scenario,
+               values_from = hab_future, 
+               names_prefix = "hab_") %>%
+  pivot_longer (!species, 
+                names_to = "period", 
+                names_prefix = "hab_",
+                values_to = "habitat") %>% 
+  
+  # these species were many orders of magnitude larger
+  filter (!species %in% c ("Scomber_scombrus", "Mallotus_villosus", "Anarhichas_lupus", "Amblyraja_radiata", "Squalus_acanthias")) %>%
+  ggplot (aes (x = period, y = log(habitat), fill = species)) +
+  geom_bar (stat = "identity") 
+  
+
+# OR facet wrap 
+pred_hab %>%
+  left_join (hist_hab, by = "species") %>%
+  group_by (species, scenario) %>%
+  summarise (hab_future = mean(pred_mean),
+             hab_hist = first (hist_mean)) %>% 
+  pivot_longer (
+    cols = starts_with ("hab"),
+    names_to = "period", 
+    names_prefix = "hab_",
+    values_to = "habitat"
+  ) %>% 
+
+  filter (!species %in% c ("Scomber_scombrus", "Mallotus_villosus", "Anarhichas_lupus", "Amblyraja_radiata", "Squalus_acanthias")) %>%
+  ggplot (aes (x = period, y = log(habitat), fill = species)) +
+  geom_bar (stat = "identity") +
+  facet_wrap (~scenario)
+# ...... ....... :| 
+
+
+# also use this instead of my function below, just to look at log10change?
+MASE <- read_csv (paste0("Models/GAM_performance_Borm_14_alltemp.csv"))
+
+hab_change <- pred_hab %>%
+  left_join (hist_hab, by = "species") %>%
+  mutate (log10_foldchange = log10 (pred_mean / hist_mean)) 
+
+spp_order <- hab_change %>%
+  filter (scenario == 585) %>%
+  group_by (species) %>%
+  summarise (mn_change = mean (log10_foldchange)) %>%
+  arrange (mn_change)
+
+png ("Figures/Log10fold_hab_change_by_quota_boxplot_portrait_Borm14_alltemp.png", width = 8.5, height = 11, units = "in", res = 300)
+hab_change %>%
+  left_join (spp_list, by = "species") %>% 
+  left_join (MASE, by = "species") %>% 
+  mutate (Model_suitable = ifelse (
+    MASE_GAM < 1 & DM_GAM_p < 0.05, 
+    "1", 
+    "0"
+  )) %>% 
+  filter (!is.na (Model_suitable)) %>% 
+  # create column to manipulate fill based on quota and model
+  # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota),
+          fill_col = case_when(
+            Model_suitable == 0 ~ "Model unsuitable",
+            Model_suitable == 1 & Quota == 1 ~ "Model suitable"
+            #Model_suitable == 1 & Quota == 0 ~ "Non-Quota"
+          ) 
+  ) %>% 
+  ggplot (aes (y = species, 
+               x = log10_foldchange,
+               #color = Quota,
+               fill = fill_col,
+               width = 0.85)) +
+  
+  guides (color = FALSE) +
+  geom_boxplot() +
+  
+  geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
+  # geom_col () +
+  # geom_errorbar (aes (ymin = mn_change - sd_change, ymax = mn_change + sd_change), col = "black") +
+  #coord_flip() + 
+  facet_wrap (~scenario, scales = "free_x") +
+  theme_bw() +
+  scale_fill_manual (values = alpha (c("lightgray",  "#F8766D", "#00BFC4"), 0.5)) +
+  labs (fill = "",
+        x = "Habitat change") +
+  #ggtitle (paste(GAM, "Percent habitat change, 2000-2018 vs. 2061-2080")) +
+  ggtitle ("Log x-fold Habitat change, 2000-2018 vs. 2061-2080") +
+  theme (
+    axis.text.x = element_text (size = 14),
+    axis.text.y = element_text (size = 12),
+    axis.title = element_text (size = 14),
+    plot.title = element_text (size = 16),
+    strip.text = element_text (size = 14),
+    legend.text = element_text (size = 14),
+    legend.position = c(0.68, 0.95)
+  ) 
+dev.off()
+  
+# ==================
+# function to run species habitat change for each GAM I've fit ----
+# ==================
+
 # I'm using the Morely et al. 2018 method for now, sum of predictions values for each cell. I'm going to calculate the sum standardized by area for each year in the historical period, then take the mean. Then I'm going to do the same for each of the climate models. I will then calculate the percent difference (projection mean minus hist mean over hist mean) for each model. Then I'll take the mean and standard deviation of those percent difference values. 
-
-
-# ==================
-# function to run this for each GAM I've fit ----
-# ==================
 
 calculate_perc_hab_change <- function (GAM) {
   # GAM is the name of the model/folder where prediction bricks are saved
@@ -50,7 +231,7 @@ calculate_perc_hab_change <- function (GAM) {
     area_hist <- cellStats(raster::area(br_hist[[1]], na.rm = TRUE), stat = sum)
     
     # this is the sum of all the cells for each time step, should have 228 values for 2000-2018
-    sum_hist <- cellStats(br_hist, stat = 'sum') * area_hist
+    sum_hist <- cellStats(br_hist, stat = 'sum') / area_hist
     mean_hist <- mean (sum_hist)
     
     # ==================
@@ -76,39 +257,38 @@ calculate_perc_hab_change <- function (GAM) {
       # ==================
       # calculate percent change for each model, using helper function
       # ==================
-
-      calc_CM_perc_change <- function (hist_mean, pred_files, CM) {
-        # hist_mean is a single value, calculated above
-        #pred_files are the bricks for each species and scenario
-        # CM is the name of the climate model
+      
+      # empty CM df
+      CM_df <- data.frame()
+      
+      for (CM in CM_list) {
         
         br_pred <- brick (pred_files[grep(CM, pred_files)])
         area_pred <- cellStats(raster::area(br_pred[[1]], na.rm = TRUE), stat = sum)
-        sum_pred <- cellStats(br_pred, stat = 'sum') * area_pred
+        sum_pred <- cellStats(br_pred, stat = 'sum') / area_pred
         mean_pred <- mean (sum_pred)
         
-        perc_change <- (mean_pred - mean_hist)/mean_hist * 100
         
-      }
+        # keep values for each  in df
+        lil_df <- data.frame (
+          species = spp_name,
+          model = CM,
+          scenario = scen,
+          perc_change = (mean_pred - mean_hist)/mean_hist * 100,
+          fold_change = log2 (mean_pred/mean_hist),
+          fold10_change = log2 (mean_pred/mean_hist),
+          simple_ratio = ifelse (mean_pred > mean_hist,
+                                 mean_pred/mean_hist,
+                                 -(mean_hist/mean_pred))
+        )
+        
+        # rbind to scenario df
+        CM_df <- rbind (CM_df, lil_df)
+        
+      } # end CM for loop
       
-      
-      
-      perc <- sapply (CM_list, calc_CM_perc_change,
-              hist_mean = mean_hist,
-              pred_files = pred_files
-              )
-      
-      # keep all values
-      spp_df <- data.frame (
-        species = spp_name,
-        model = CM_list,
-        scenario = scen,
-        perc_change = perc
-      )
-      
-      
-      
-      scen_df <- rbind (scen_df, spp_df)
+      scen_df <- rbind (scen_df, CM_df)
+
       
     } # end scenario loop
     
@@ -117,7 +297,7 @@ calculate_perc_hab_change <- function (GAM) {
   } # end hist_files i loop
   
   # save
-  save (hab_change, file = paste0("Data/perc_hab_change_Morely_", GAM, ".RData"))
+  save (hab_change, file = paste0("Data/Perc_hab_change_Morely_", GAM, ".RData"))
   
   print (Sys.time())
   
@@ -140,6 +320,124 @@ spp_list <- read_csv ("Data/species_eng.csv",
                         Spp_ID = col_factor()
                       )) %>%
   rename (species = sci_name_underscore) # rename to match species column
+
+# plot fold change ----
+load ("Data/perc_hab_change_Morely_Borm_14_alltemp.RData")
+
+spp_order <- hab_change %>%
+  filter (scenario == 585) %>%
+  group_by (species) %>%
+  summarise (mn_change = mean (perc_change)) %>%
+  arrange (mn_change)
+
+MASE <- read_csv (paste0("Models/GAM_performance_Borm_14_alltemp.csv"))
+
+png ("Figures/Log2fold_hab_change_by_quota_boxplot_portrait_Borm14_alltemp.png", width = 8.5, height = 11, units = "in", res = 300)
+hab_change %>% 
+  left_join (spp_list, by = "species") %>% 
+  left_join (MASE, by = "species") %>% 
+  mutate (Model_suitable = ifelse (
+    MASE_GAM < 1 & DM_GAM_p < 0.05, 
+    "1", 
+    "0"
+  )) %>% 
+  filter (!is.na (Model_suitable)) %>% 
+  # create column to manipulate fill based on quota and model
+  # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota),
+          fill_col = case_when(
+            Model_suitable == 0 ~ "Model unsuitable",
+            Model_suitable == 1 & Quota == 1 ~ "Quota",
+            Model_suitable == 1 & Quota == 0 ~ "Non-Quota"
+          ) 
+  ) %>% 
+  ggplot (aes (y = species, 
+               x = fold_change,
+               color = Quota, 
+               fill = fill_col,
+               width = 0.85)) +
+  
+  guides (color = FALSE) +
+  geom_boxplot() +
+  
+  geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
+  # geom_col () +
+  # geom_errorbar (aes (ymin = mn_change - sd_change, ymax = mn_change + sd_change), col = "black") +
+  #coord_flip() + 
+  facet_wrap (~scenario, scales = "free_x") +
+  theme_bw() +
+  scale_fill_manual (values = alpha (c("lightgray",  "#F8766D", "#00BFC4"), 0.5)) +
+  labs (fill = "",
+        x = "Habitat change") +
+  #ggtitle (paste(GAM, "Percent habitat change, 2000-2018 vs. 2061-2080")) +
+  ggtitle ("Log2 fold Habitat change, 2000-2018 vs. 2061-2080") +
+  theme (
+    axis.text.x = element_text (size = 14),
+    axis.text.y = element_text (size = 12),
+    axis.title = element_text (size = 14),
+    plot.title = element_text (size = 16),
+    strip.text = element_text (size = 14),
+    legend.text = element_text (size = 14),
+    legend.position = c(0.83, 0.15)
+  ) 
+
+dev.off()
+
+# plot ratio ----
+# g. cynoglossus is crazy, -2000
+png ("Figures/Ratio_hab_change_by_quota_boxplot_portrait_Borm14_alltemp.png", width = 8.5, height = 11, units = "in", res = 300)
+hab_change %>% 
+  filter (simple_ratio > -150, !species %in% c ("Hippoglossoides_platessoides", "Lycodes_gracilis")) %>%
+  left_join (spp_list, by = "species") %>% 
+  left_join (MASE, by = "species") %>% 
+  mutate (Model_suitable = ifelse (
+    MASE_GAM < 1 & DM_GAM_p < 0.05, 
+    "1", 
+    "0"
+  )) %>% 
+  filter (!is.na (Model_suitable)) %>% 
+  # create column to manipulate fill based on quota and model
+  # https://stackoverflow.com/questions/8197559/emulate-ggplot2-default-color-palette, show_col(hue_pal()(2))
+  mutate (species = factor(species, levels = spp_order$species),
+          Quota = factor(Quota),
+          fill_col = case_when(
+            Model_suitable == 0 ~ "Model unsuitable",
+            Model_suitable == 1 & Quota == 1 ~ "Quota",
+            Model_suitable == 1 & Quota == 0 ~ "Non-Quota"
+          ) 
+  ) %>% 
+  ggplot (aes (y = species, 
+               x = simple_ratio,
+               color = Quota, 
+               fill = fill_col,
+               width = 0.85)) +
+  
+  guides (color = FALSE) +
+  geom_boxplot() +
+  
+  geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
+  # geom_col () +
+  # geom_errorbar (aes (ymin = mn_change - sd_change, ymax = mn_change + sd_change), col = "black") +
+  #coord_flip() + 
+  facet_wrap (~scenario, scales = "free_x") +
+  theme_bw() +
+  scale_fill_manual (values = alpha (c("lightgray",  "#F8766D", "#00BFC4"), 0.5)) +
+  labs (fill = "",
+        x = "Habitat change") +
+  #ggtitle (paste(GAM, "Percent habitat change, 2000-2018 vs. 2061-2080")) +
+  ggtitle ("Simple ratio of Habitat change, 2000-2018 vs. 2061-2080") +
+  theme (
+    axis.text.x = element_text (size = 14),
+    axis.text.y = element_text (size = 12),
+    axis.title = element_text (size = 14),
+    plot.title = element_text (size = 16),
+    strip.text = element_text (size = 14),
+    legend.text = element_text (size = 14),
+    legend.position = c(0.73, 0.91)
+  ) 
+
+dev.off()
 
 # function to plot by quota status ----
 plot_hab_change_quota_fun <- function (GAM, hab_change_df, spp_order) {
