@@ -1732,3 +1732,42 @@ plot (gam_PA,
 
 ```
 showing a slight negative rltp with sst. might be that catch has been going down although temperatures have been going up so model is confused?
+
+### species with really high prediction values
+```{r a lupus}
+library (mgcv)
+load ("../Models/Borm_14_alltemp/Anarhichas_lupus_LB.Rdata")
+load ("../Models/Borm_14_alltemp/Anarhichas_lupus_PA.Rdata")
+
+summary (gam_LB)
+summary (gam_PA)
+
+plot (gam_PA)
+plot (gam_LB)
+
+```
+A. lupus LB: none of the borm regions significant, only depth and bt_max significant. PA everything highly significant, but the std dev vars and sst_max have edf 1. otherwise partial plots look ok? LB partial plots look much worse. 
+
+prediction values? on map seems to be concentrated on extreme north/west corner
+```{r}
+# what is the range of input points
+  lup_pts <- mfri_abun %>%
+    filter (species == 9) %>%
+    left_join (mfri_pred, by = "sample_id")
+summary (lup_pts$kg_log)
+hist (lup_pts$kg_log)
+
+# big ol 3.67 point, but distribution looks fairly normal
+
+spp_PA <- mfri_pa %>%
+     dplyr::select (sample_id, all_of("Anarhichas_lupus")) %>%
+     right_join (mfri_pred, by = "sample_id") # use right join to cut out faulty fall samples
+   colnames (spp_PA)[2] <- "Presence"
+
+
+   # non-zero biomass data; this will have variable size. Select based on spp_ID code.
+   spp_B <- mfri_abun %>%
+     filter (species == 9) %>%
+     left_join (mfri_pred, by = "sample_id")
+```
+
