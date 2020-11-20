@@ -42,6 +42,7 @@ repair_1094 <- data.frame (
   lon = -1*c(29.5, 29.5, 30.5, 30.5, 31, 31, 31.5, 31.5, 32),
   order = c(1:9)
 )
+# also included the missing space for 1091. Was I saying 1096 but meant 1091 the whole time? I emailed Pamela about 1096 and have notes about 1096 below but can't find it. 1091 is in borm_coords??
 
 
 good_1146 <- borm_coords2 %>%
@@ -56,8 +57,7 @@ repair_1146 <- data.frame (
 )
 
 
-borm_coords <- rbind (borm_coords1,
-                      filter (borm_coords2, !SUBDIVISION %in% c(1146, 1094)),
+borm_coords <- rbind (filter (borm_coords1, !SUBDIVISION %in% c(1146, 1094, 1091)),
                       repair_1094,
                       good_1094,
                       # not sure I still need this last point matching the first point to close the polygon, but including just in case
@@ -69,17 +69,15 @@ borm_coords <- rbind (borm_coords1,
   #convert to lowercase to match other data frame
   rename (subdivision = SUBDIVISION) %>%
   left_join (borm_table, by = "subdivision") %>% 
-  # if division is missing, replace with first 3 digits of subdivision
+  # If division is missing, replace with first 3 digits of subdivision
   mutate (division = ifelse (is.na (division),
                                     substr (subdivision, 1,3),
                                     division),
-          subdivision = as.numeric (subdivision)
-          ) %>%
-  # get rid of subdivisions with no lat/lon. 1094, 1096, 1146 all NA; none is in borm_table. These are huge areas though, so try to get them!
-  filter (!is.na(lat))
-
-
-
+          subdivision = as.numeric (subdivision),
+          lat = as.numeric (lat),
+          lon = as.numeric (lon)
+          ) 
+# this still has a hole in it, for 1091 (1096??)
 
 # convert to sf polygons
 # https://gis.stackexchange.com/questions/332427/converting-points-to-polygons-by-group
@@ -98,6 +96,9 @@ borm_polys <- st_sf (
 
 borm_polys
 plot (borm_polys) 
+
+# try to add polygon names...this didn't work
+poly_labels <- layer (sp.text (borm_polys$geometry, txt = borm_polys$Group.1, pos = 1))
 
 
 # rasterize with template ----
@@ -143,34 +144,88 @@ borm_div_rcl[zone_109][is.na(borm_div_rcl[zone_109])] <- 109
 
 plot (borm_div_rcl)
 
-# save raster
+# save raster----
 borm_div_r <- writeRaster(borm_div_rcl, filename = "Data/bormicon_divisions.grd", overwrite = TRUE)
 
+# plot ----
+# can I plot this as a raster?
+# https://datacarpentry.org/r-raster-vector-geospatial/02-raster-plot/
+borm_r_poly <- rasterToPolygons(borm_div_rcl)
+
+# https://erinbecker.github.io/r-raster-vector-geospatial/02-raster-plot/index.html
+borm_r_pts <- rasterToPoints (borm_div_rcl, spatial = TRUE)
+borm_r_df <- data.frame(borm_r_pts)
+
+# redo label diagram?
+div_centroids <- test2 %>%
+  mutate (division = case_when (division == 115 ~ 113,
+                                        division == 112 ~ 111,
+                                        division == 110 ~ 109,
+                                        TRUE ~ as.numeric(division))) %>%
+
+  group_by (division) %>%
+  summarise (lat = mean (lat, na.rm = TRUE),
+             lon = mean (lon, na.rm = TRUE))
+
+library (RColorBrewer)
+png ("Figures/Bormicon_division_EEZ_map.png", width = 8.5, height = 11, units = "in", res = 300)
+ggplot() +
+  geom_raster(data = borm_r_df , aes(x = x, y = y, fill = as.factor(layer))) +
+  
+  geom_path(aes(lon,lat,group=SUBDIVISION), 
+            data=filter (test, SUBDIVISION %in% c(1151, 1101, 1121)),
+            size = 0.3, lty = 2, col = "gray30") +
+
+  geom_polygon(data = map_data("world",'Iceland'), 
+               aes(long,lat,group = group),
+               col = 'gray80' ,fill = 'gray90',size = 0.3) +
+  
+  geom_sf (data  = eez, fill = NA, lwd = 0.5) +
+  geom_text(aes(lon,lat,label=division),
+            data = div_centroids,
+            col = "black", size = 5) +
+  coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
+  theme_bw() +
+  scale_fill_brewer (palette = "Set3") +
+  theme (legend.position = "none",
+           axis.text.x = element_text (size = 14),
+           axis.text.y = element_text (size = 12),
+           axis.title = element_blank (),
+           plot.title = element_text (size = 16)) +
+  ggtitle ("Bormicon regions for model input")
+
+dev.off()
 
 
 ## plotting code from Pamela----
 
 test <- read.csv('Data/Raw_data/subdivision_coords.csv')
 
-# with repaired data
-test <- borm_coords 
-
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
 isl_eez <- fortify (eez)
 
 # plot polygons with eez overlaid
+
+# labels are just showing up in the middle of iceland, not separated by polygon. try making a separate dataframe outside?
+label_centroids <- test %>%
+  group_by (SUBDIVISION) %>%
+  summarise (lat = mean (lat, na.rm = TRUE),
+             lon = mean (lon, na.rm = TRUE))
 ggplot () +
   geom_polygon(aes(lon,lat,group=SUBDIVISION, fill = as.factor(SUBDIVISION)),
                data=test,
                size = 0.3) +  
-  geom_point(col='yellow') +  
+  #geom_point(col='yellow') +  # don't know what this does
+  
+  # add outlines
   geom_path(aes(lon,lat,group=SUBDIVISION), 
             data=test,
             size = 0.3) +
+  
   geom_text(aes(lon,lat,label=SUBDIVISION),
-            data=summarise (group_by(test, SUBDIVISION, lat=mean(lat),
-                                     lon=mean(lon)))) +
+            data = label_centroids,
+            col = "black") +
   geom_polygon(data = map_data("world",'Iceland'), 
                aes(long,lat,group = group),
                col = 'black' ,fill = 'gray70',size = 0.3) +
@@ -182,7 +237,7 @@ ggplot () +
   theme_bw() 
 
 
-ggplot(data.frame(lat=0,lon=0), aes(lon,lat)) + 
+ggplot() + #(data.frame(lat=0,lon=0), aes(lon,lat)) + 
   geom_polygon(aes(lon,lat,group=SUBDIVISION, fill = as.factor(SUBDIVISION)),
                data=test,
                size = 0.3) +  
@@ -193,12 +248,12 @@ ggplot(data.frame(lat=0,lon=0), aes(lon,lat)) +
    geom_text(aes(lon,lat,label=SUBDIVISION),
              data=summarise (group_by(test, SUBDIVISION, lat=mean(lat),
                lon=mean(lon)))) +
-  geom_polygon(data = map_data("world",'Iceland'), 
-               aes(long,lat,group = group),
-               col = 'black' ,fill = 'gray70',size = 0.3) +
-  geom_polygon(data=map_data("world",'Greenland'), 
-               aes(long,lat,group = group), 
-               col = 'black', fill = 'gray70') +
+  # geom_polygon(data = map_data("world",'Iceland'), 
+  #              aes(long,lat,group = group),
+  #              col = 'black' ,fill = 'gray70',size = 0.3) +
+  # geom_polygon(data=map_data("world",'Greenland'), 
+  #              aes(long,lat,group = group), 
+  #              col = 'black', fill = 'gray70') +
 # this is my code, add ticks so I can see where the polygons meet
   geom_sf (data  = eez, fill = NA, lwd = 1.5) +
   scale_x_continuous(breaks = seq(min(test$lon, na.rm = TRUE), 
@@ -220,3 +275,68 @@ ggplot(data.frame(lat=0,lon=0), aes(lon,lat)) +
         panel.grid=element_blank(),
         axis.title = element_blank())#,
         #legend.position = 'none')
+
+
+### plot repaired polygons
+test2 <-  borm_coords %>%
+  mutate (lat = as.numeric (lat),
+          lon = as.numeric (lon))
+
+repair_centroids <- test2 %>%
+  group_by (subdivision) %>%
+  summarise (lat = mean (lat, na.rm = TRUE),
+             lon = mean (lon, na.rm = TRUE))
+ggplot () +
+  geom_polygon(aes(lon,lat,group=subdivision, fill = as.factor(subdivision)),
+               data=test2,
+               size = 0.3) +  
+  #geom_point(col='yellow') +  # don't know what this does
+  
+  # add outlines
+  geom_path(aes(lon,lat,group=subdivision), 
+            data=test2,
+            size = 0.3) +
+  
+  geom_text(aes(lon,lat,label=subdivision),
+            data = repair_centroids,
+            col = "black") +
+  geom_polygon(data = map_data("world",'Iceland'), 
+               aes(long,lat,group = group),
+               col = 'black' ,fill = 'gray70',size = 0.3) +
+  geom_polygon(data=map_data("world",'Greenland'), 
+               aes(long,lat,group = group), 
+               col = 'black', fill = 'gray70') +
+  geom_sf (data  = eez, fill = NA, lwd = 1.5) +
+  coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
+  theme_bw() 
+
+# plot by division
+repair_div_centroids <- test2 %>%
+  group_by (division) %>%
+  summarise (lat = mean (lat, na.rm = TRUE),
+             lon = mean (lon, na.rm = TRUE))
+
+ggplot () +
+  geom_polygon(aes(lon,lat,group=subdivision, fill = as.factor(division)),
+               data=test2,
+               size = 0.3) +  
+  #geom_point(col='yellow') +  # don't know what this does
+  
+  # add outlines
+  geom_path(aes(lon,lat,group=division), 
+            data=test2,
+            size = 0.3) +
+  
+  geom_text(aes(lon,lat,label=division),
+            data = repair_div_centroids,
+            col = "black") +
+  geom_polygon(data = map_data("world",'Iceland'), 
+               aes(long,lat,group = group),
+               col = 'black' ,fill = 'gray70',size = 0.3) +
+  geom_polygon(data=map_data("world",'Greenland'), 
+               aes(long,lat,group = group), 
+               col = 'black', fill = 'gray70') +
+  geom_sf (data  = eez, fill = NA, lwd = 1.5) +
+  coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
+  theme_bw() 
+
