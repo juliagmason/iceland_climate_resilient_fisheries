@@ -12,7 +12,91 @@ library (spatstat) # for weighted quantiles
 
 # Code from Morely et al. 2018, calculating % habitat change as change in sum of prediction values
 
+# trying something different, with purr. Still think it's faster to separate historical and future
+hist_centroids_fun <- function (sci_name) {
+  # load raster brick for historical period
+  hist_br <- brick (file.path ("Models/Prediction_bricks", 
+                               paste(sci_name, "Borm_14_alltemp", "2000_2018.grd", sep = "_"))
+  )
+  
+  # take mean so have one value per period
+  hist_mn <- calc (hist_br, mean) # calc is faster than StackApply
+  
+  # spatial points df so I have a value corresponding to each lat/lon combo
+  df_pre <- data.frame(rasterToPoints(hist_mn))
+  
+  # eventually want something about circular movement around iceland??
+  data.frame (
+    species = sci_name,
+    hist_lat = weighted.mean(df_pre$y, df_pre$layer), # layer is the thermpred prediction value
+    hist_lon =  weighted.mean(df_pre$x, df_pre$layer),
+    #warm and cool edges, Fredston-Herman 2020. should probably get this from obs, not backcast? 5th and 95th latitude quantile
+    # might not be that helpful because i'm limiting to EEZ, and might run into borm problems
+    hist_warm = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.05, na.rm = TRUE),
+    hist_cold  = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.95, na.rm = TRUE)
+  )
+}
 
+
+system.time( hist_centroids <- map_df (landed_spp, hist_centroids_fun))
+
+future_centroids_fun <- function (sci_name, CM, scenario) {
+  # load raster brick for historical period
+  pred_br <- brick (file.path ("Models/Prediction_bricks", 
+                               paste(sci_name, "Borm_14_alltemp", CM, scenario, "2061_2080.grd", sep = "_")
+                               )
+                    )
+  
+  #take mean so have one value per period
+  pred_mn <- calc (pred_br, mean) # calc is faster
+  df_post <- data.frame(rasterToPoints(pred_mn))
+  
+  
+  # eventually want something about circular movement around iceland??
+  # calculate mean lon and lat, store as data.frame to match with climate models
+  # compile in dataframe
+  CM_df <- data.frame (
+    species = sci_name,
+    model = CM, 
+    scenario = scenario,
+    pred_lat = weighted.mean(df_post$y, df_post$layer),
+    pred_lon = weighted.mean(df_post$x, df_post$layer),
+    pred_warm = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.05, na.rm = TRUE),
+    pred_cold = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.95, na.rm = TRUE)
+  )
+}
+
+tmp2 <- future_centroids_fun(sci_name = "Gadus_morhua",
+                             CM = "cnrm", 
+                             scenario = 585)
+
+CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+
+# list of all the possible combinations of species, CM, and scenario. I couldn't figure out how to use cross and filter to get rid of the CM2.6 and 245 combination
+cm_expand <- expand_grid (sci_name = landed_spp,
+                          CM = CM_list,
+                          scenario = c(245, 585)) %>%
+  filter (!(CM == "CM26" & scenario == 245)) %>% 
+  as.list() # convert to list to feed to pmap
+
+system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)) # 382s
+
+centroid_change <- pred_centroids %>%
+  pivot_longer (cols = starts_with ("pred"),
+                names_prefix = "pred_", 
+                names_to = "var",
+                values_to = "pred") %>%
+  left_join (pivot_longer (hist_centroids, 
+                           cols = !species,
+                           names_prefix = "hist_",
+                           names_to = "var", 
+                           values_to = "hist"),
+             by = c("species", "var")) %>%
+  mutate ()
+  
+
+
+#################################################################################################
 
 calculate_centroids_fun <- function (GAM, spp_names, year_range) {
   # empty df to store full dataset
@@ -32,23 +116,18 @@ calculate_centroids_fun <- function (GAM, spp_names, year_range) {
       df_pre <- data.frame(rasterToPoints(hist_mn))
       
       # calculate mean lon and lat, store as data.frame to match with climate models
-      
-      # eventually want something about circular movement around iceland??
-      hist_df <- data.frame (
-        species = spp,
-        period = "hist",
-        model = "hist",
-        scenario = "hist",
-        mean_Lat = weighted.mean(df_pre$y, df_pre$layer), # layer is the thermpred prediction value
-        mean_Lon =  weighted.mean(df_pre$x, df_pre$layer),
-        #warm and cool edges, Fredston-Herman 2020. should probably get this from obs, not backcast? 5th and 95th latitude quantile
-        # might not be that helpful because i'm limiting to EEZ, and might run into borm problems
-        warm_edge = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.05, na.rm = TRUE),
-        cold_edge = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.95, na.rm = TRUE)
+      # compile in dataframe
+      CM_df <- data.frame (
+        species = sci_name,
+        model = CM, 
+        scenario = scenario,
+        pred_lat = weighted.mean(df_post$y, df_post$layer),
+        pred_lon = weighted.mean(df_post$x, df_post$layer),
+        warm_edge = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.05, na.rm = TRUE),
+        cold_edge = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.95, na.rm = TRUE)
       )
       
-      # Do the same for climate models, both scenarios
-      scen_df <- data.frame()
+      
       
       for (scen in c(245, 585)) {
         
