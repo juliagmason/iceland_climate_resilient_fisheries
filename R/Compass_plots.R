@@ -32,13 +32,14 @@ hist_centroids_fun <- function (sci_name) {
     hist_lon =  weighted.mean(df_pre$x, df_pre$layer),
     #warm and cool edges, Fredston-Herman 2020. should probably get this from obs, not backcast? 5th and 95th latitude quantile
     # might not be that helpful because i'm limiting to EEZ, and might run into borm problems
+    # weighted quantile is making these very central. Fredston used 5th and 95th where occurs above 80% probability, but not sure how to capture that with thermpred. 
     hist_warm = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.05, na.rm = TRUE),
     hist_cold  = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.95, na.rm = TRUE)
   )
 }
 
 
-system.time( hist_centroids <- map_df (landed_spp, hist_centroids_fun))
+system.time( hist_centroids <- map_df (borm_spp$sci_name_underscore, hist_centroids_fun)); beep() # 98s
 
 future_centroids_fun <- function (sci_name, CM, scenario) {
   # load raster brick for historical period
@@ -66,319 +67,81 @@ future_centroids_fun <- function (sci_name, CM, scenario) {
   )
 }
 
-tmp2 <- future_centroids_fun(sci_name = "Gadus_morhua",
-                             CM = "cnrm", 
-                             scenario = 585)
-
-CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 
 # list of all the possible combinations of species, CM, and scenario. I couldn't figure out how to use cross and filter to get rid of the CM2.6 and 245 combination
+CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+
 cm_expand <- expand_grid (sci_name = landed_spp,
                           CM = CM_list,
                           scenario = c(245, 585)) %>%
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list() # convert to list to feed to pmap
 
-system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)) # 382s
+system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)); beep() # 382s landed, 1206.62  full
 
+# combine and save 
+# start with just centroids, do warm/cold later
 centroid_change <- pred_centroids %>%
-  pivot_longer (cols = starts_with ("pred"),
-                names_prefix = "pred_", 
-                names_to = "var",
-                values_to = "pred") %>%
-  left_join (pivot_longer (hist_centroids, 
-                           cols = !species,
-                           names_prefix = "hist_",
-                           names_to = "var", 
-                           values_to = "hist"),
-             by = c("species", "var")) %>%
-  mutate ()
-  
+  left_join (hist_centroids, by = "species") %>%
+  mutate (dist = distHaversine (cbind(hist_lon, hist_lat),
+                                cbind(pred_lon, pred_lat)),
+          bearing = bearing (cbind(hist_lon, hist_lat),
+                             cbind(pred_lon, pred_lat)
+                             ) # bearing is -180-180
+  )
+
+# save for now
+save (centroid_change, file = "Data/centroids_Borm14_alltemp_allscenarios.RData")
+
+
+# fancy mutate attempts...
+# centroid_change <- pred_centroids %>%
+#   pivot_longer (cols = starts_with ("pred"),
+#                 names_prefix = "pred_", 
+#                 names_to = "var",
+#                 values_to = "pred") %>%
+#   left_join (pivot_longer (hist_centroids, 
+#                            cols = !species,
+#                            names_prefix = "hist_",
+#                            names_to = "var", 
+#                            values_to = "hist"),
+#              by = c("species", "var")) %>%
+#   mutate ()
 
 
 #################################################################################################
 
-calculate_centroids_fun <- function (GAM, spp_names, year_range) {
-  # empty df to store full dataset
-  centroids_df <- data.frame ()
+# plot
 
-  start_t <- Sys.time()
-    
-    for (spp in spp_names) {
-      
-      # load prediction bricks
-      hist_br <- brick (paste0("Models/Prediction_bricks/", spp, "_", GAM, "_2000_2018.grd"))
-      
-      # take mean so have one value per period
-      hist_mn <- calc (hist_br, mean) # calc is faster
-      
-      # spatial points df so I have a value corresponding to each lat/lon combo
-      df_pre <- data.frame(rasterToPoints(hist_mn))
-      
-      # calculate mean lon and lat, store as data.frame to match with climate models
-      # compile in dataframe
-      CM_df <- data.frame (
-        species = sci_name,
-        model = CM, 
-        scenario = scenario,
-        pred_lat = weighted.mean(df_post$y, df_post$layer),
-        pred_lon = weighted.mean(df_post$x, df_post$layer),
-        warm_edge = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.05, na.rm = TRUE),
-        cold_edge = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.95, na.rm = TRUE)
-      )
-      
-      
-      
-      for (scen in c(245, 585)) {
-        
-        # list appropriate files for species and scenario
-        pred_files <- list.files (path = "Models/Prediction_bricks", 
-                                  pattern = paste0(spp, "_", GAM, ".*", scen, "_2061_2080.grd"),
-                                  full.names = TRUE
-        )
-        
-        # I have a different set of models for both scenarios
-        if (scen == 585) {
-          CM_list = c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
-        } else {CM_list = c("gfdl", "cnrm", "ipsl", "mohc") }
-        
-        
-        # make empty df to store results for all CMs, for this scenario
-        all_CM_df <- data.frame()
-        
-        for (CM in CM_list) {
-          
-          pred_br <- brick (pred_files[grep(CM, pred_files)])
-          
-          #take mean so have one value per period
-          pred_mn <- calc (pred_br, mean) # calc is faster
-          df_post <- data.frame(rasterToPoints(pred_mn))
-          
-          # compile in dataframe
-          CM_df <- data.frame (
-            species = spp,
-            period = "future",
-            model = CM, 
-            scenario = scen,
-            mean_Lat = weighted.mean(df_post$y, df_post$layer),
-            mean_Lon = weighted.mean(df_post$x, df_post$layer),
-            warm_edge = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.05, na.rm = TRUE),
-            cold_edge = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.95, na.rm = TRUE)
-          )
-          
-          all_CM_df <- rbind (all_CM_df, CM_df)
-          
-        } # end CM loop
-        
-        scen_df <- rbind (scen_df, all_CM_df)
-        
-      } # end scenario loop
-      
-      centroids_df <- rbind (centroids_df, hist_df, scen_df)
-      
-      cent_mn <- scen_df %>% group_by (period, scenario) %>%
-        summarise (mn_Lat = mean (mean_Lat),
-                   mn_Lon = mean (mean_Lon)) #%>%
-        group_by (period) %>%
-        summarise (diff_lat = diff(mn_Lat),
-                   diff_lon = diff(mn_Lon))
-       
-      cent_mn$scenario[which (cent_mn$period == "hist")] <- NA
-      
-      cent_no_period <- cent_mn %>%
-        ungroup() %>%
-        dplyr::select (-period)
-      
-      cent_mn_wide_scen <- cent_no_period %>%
-        pivot_wider (names_from = scenario,
-                     values_from = c(mn_Lat, mn_Lon))
-      
-      cent_mn_double_hist <- rbind (cent_mn, cent_mn[3,])
-      cent_mn_double_hist$scenario[3:4] <- c(245, 585)
-      cent_mn_double_hist_wide <- cent_mn_double_hist %>% pivot_wider (names_from = period,
-                                           values_from = c(mn_Lat, mn_Lon))
-      
-      scen_double_hist <- rbind (scen_df, scen_df[5,])
-      scen_double_hist$scenario[c(5, 11)] <- c(245, 585)
-      
-      scen_double_hist %>% pivot_wider (names_from = period,
-                                        values_from = c(mean_Lat, mean_Lon))
-      
-      
-      cent_mn_wider <- cent_mn %>%
+# spp I ran models for
+load ("Models/spp_Smooth_latlon.RData") 
+borm_spp <- spp_Smooth_latlon %>%
+  filter (!sci_name_underscore == "Myoxocephalus_scorpius")
 
-        pivot_wider (names_from = period,
-                     values_from = c(mn_Lat, mn_Lon))
-      
-      just_hist <- scen_df[5, c(1, 5:8)]
-      colnames (just_hist)[2:5] <- paste0("hist_", colnames(just_hist)[2:5])
-      
-      just_future <- scen_df [-5,]
-      
-      # https://stackoverflow.com/questions/40554592/geosphere-disthaversine-dplyr-error-wrong-length-for-vector-should-be-2
-      tmp <- just_future %>%
-        left_join (just_hist, by = "species") %>%
-        mutate (dist = distHaversine (cbind(mean_Lon, mean_Lat),
-                                      cbind(hist_mean_Lon, hist_mean_Lat)
-                                      ),
-                bearing = bearing (cbind(mean_Lon, mean_Lat),
-                                   cbind(hist_mean_Lon, hist_mean_Lat)
-                                   )
-                )
-                            
-  
-      tmp_scen <- scen_df %>%
-        group_by (period) %>%
-        summarise (dist = distHaversine (cbind(mean_Lon, mean_Lat),
-                                         cbind(hist_mean_Lon, hist_mean_Lat)
-        ))
-        pivot_wider (
-          names_from = period, 
-          values_from = c(mean_Lat:cold_edge))
-      
-      # calculate distance and bearing
-      mean_shifts <- scen_df %>%
-        group_by (species, scenario) %>%
-        summarise (across(mean_Lat_post:cold_edge_post, mean))
-      
-   
-      spp_df <- mean_shifts %>%
-        mutate ( dist = distHaversine (c (mean_Lon_post, mean_Lat_pre),
-                                      c (mean_Lon_post, mean_Lat_pre))/1000,
-                 bearing = bearing (c (mean_Lon_post, mean_Lat_pre),
-                                    c (mean_Lon_post, mean_Lat_pre))/1000
-        )
-          data.frame (
-        species = rep(spp, 2),
-        scenario = c (245, 585),
-        
-        dist = c (distHaversine ( c(mean_Lon_pre, mean_Lat_pre), 
-                                  c(mean_Lon_post_245, mean_Lat_post_245))/ 1000, 
-                  distHaversine ( c(mean_Lon_pre, mean_Lat_pre), 
-                                  c(mean_Lon_post_585, mean_Lat_post_585))/ 1000
-        ),
-        
-        bearing = c (bearing ( c(mean_Lon_pre, mean_Lat_pre), 
-                               c(mean_Lon_post_245, mean_Lat_post_245)
-        ),
-        bearing (c(mean_Lon_pre, mean_Lat_pre), 
-                 c(mean_Lon_post_585, mean_Lat_post_585)
-        )
-        )
-      ) # end df
-      
-      
-      
-      # combine
-      centroids_df <- rbind (centroids_df, spp_df)
-      
-      
-    }  # end spp for loop
-    
-  end_t <- Sys.time() 
-  print (end_t - start_t)
-  
-  # assign so it stays in environment??
-  centroids_df <<- centroids_df
-
-} # end function
-
-# copying again
-calculate_centroids_fun <- function (model, spp_names, year_range) {
-  # empty df to store
-  centroids_df <- data.frame ()
-  
-  start_t <- Sys.time()
-  
-  for (spp in spp_names) {
-    
-    # load prediction bricks
-    hist <- brick (paste0("Models/Prediction_bricks/", spp, "_", model, "_2000_2018.grd"))
-    pred_245 <- brick (paste0("Models/Prediction_bricks/", spp, "_", model, "_ensemble_mean_245_", year_range, ".grd"))
-    pred_585 <- brick (paste0("Models/Prediction_bricks/", spp, "_", model, "_ensemble_mean_585_", year_range, ".grd"))
-    
-    # take mean so have one value per period
-    hist_mn <- calc (hist, mean) # calc is faster
-    pred_245_mn <- calc (pred_245, mean)
-    pred_585_mn <- calc (pred_585, mean)
-    
-    
-    # spatial points df so I have a value corresponding to each lat/lon combo
-    df_pre <- data.frame(rasterToPoints(hist_mn))
-    df_post_245 <- data.frame(rasterToPoints(pred_245_mn))
-    df_post_585 <- data.frame(rasterToPoints(pred_585_mn))
-    
-    # calculate mean lon and lat
-    mean_Lat_pre <- weighted.mean(df_pre$y, df_pre$layer) # layer is the thermpred prediction value
-    mean_Lon_pre <- weighted.mean(df_pre$x, df_pre$layer)
-    
-    mean_Lat_post_245 <- weighted.mean(df_post_245$y, df_post_245$layer)
-    mean_Lat_post_585 <- weighted.mean(df_post_585$y, df_post_585$layer)
-    
-    mean_Lon_post_245 <- weighted.mean(df_post_245$x, df_post_245$layer)
-    mean_Lon_post_585 <- weighted.mean(df_post_585$x, df_post_585$layer)
-    
-    
-    # make data frame with two rows for both scenarios
-    spp_df <- data.frame (
-      species = rep(spp, 2),
-      scenario = c (245, 585),
-      
-      dist = c (distHaversine ( c(mean_Lon_pre, mean_Lat_pre), 
-                                c(mean_Lon_post_245, mean_Lat_post_245))/ 1000, 
-                distHaversine ( c(mean_Lon_pre, mean_Lat_pre), 
-                                c(mean_Lon_post_585, mean_Lat_post_585))/ 1000
-      ),
-      
-      bearing = c (bearing ( c(mean_Lon_pre, mean_Lat_pre), 
-                             c(mean_Lon_post_245, mean_Lat_post_245)
-      ),
-      bearing (c(mean_Lon_pre, mean_Lat_pre), 
-               c(mean_Lon_post_585, mean_Lat_post_585)
-      )
-      )
-    ) # end df
-    
-    
-    
-    # combine
-    centroids_df <- rbind (centroids_df, spp_df)
-    
-    
-  }  # end for loop
-  
-  end_t <- Sys.time() 
-  print (end_t - start_t)
-  
-  # assign so it stays in environment??
-  centroids_df <<- centroids_df
-  
-  
-} # end function
-
-summary (centroids_df)
-# bearing seems to be -180 to 180, not 0-360
-
-# borm_14, do by tb and steno ----
-load ("Models/spp_Smooth_latlon.RData")
-borm_spp <- filter (spp_Smooth_latlon, 
-                    ! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis"))
-
-calculate_centroids_fun(model = "Borm_14_alltemp", spp_names = borm_spp$sci_name_underscore, year_range = "2061_2080")
-
-# save for now!
-save (centroids_df, file = "Data/centroids_Borm_14_alltemp.RData")
 
 borm_MASE <- read_csv ("Models/GAM_performance_Borm_14_alltemp.csv")
 spp_list  <- read_csv ("Data/species_eng.csv",
-                                  col_types = cols(
-                                    Spp_ID = col_factor()
-                                  )) %>%
+                       col_types = cols(
+                         Spp_ID = col_factor()
+                       )) %>%
   rename (species = sci_name_underscore) # rename to match species column
 
-png ("Figures/Compass_Borm14alltemp_TB_jitter.png", width = 16, height = 9, units = "in", res = 300)
+
+load ("Data/centroids_Borm14_alltemp_allscenarios.RData")
+
+centroid_mean_change <- centroid_change %>%
+  group_by (species, scenario) %>%
+  summarise (mean_dist = mean(dist),
+             sd_dist = sd (dist),
+             mean_bearing = mean(bearing),
+             sd_bearing = sd(bearing)
+  )
+
+
+png ("Figures/Compass_Borm14alltemp_TB_commnames.png", width = 16, height = 9, units = "in", res = 300)
 set.seed(15)
-centroids_df %>%
+
+centroid_mean_change %>%
   left_join (borm_MASE, by = "species") %>%
   left_join (spp_list, by = "species") %>%
   # just cut out not suitable
@@ -394,22 +157,22 @@ centroids_df %>%
       scenario == 585 ~ "Worst case scenario"
     ),
     # convert bearing to 0-360
-    bearing = ifelse (bearing < 0, bearing + 360, bearing)) %>%
+    bearing = ifelse (mean_bearing < 0, mean_bearing + 360, mean_bearing)) %>%
   #filter (dist < 100) %>%
   ggplot(aes (x = bearing,
-              y = dist, 
+              y = mean_dist, 
               colour = Therm_pref,
               label = species)) +
   coord_polar(start = 0) +
   geom_segment(aes (y = 0,
                     xend = bearing, 
-                    yend = dist
+                    yend = mean_dist
   ), 
   size = 1.2
   ) +  
-  geom_text(aes(label = species, 
+  geom_text(aes(label = Common_name,#species, 
                 x = bearing,
-                y = 200,  
+                y = 150000,  
 
                 # not sure what angle is doing here but it seems right
                 angle = ifelse (bearing < 180,
@@ -422,9 +185,7 @@ centroids_df %>%
   size = 3.5, 
   vjust = 0.1) +
   facet_wrap (~ scen_long) +
-  labs(y= "Distance (km)") + #, 
-  #title=paste("Spring, North, Circular Average = ", 
-  #round(CA[1], 2))) +
+  labs(y= "Distance (km)") + 
   scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
   scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
   labs (color = "") + 
@@ -437,14 +198,13 @@ centroids_df %>%
     strip.text = element_text (size = 20),
     legend.text = element_text (size = 20),
   ) +
-  
-  # theme(plot.title = element_text(size = rel(1.5)), 
-  #       axis.title = element_text(size = rel(1.25)), 
-  #       legend.text = element_text(size = rel(1.25) ), 
-  #       axis.text = element_text(size = rel(1)), 
-  #       legend.title= element_text(size = rel(1.25) )) +
+
   ggtitle ("Centroid shift bearing and distance, 2000-2018 vs. 2060-2081")
 dev.off()
+
+
+
+#################################################################################################
 
 # https://eliocamp.github.io/codigo-r/2018/09/multiple-color-and-fill-scales-with-ggplot2/
 new_scale <- function(new_aes) {
