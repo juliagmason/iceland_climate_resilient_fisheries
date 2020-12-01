@@ -1771,3 +1771,19 @@ spp_PA <- mfri_pa %>%
      left_join (mfri_pred, by = "sample_id")
 ```
 
+### redid Borm 14 with positive depth
+now P. blennoides has weirdly high values
+```{r}
+library (mgcv)
+load ("../Models/Borm_14_alltemp/Phycis_blennoides_LB.Rdata")
+load ("../Models/Borm_14_alltemp/Phycis_blennoides_PA.Rdata")
+
+summary (gam_LB)
+summary (gam_PA)
+
+plot (gam_PA)
+plot (gam_LB)
+```
+not that many points, only 1031 presences. sst, depth, sst_max significant, but sst, bt, bt_Dev, sst_max, bt_max all edf 1. all except bt_max sig for PA. SST, sst_Dev, bt_max are edf 1 for PA, 
+
+I think it's due to a sine pattern for both PA and LB depth. max depth is 1200
