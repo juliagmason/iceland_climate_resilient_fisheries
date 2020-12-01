@@ -10,9 +10,7 @@ library (ggrepel) # for cleaner geom_text labels
 spp_list <- read.csv("Data/species_eng.csv")
 
 # habitat change data. both saved as hab_change
-
-load ("Data/perc_hab_change_Morely_smoothlatlon.RData")
-#load ("Data/perc_hab_change_Morely_depthtemp.RData")
+load ("Data/pred_hist_hab_df.RData")
 
 # this has quota type and year, tonnes only
 land_ds <- read.csv("Data/Landings_annual_all_sectors.csv")
@@ -60,7 +58,7 @@ spp_by_qu <- lands_qu %>%
   ) %>%
   filter (! is.na (mn_Tonnes)) %>%
   rename (Landed_name = Species) %>% # match to spp list
-  left_join (spp_list, by = "Landed_name") %>%
+  left_join (spp_list, by = "Landed_name") #%>%
   rename (species = sci_name_underscore) # match to hab change
 #arrange (desc (mn_cat))
 
@@ -75,17 +73,16 @@ names (quot_labs) <- c("Coastal fisheries", "Small boats with catch quota", "Ves
 # borm 14
 borm_MASE <- read_csv ("Models/GAM_performance_Borm_14_alltemp.csv")
 
-load ("Data/perc_hab_change_Morely_Borm_14_alltemp.RData")
-
+#load ("Data/perc_hab_change_Morely_Borm_14_alltemp.RData")
 
 # define outside so I can selectively label points
-hab_change_by_sector <- hab_change %>% 
+hab_change_by_sector <-pred_hist_hab %>% 
+  mutate (perc_change = (pred_mean - hist_mean) / hist_mean * 100) %>%
   group_by (species, scenario) %>%
   summarise (mn_change = mean(perc_change),
              sd_change = sd (perc_change)) %>%
   right_join (spp_by_qu, by = "species") %>%
   filter (scenario ==585, mn_Tonnes > 0)
-
 
 
 png (file = "Figures/Percent_hab_change_by_sector_importance_Borm_14.png", width = 16, height = 9, units = "in", res = 300)
@@ -95,18 +92,15 @@ png (file = "Figures/Percent_hab_change_by_sector_importance_Borm_14.png", width
                y = mn_change)
           ) +
   geom_point (aes(size = mn_X1000.ISK)) +
-  geom_text_repel (data = subset(hab_change_by_sector, 
-                                 mn_X1000.ISK > 3000000 | abs(mn_change) > 100 | (Quota.class == "Coastal fisheries" & mn_change > 0) | (Quota.class == "Coastal fisheries" & mn_change < -50) | (Quota.class == "Small boats with catch quota" & mn_X1000.ISK > 200000) | (Quota.class == "Small boats with catch quota" & mn_change > 70)),
-             aes (label = species)) +
+    geom_text_repel (aes (label = Common_name)) +
+  # geom_text_repel (data = subset(hab_change_by_sector, 
+  #                                mn_X1000.ISK > 300000 | abs(mn_change) > 100 | (Quota.class == "Coastal fisheries") | (Quota.class == "Small boats with catch quota" & mn_X1000.ISK > 50000) | (Quota.class == "Small boats with catch quota" & mn_change > 50) | (Quota.class == "Small boats with catch quota" & mn_change > 0)),
+  #            aes (label = Common_name)) +
 
   facet_grid (scenario ~ Quota.class,
               labeller = labeller (Quota.class = quot_labs)) +
   geom_hline (yintercept = 0, lty = 2) +
   geom_vline (xintercept = 0, lty = 2) +
-  xlim (-2, 15) + # for SLL
-  ylim (-100, 500) +
-  # xlim (-2, 15) +
-  # ylim (-100, 100) + # for depth temp
   theme_bw () +
   labs (x = "log (mean annual tonnes landed)",
         y = "Percent habitat change",
