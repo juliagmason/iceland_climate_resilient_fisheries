@@ -9,58 +9,159 @@ library (mapdata)
 library (gridExtra)
 
 
+# centroids df, so I can look at centroid, warm edge, cool edge?
+load ("Data/centroids_Borm14_alltemp_allscenarios.RData")
+
+
+# look at differences among CM predictions----
+plot_cm_maps_fun <- function (sci_name) {
+  
+  # find filenames
+  files_245 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*245_2061_2080.grd"), full.names = TRUE)
+  files_585 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*585_2061_2080.grd"), full.names = TRUE)
+  
+  # reorder 585 files so CM26 is at the end
+  files_585 <- files_585[c(2:5, 1)]
+  
+  png (paste0("Figures/Thermpred_map_allCM_", sci_name, ".png"), width = 16, height = 9, res = 300, unit = "in")
+  par (mfrow = c (2, 5))
+  
+  for (file in files_585) {
+    br <- brick (file)
+    br_mean <- calc (br, mean)
+    
+    model <- strsplit (file, "_")[[1]][7]
+    
+    plot (br_mean, 
+          #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+          xlim = c (-32, -3), ylim = c (60, 69),
+          cex.main = 2,
+          #legend = FALSE,
+          main = paste0(model, " 585")
+    )
+  }
+  
+  for (file in files_245) {
+    br <- brick (file)
+    br_mean <- calc (br, mean)
+    
+    model <- strsplit (file, "_")[[1]][7]
+    
+    plot (br_mean, 
+          #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+          xlim = c (-32, -3), ylim = c (60, 69),
+          cex.main = 2,
+          #legend = FALSE,
+          main = paste0(model, " 245")
+    )
+    
+  }
+  
+  dev.off()
+  
+}
+
+plot_cm_maps_fun("Gadus_morhua")
+
+# look at monthly differences for predictions----
+plot_monthly_maps_fun <- function (sci_name, model) {
+  # use "hist" for historical or 4-letter cm abbreviation 
+  if (model == "hist") {
+    br <- brick (paste0("Models/Prediction_bricks/", sci_name, "Borm_14_alltemp_2000_2018.grd"))
+    month_index <- seq ()
+    stackApply....
+  }
+  
+}
+
+
 
 # Function to plot historical, 245, and 585 in a panel
 plot_pred_maps_fun <- function (sci_name, model_name) {
   
   # load bricks, which have a layer for each month and year
-  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model_name, "_2000_2018.grd"))
-  br_245 <- brick (paste0("Models/Prediction_bricks/",  sci_name, "_", model_name,"_ensemble_mean_245_2061_2080.grd"))
-  br_585 <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model_name, "_ensemble_mean_585_2061_2080.grd"))
+  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_Borm_14_alltemp_2000_2018.grd"))
+  
+  # load predictions and stack to get mean and sd
+  files_245 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*245_2061_2080.grd"), full.names = TRUE)
+  files_585 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*585_2061_2080.grd"), full.names = TRUE)
+  
+  br_245 <- stack (files_245)
+  # does it make sense to take an overall mean and sd of all the models, all the months? this captures more of the variation than taking a mean for each model and sd btw models, but the standard deviation could be within model, not among models. 
+  br_585 <- stack (files_585) # 23s
   
   # calculate a mean, so just one layer
   mn_hist <- calc (br_hist, mean)
-  mn_245 <- calc (br_245, mean)
-  mn_585 <- calc (br_585, mean)
   
+  mn_245 <- calc (br_245, mean, na.rm = TRUE) # 36s
+ # med_245 <- calc (br_245, median) # 36s
+ # sd_245 <- calc (br_245, sd) # 20s
+  mn_585 <- calc (br_585, mean, na.rm = TRUE)
+  
+  
+  # make one standard color bar based on full range of values
   overall_vals <- stack (mn_hist, mn_245, mn_585)
+  col_lims <- c (min (log(getValues (overall_vals)), na.rm = TRUE), max (log(getValues (overall_vals)), na.rm = TRUE))
   
-  spp_breaks <- quantile (getValues(overall_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
+  #spp_breaks <- quantile (getValues(overall_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
   
-
+  # add centroid?
+  centroid <- centroid_change %>%
+    filter (species == sci_name) %>%
+    group_by (scenario) %>%
+    summarize_at (vars(-model), mean)
+    
   
-  png (paste0("Figures/Thermpred_map_", sci_name, "_", model_name, ".png"), width = 16, height = 9, units = "in", res = 300)
+  png (paste0("Figures/Thermpred_map_", sci_name, "_Borm_14_alltemp.png"), width = 16, height = 9, units = "in", res = 300)
   
   par (mfrow = c (1, 3))
-  plot (mn_hist, 
-        breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+  plot (log(mn_hist), 
+        #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+        #breaks = quantile (getValues(overall_vals), probs = c (0, 0.25, .5, .75, 1), na.rm = TRUE), 
+        col = viridis(25),
         xlim = c (-32, -3), ylim = c (60, 69),
+        zlim = col_lims,
         cex.main = 2,
         legend = FALSE,
         main = paste0(sci_name, " historical"))
-  
   map('worldHires',add=TRUE, col='grey90', fill=TRUE)
   
-  plot (mn_245, 
-        breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+  # add centroid of distribution and triangles for warm and cold edges
+  points (x = centroid$hist_lon[1], y = centroid$hist_lat[1], pch = 21, bg = "white", col = "black", cex = 2)
+  points (x = centroid$hist_lon[1], y = centroid$hist_warm[1], pch = 2, col = "white", cex = 2)
+  points (x = centroid$hist_lon[1], y = centroid$hist_cold[1], pch = 6, col = "white", cex = 2)
+  
+  
+  
+  plot (log(mn_245), 
+        col = viridis(25),
         xlim = c (-32, -3), ylim = c (60, 69),
+        zlim = col_lims,
         cex.main = 2,
         legend = FALSE,
         main = paste0(sci_name, " 245"))
   map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+  points (x = centroid$pred_lon[1], y = centroid$pred_lat[1], pch = 21, bg = "white", col = "black", cex = 2)
+  points (x = centroid$pred_lon[1], y = centroid$pred_warm[1], pch = 2, col = "white", cex = 2)
+  points (x = centroid$pred_lon[1], y = centroid$pred_cold[1], pch = 6, col = "white", cex = 2)
   
-  plot (mn_585, 
-        breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+  plot (log(mn_585), 
+        col = viridis(25),
         xlim = c (-32, -3), ylim = c (60, 69),
+        zlim = col_lims,
         cex.main = 2,
         main = paste0(sci_name, " 585"))
   map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+  points (x = centroid$pred_lon[2], y = centroid$pred_lat[2], pch = 21, bg = "white", col = "black", cex = 2)
+  points (x = centroid$pred_lon[2], y = centroid$pred_warm[2], pch = 2, col = "white", cex = 2)
+  points (x = centroid$pred_lon[2], y = centroid$pred_cold[2], pch = 6, col = "white", cex = 2)
   
   dev.off()
 }
 
-plot_pred_maps_fun (sci_name = "Gadus_morhua", 
-                    model_name = "Borm_14_alltemp")
+# takes a bit over a minute, 68s
+system.time(plot_pred_maps_fun (sci_name = "Gadus_morhua", 
+                    model_name = "Borm_14_alltemp")); beep()
 
 plot_pred_maps_fun (sci_name = "Cyclopterus_lumpus", 
                     model_name = "Borm_14_alltemp")
@@ -86,315 +187,147 @@ plot_pred_maps_fun (sci_name = "Lepidorhombus_whiffiagonis",
 plot_pred_maps_fun (sci_name = "Pleuronectes_platessa", 
                     model_name = "Borm_14_alltemp")
 
-plot_pred_maps_fun (sci_name = "Lophius_piscatorius", 
-                    model_name = "Smooth_latlon")
-
-
 
 plot_pred_maps_fun (sci_name = "Melanogrammus_aeglefinus", 
-                    model_name = "Smooth_latlon")
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Scomber_scombrus", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Mallotus_villosus", 
+                    model_name = "Borm_14_alltemp")
+
+plot_pred_maps_fun (sci_name = "Lophius_piscatorius", 
+                    model_name = "Borm_14_alltemp")
+
+
+plot_pred_maps_fun (sci_name = "Phycis_blennoides", 
+                    model_name = "Borm_14_alltemp")
 # test maps ----
 
 # cod and pollock for science deep dive
-cod_hist_br <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_2000_2018.grd")
-cod_245_br <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_245_2061_2080.grd")
-cod_585_br <- brick ("Models/Prediction_bricks/Gadus_morhua_Smooth_latlon_585_2061_2080.grd")
 
-cod_hist_mn <- calc (cod_hist_br, mean)
-cod_245_mn <- calc (cod_245_br, mean)
-cod_585_mn <- calc (cod_585_br, mean)
+plot_2_pred_maps_fun <- function (sci_name1, sci_name2) {
+  
+  # load bricks, which have a layer for each month and year
+  br_hist1 <- brick (paste0("Models/Prediction_bricks/", sci_name1, "_Borm_14_alltemp_2000_2018.grd"))
+  
+  # load predictions and stack to get mean and sd
+  files_2451 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name1, ".*245_2061_2080.grd"), full.names = TRUE)
+  files_5851 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name1, ".*585_2061_2080.grd"), full.names = TRUE)
+  
+  br_2451 <- stack (files_2451)
+  br_5851 <- stack (files_5851) 
+  
+  # calculate a mean, so just one layer
+  mn_hist1 <- calc (br_hist1, mean)
+  mn_2451 <- calc (br_2451, mean, na.rm = TRUE) # 36s
+  mn_5851 <- calc (br_5851, mean, na.rm = TRUE)
+  
+  
+  # make one standard color bar based on full range of values
+  overall_vals1 <- stack (mn_hist1, mn_2451, mn_5851)
+  col_lims1 <- c (min (log(getValues (overall_vals1)), na.rm = TRUE), max (log(getValues (overall_vals1)), na.rm = TRUE))
+  
+  # second species 
+  
+  # load bricks, which have a layer for each month and year
+  br_hist2 <- brick (paste0("Models/Prediction_bricks/", sci_name2, "_Borm_14_alltemp_2000_2018.grd"))
+  
+  # load predictions and stack to get mean and sd
+  files_2452 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name2, ".*245_2061_2080.grd"), full.names = TRUE)
+  files_5852 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name2, ".*585_2061_2080.grd"), full.names = TRUE)
+  
+  br_2452 <- stack (files_2452)
+  br_5852 <- stack (files_5852) 
+  
+  # calculate a mean, so just one layer
+  mn_hist2 <- calc (br_hist2, mean)
+  mn_2452 <- calc (br_2452, mean, na.rm = TRUE) # 36s
+  mn_5852 <- calc (br_5852, mean, na.rm = TRUE)
+  
+  
+  # make one standard color bar based on full range of values
+  overall_vals2 <- stack (mn_hist2, mn_2452, mn_5852)
+  col_lims2 <- c (min (log(getValues (overall_vals2)), na.rm = TRUE), max (log(getValues (overall_vals2)), na.rm = TRUE))
+  
+  # switch to common name
+  comm_name1 <- spp_list$Common_name[which (spp_list$species == sci_name1)]
+  comm_name2 <- spp_list$Common_name[which (spp_list$species == sci_name2)]
 
-cod_vals <- stack (cod_hist_mn, cod_245_mn, cod_585_mn) 
-cod_breaks <- quantile (getValues(cod_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-
-pol_hist_br <- brick ("Models/Prediction_bricks/Pollachius_virens_Smooth_latlon_2000_2018.grd")
-pol_245_br <- brick ("Models/Prediction_bricks/Pollachius_virens_Smooth_latlon_245_2061_2080.grd")
-pol_585_br <- brick ("Models/Prediction_bricks/Pollachius_virens_Smooth_latlon_585_2061_2080.grd")
-
-pol_hist_mn <- calc (pol_hist_br, mean)
-pol_245_mn <- calc (pol_245_br, mean)
-pol_585_mn <- calc (pol_585_br, mean)
-
-pol_vals <- stack (pol_hist_mn, pol_245_mn, pol_585_mn) 
-pol_breaks <- quantile (getValues(pol_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-
-png ("Figures/Thermpred_map_cod_pollock_Borm_14.png", width = 16, height = 9, units = "in", res = 300)
+png (paste("Figures/Thermpred_map", sci_name1, sci_name2, "Borm_14.png", sep = "_"), width = 16, height = 9, units = "in", res = 300)
 par (mfrow = c (2, 3))
-plot (cod_hist_mn, 
-      breaks = cod_breaks, col = viridis(length(cod_breaks) -1),
+
+plot (log(mn_hist1), 
+      col = viridis(25),
       xlim = c (-32, -3), ylim = c (60, 69),
+      zlim = col_lims1,
       cex.main = 2,
       legend = FALSE,
-      main = "Cod, historical")
-
+      main = paste0(comm_name1, " historical"))
 map('worldHires',add=TRUE, col='grey90', fill=TRUE)
 
-plot (cod_245_mn, 
-      breaks = cod_breaks, col = viridis(length(cod_breaks) -1),
+plot (log(mn_2451), 
+      col = viridis(25),
       xlim = c (-32, -3), ylim = c (60, 69),
+      zlim = col_lims1,
+      cex.main = 2,
       legend = FALSE,
-      cex.main = 2,
-      main = "Cod, SSP 245")
+      main = paste0(comm_name1, " 245"))
 map('worldHires',add=TRUE, col='grey90', fill=TRUE)
 
-plot (cod_585_mn, 
-      breaks = cod_breaks, col = viridis(length(cod_breaks) -1),
+plot (log(mn_5851), 
+      col = viridis(25),
       xlim = c (-32, -3), ylim = c (60, 69),
+      zlim = col_lims1,
       cex.main = 2,
-      main = "Cod, SSP 585")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (pol_hist_mn, 
-      breaks = pol_breaks, col = viridis(length(pol_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
       legend = FALSE,
-      cex.main = 2,
-      main = "Pollock, historical")
+      main = paste0(comm_name1, " 585"))
 map('worldHires',add=TRUE, col='grey90', fill=TRUE)
 
-plot (pol_245_mn, 
-      breaks = pol_breaks, col = viridis(length(pol_breaks) -1),
+plot (log(mn_hist2), 
+      col = viridis(25),
       xlim = c (-32, -3), ylim = c (60, 69),
+      zlim = col_lims2,
+      cex.main = 2,
       legend = FALSE,
-      cex.main = 2,
-      main = "Pollock, SSP 245")
+      main = paste0(comm_name2, " historical"))
 map('worldHires',add=TRUE, col='grey90', fill=TRUE)
 
-plot (pol_585_mn, 
-      breaks = pol_breaks, col = viridis(length(pol_breaks) -1),
+plot (log(mn_2452), 
+      col = viridis(25),
       xlim = c (-32, -3), ylim = c (60, 69),
+      zlim = col_lims2,
       cex.main = 2,
-      main = "Pollock, SSP 585")
+      legend = FALSE,
+      main = paste0(comm_name2, " 245"))
 map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+plot (log(mn_5852), 
+      col = viridis(25),
+      xlim = c (-32, -3), ylim = c (60, 69),
+      zlim = col_lims2,
+      cex.main = 2,
+      legend = FALSE,
+      main = paste0(comm_name2, " 585"))
+map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+
+
 dev.off()
 
+} # end function 
 
-# haddock for smast seminar
-png (file = "Figures/Haddock_thermpred_map.png", width = 6, height = 4, units = "in", res = 300)
-plot (mn_hist, 
-             breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
-             xlim = c (-32, -3), ylim = c (60, 69),
-             legend = FALSE,
-            main = "Suitable thermal habitat")
- maps::map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- dev.off()
+
+plot_2_pred_maps_fun("Gadus_morhua", "Hippoglossoides_platessoides")
+
+system.time(plot_2_pred_maps_fun("Gadus_morhua", "Boreogadus_saida"));beep()
+ # 201s
  
- # haddock vs herring, smast seminar
-had_hist_br <- brick ("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_2000_2018.grd")
-had_245_br <- brick ("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_245_2061_2080.grd")
-had_585_br <- brick ("Models/Prediction_bricks/Melanogrammus_aeglefinus_Smooth_latlon_585_2061_2080.grd")
- 
-had_hist_mn <- calc (had_hist_br, mean)
-had_245_mn <- calc (had_245_br, mean)
-had_585_mn <- calc (had_585_br, mean)
-
-had_vals <- stack (had_hist_mn, had_245_mn, had_585_mn) 
-had_breaks <- quantile (getValues(had_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
- 
- her_hist_br <- brick ("Models/Prediction_bricks/Clupea_harengus_Smooth_latlon_2000_2018.grd")
- her_245_br <- brick ("Models/Prediction_bricks/Clupea_harengus_Smooth_latlon_245_2061_2080.grd")
- her_585_br <- brick ("Models/Prediction_bricks/Clupea_harengus_Smooth_latlon_585_2061_2080.grd")
- 
- her_hist_mn <- calc (her_hist_br, mean)
- her_245_mn <- calc (her_245_br, mean)
- her_585_mn <- calc (her_585_br, mean)
- 
- her_vals <- stack (her_hist_mn, her_245_mn, her_585_mn) 
- her_breaks <- quantile (getValues(her_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
- 
- 
- png ("Figures/haddock_herring_SMAST_maps.png", width = 16, height = 9, units = "in", res = 300)
- par (mfrow = c (2, 3))
- plot (had_hist_mn, 
-       breaks = had_breaks, col = viridis(length(had_breaks) -1),
-       xlim = c (-32, -3), ylim = c (60, 69),
-       cex.main = 2,
-       legend = FALSE,
-       main = "Haddock, historical")
- 
- map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- 
- plot (had_245_mn, 
-       breaks = had_breaks, col = viridis(length(had_breaks) -1),
-       xlim = c (-32, -3), ylim = c (60, 69),
-       legend = FALSE,
-       cex.main = 2,
-       main = "Haddock, SSP 245")
- map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- 
- plot (had_585_mn, 
-       breaks = had_breaks, col = viridis(length(had_breaks) -1),
-       xlim = c (-32, -3), ylim = c (60, 69),
-       cex.main = 2,
-       main = "Haddock, SSP 585")
- map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- 
- plot (her_hist_mn, 
-       breaks = her_breaks, col = viridis(length(her_breaks) -1),
-       xlim = c (-32, -3), ylim = c (60, 69),
-       legend = FALSE,
-       cex.main = 2,
-       main = "Herring, historical")
- map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- 
- plot (her_245_mn, 
-       breaks = her_breaks, col = viridis(length(her_breaks) -1),
-       xlim = c (-32, -3), ylim = c (60, 69),
-       legend = FALSE,
-       cex.main = 2,
-       main = "Herring, SSP 245")
- map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- 
- plot (her_585_mn, 
-       breaks = her_breaks, col = viridis(length(her_breaks) -1),
-       xlim = c (-32, -3), ylim = c (60, 69),
-       cex.main = 2,
-       main = "Herring, SSP 585")
- map('worldHires',add=TRUE, col='grey90', fill=TRUE)
- dev.off()
- 
- 
- 
-# for temp_depth, m. merlangus was biggest increase, brosme was biggest decrease
-
-m_mer_hist_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_2000_2018.grd")
-m_mer_245_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_245_2061_2080.grd")
-m_mer_585_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_585_2061_2080.grd")
-
-m_mer_hist_mn <- calc (m_mer_hist_br, mean)
-m_mer_245_mn <- calc (m_mer_245_br, mean)
-m_mer_585_mn <- calc (m_mer_585_br, mean)
-
-mer_breaks <- quantile (getValues(m_mer_585_mn), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-
-bros_hist_br <- brick ("Models/Prediction_bricks/Brosme_brosme_Depth_Temp_2000_2018.grd")
-bros_245_br <- brick ("Models/Prediction_bricks/Brosme_brosme_Depth_Temp_245_2061_2080.grd")
-bros_585_br <- brick ("Models/Prediction_bricks/Brosme_brosme_Depth_Temp_585_2061_2080.grd")
-
-bros_hist_mn <- calc (bros_hist_br, mean)
-bros_245_mn <- calc (bros_245_br, mean)
-bros_585_mn <- calc (bros_585_br, mean)
-
-bros_breaks <- quantile (getValues(bros_hist_mn), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-
-
-png ("Figures/Merlangus_Brosme_maps.png", width = 16, height = 9, units = "in", res = 300)
-par (mfrow = c (2, 3))
-plot (m_mer_hist_mn, 
-      breaks = mer_breaks, col = viridis(length(mer_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "M. merlangus historical")
-
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (m_mer_245_mn, 
-      breaks = mer_breaks, col = viridis(length(mer_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "M. merlangus 245")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (m_mer_585_mn, 
-      breaks = mer_breaks, col = viridis(length(mer_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      main = "M. merlangus 585")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (bros_hist_mn, 
-      breaks = bros_breaks, col = viridis(length(bros_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "B. brosme historical")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (bros_245_mn, 
-      breaks = bros_breaks, col = viridis(length(bros_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "B. brosme 245")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (bros_585_mn, 
-      breaks = bros_breaks, col = viridis(length(bros_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      main = "B. brosme 585")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-dev.off()
-
-
-# for temp_depth, s. marinus and l. esmarkii are different directions
-
-smar_hist_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_2000_2018.grd")
-smar_245_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_245_2061_2080.grd")
-smar_585_br <- brick ("Models/Prediction_bricks/Sebastes_marinus_Depth_Temp_585_2061_2080.grd")
-
-smar_hist_mn <- calc (smar_hist_br, mean)
-smar_245_mn <- calc (smar_245_br, mean)
-smar_585_mn <- calc (smar_585_br, mean)
-
-smar_breaks <- quantile (getValues(smar_hist_mn), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-
-les_hist_br <- brick ("Models/Prediction_bricks/Lycodes_esmarkii_Depth_Temp_2000_2018.grd")
-les_245_br <- brick ("Models/Prediction_bricks/Lycodes_esmarkii_Depth_Temp_245_2061_2080.grd")
-les_585_br <- brick ("Models/Prediction_bricks/Lycodes_esmarkii_Depth_Temp_585_2061_2080.grd")
-
-les_hist_mn <- calc (les_hist_br, mean)
-les_245_mn <- calc (les_245_br, mean)
-les_585_mn <- calc (les_585_br, mean)
-
-les_breaks <- quantile (getValues(les_hist_mn), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-
-
-png ("Figures/Smarinus_Lesmarkii_maps.png", width = 16, height = 9, units = "in", res = 300)
-par (mfrow = c (2, 3))
-plot (smar_hist_mn, 
-      breaks = smar_breaks, col = viridis(length(smar_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "S. marinus historical")
-
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (smar_245_mn, 
-      breaks = smar_breaks, col = viridis(length(smar_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "S. marinus 245")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (smar_585_mn, 
-      breaks = smar_breaks, col = viridis(length(smar_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      main = "S. marinus 585")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (les_hist_mn, 
-      breaks = les_breaks, col = viridis(length(les_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "L. esmarkii historical")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (les_245_mn, 
-      breaks = les_breaks, col = viridis(length(les_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      legend = FALSE,
-      main = "L. esmarkii 245")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-
-plot (les_585_mn, 
-      breaks = les_breaks, col = viridis(length(les_breaks) -1),
-      xlim = c (-32, -3), ylim = c (60, 69),
-      main = "L. esmarkii 585")
-map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-dev.off()
-
 
 ###
 # https://stackoverflow.com/questions/33227182/how-to-set-use-ggplot2-to-map-a-raster
 library (rasterVis)
-levelplot(bros_hist_mn, 
+levelplot(mn_hist, 
           margin=FALSE,                       
           colorkey=list(
             space='bottom',                   
