@@ -79,6 +79,10 @@ borm_coords <- rbind (filter (borm_coords1, !SUBDIVISION %in% c(1146, 1094, 1091
           ) 
 # this still has a hole in it, for 1091 (1096??)
 
+
+# save this for later use in analyzing rasters by bormicon region
+save (borm_coords, file = "Data/borm_coords.RData")
+
 # convert to sf polygons
 # https://gis.stackexchange.com/questions/332427/converting-points-to-polygons-by-group
 borm_sf <- borm_coords %>%
@@ -96,6 +100,9 @@ borm_polys <- st_sf (
 
 borm_polys
 plot (borm_polys) 
+
+# save for using to join to landings
+save (borm_polys, file = "Data/borm_polys.RData")
 
 # try to add polygon names...this didn't work
 poly_labels <- layer (sp.text (borm_polys$geometry, txt = borm_polys$Group.1, pos = 1))
@@ -148,6 +155,8 @@ plot (borm_div_rcl)
 borm_div_r <- writeRaster(borm_div_rcl, filename = "Data/bormicon_divisions.grd", overwrite = TRUE)
 
 # plot ----
+
+borm_div_rcl <- raster ("Data/bormicon_divisions.grd")
 # can I plot this as a raster?
 # https://datacarpentry.org/r-raster-vector-geospatial/02-raster-plot/
 borm_r_poly <- rasterToPolygons(borm_div_rcl)
@@ -157,7 +166,7 @@ borm_r_pts <- rasterToPoints (borm_div_rcl, spatial = TRUE)
 borm_r_df <- data.frame(borm_r_pts)
 
 # redo label diagram?
-div_centroids <- test2 %>%
+div_centroids <- borm_coords %>%
   mutate (division = case_when (division == 115 ~ 113,
                                         division == 112 ~ 111,
                                         division == 110 ~ 109,
@@ -168,7 +177,7 @@ div_centroids <- test2 %>%
              lon = mean (lon, na.rm = TRUE))
 
 library (RColorBrewer)
-png ("Figures/Bormicon_division_EEZ_map.png", width = 8.5, height = 11, units = "in", res = 300)
+png ("Figures/Bormicon_division_EEZ_map_biglabels.png", width = 16, height = 9, units = "in", res = 300)
 ggplot() +
   geom_raster(data = borm_r_df , aes(x = x, y = y, fill = as.factor(layer))) +
   
@@ -183,16 +192,17 @@ ggplot() +
   geom_sf (data  = eez, fill = NA, lwd = 0.5) +
   geom_text(aes(lon,lat,label=division),
             data = div_centroids,
-            col = "black", size = 5) +
-  coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
+            col = "black", size = 18) +
+  #coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
+  coord_sf( xlim=c(-35,-5),ylim=c(60,70)) +
   theme_bw() +
   scale_fill_brewer (palette = "Set3") +
   theme (legend.position = "none",
            axis.text.x = element_text (size = 14),
            axis.text.y = element_text (size = 12),
            axis.title = element_blank (),
-           plot.title = element_text (size = 16)) +
-  ggtitle ("Bormicon regions for model input")
+           plot.title = element_text (size = 45)) +
+  ggtitle ("Bormicon regions")
 
 dev.off()
 
@@ -212,9 +222,11 @@ label_centroids <- test %>%
   group_by (SUBDIVISION) %>%
   summarise (lat = mean (lat, na.rm = TRUE),
              lon = mean (lon, na.rm = TRUE))
+test %>%
+  filter (SUBDIVISION %in% ldgs_sub) %>%
 ggplot () +
   geom_polygon(aes(lon,lat,group=SUBDIVISION, fill = as.factor(SUBDIVISION)),
-               data=test,
+               #data=test,
                size = 0.3) +  
   #geom_point(col='yellow') +  # don't know what this does
   
