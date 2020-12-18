@@ -73,7 +73,16 @@ depth_r <- raster::resample (depth_r_neg, pred_r_template, method = "bilinear")
 # dev.off()
 #   
 
-
+# cropped plot for MFRI
+# png ("Figures/Depth_map_MFRI.png", width = 6, height = 6, units = "in", res = 300)
+# plot (depth_r, 
+#       xlim = c (-32, -3), ylim = c (60, 69),
+#       col = rev(brewer.pal(name = "PuBu", n = 9)),
+#       cex.main = 2,
+#       main = "Bathymetry")
+# map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+# dev.off()
+  
 # Bormicon region ----
 # I created this in Rasterize_bormicon_regions.R
 borm_r <- raster ("Data/bormicon_divisions.grd")
@@ -230,42 +239,21 @@ borm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
 
 
 system.time (pmap (borm_expand, predict_brick_fun)); beep (sound = 3)
-# stopped after e. gurnardus, 3.177e+05 (also got unplugged overnight once), 25 species?
-# stopped at lycodes esmarkii bc started slowing down again 9.695e+04 for 11 species. still 20mins each, i guess restarting helps. went through m. berglax cnrm 245 (2.467e+04), just go through and do that one at the end, #39. 
-#myctophid got through mohc 245, #55. 43770.03  to the end. 
-borm_addl <- borm_spp[56:61,]
-borm_expand_addl <- expand_grid (sci_name = borm_addl$sci_name_underscore,
-                            GAM = "Borm_14_alltemp",
-                            CM = CM_list,
-                            scenario = c(245, 585),
-                            year1 = 2061,
-                            year2 = 2080) %>%
+
+# redo with borm_empty spp
+# try with just one first
+monk_expand <- expand_grid (sci_name = c("Merlangius_merlangus", "Molva_molva", "Molva_dypterygia", "Dipturus_batis", "Argentina_silus", "Pleuronectes_platessa", "Microstomus_kitt", "Glyptocephalus_cynoglossus", "Lepidorhombus_whiffiagonis", "Limanda_limanda"),
+                        GAM = "Borm_14_alltemp",
+                        CM = CM_list,
+                        scenario = c(245, 585),
+                        year1 = 2061,
+                        year2 = 2080) %>%
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list()
 
+system.time (pmap (monk_expand, predict_brick_fun)); beep() # 2.17 hrs for monkfish
 
-system.time (pmap (borm_expand_addl, predict_brick_fun)); beep (sound = 3)
-
-berglax_leftovers <- expand_grid (sci_name = "Macrourus_berglax", 
-                                  GAM = "Borm_14_alltemp",
-                                  CM = CM_list[2:5],
-                                  scenario = c(245, 585),
-                                  year1 = 2061,
-                                  year2 = 2080) %>%
-  filter (! (CM == "CM26" & scenario == 245), 
-          ! (CM == "cnrm" & scenario == 245)) %>%
-  as.list()
-
-myct_leftovers <- expand_grid (sci_name = "Myctophidae", 
-                                  GAM = "Borm_14_alltemp",
-                                  CM = CM_list[4:5],
-                                  scenario = 585,
-                                  year1 = 2061,
-                                  year2 = 2080) %>%
-  as.list()
-
-system.time (pmap (myct_leftovers, predict_brick_fun)); beep (sound = 3)
-system.time (pmap (berglax_leftovers, predict_brick_fun)); beep (sound = 3)
+# do a few at a time
 
 # ==================
 ## Historical period using GLORYS temperature ----
