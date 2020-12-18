@@ -68,28 +68,8 @@ for (file in brick_files) {
 
 save (projection_means, file = "Data/CMIP6_delta_projections/projection_mn_sd_table_CM26.RData")
 
+### load and plot ----
 load ("Data/CMIP6_delta_projections/projection_mn_sd_table_CM26.RData")
-
-delta_df %>%
-  #group_by(ssp, var) %>%
-  #summarize(annual_mn = mean(mean)) %>%
-  #rename (year = `year(date)`) %>% 
-  ggplot (aes (x = date, y =mean), alpha = 0.4) +
-  geom_point() +
-  geom_line() +
-  #stat_summary(aes(group=var), fun.y=mean, geom="line", colour="black", lwd = 2) +
-  facet_grid (ssp ~ var)+
-  theme_bw()
-
-# plot monthly values (hard to see)
-projection_means %>%
-  group_by(year(date), model, ssp, var) %>%
-  summarize(annual_mn = mean(mean)) %>%
-  rename (year = `year(date)`) %>% 
-  ggplot (aes (x = year, y =annual_mn, shape = var, col = ssp)) +
-  geom_point() +
-  geom_line() +
-  facet_wrap (~model)
 
 # plot annual values 
 png ("Figures/CMIP_CM26_temp_projections_ts_widescreen.png", width = 16, height = 9, units = "in", res = 300)
@@ -102,10 +82,11 @@ projection_means %>%
   ggplot (aes (x = year, y =annual_mn, col = model, shape = var), alpha = 0.4) +
   geom_point() +
   geom_line() +
-  stat_summary(aes(group=var), fun.y=mean, geom="line", colour="black", lwd = 2) +
+  stat_summary(aes(group=var), fun.y=mean, geom="line", colour="black", lwd = 1.5) +
   facet_wrap (~ssp)+
   scale_shape_discrete (guide = 'none') +
-  scale_color_discrete (name = "Model", labels = c("CM 2.6, 0.1 deg", "CNRM, 25km", "GFDL, 25km", "IPSL, 100km", "MOHC, 100km")) +
+  #scale_color_discrete (name = "Model", labels = c("CM 2.6, 0.1 deg", "CNRM, 25km", "GFDL, 25km", "IPSL, 100km", "MOHC, 100km")) +
+  scale_color_discrete (name = "Model", labels = c("GFDL CM 2.6", "CNRM-CERFACS", "NOAA GFDL", "IPSL", "MOHC HadGEM3")) +
   theme_bw() +
   theme (
     axis.text = element_text (size = 18),
@@ -121,12 +102,58 @@ projection_means %>%
 dev.off()
 
 projection_means %>%
-  group_by(date, model, ssp, var) %>%
-  summarize(annual_mn = mean(mean)) %>%
-  #rename (year = `year(date)`) %>% 
-  ggplot (aes (x = date, y =annual_mn, col = model), alpha = 0.4) +
-  geom_point() +
+  filter (ssp == 585, var == "sst") %>%
+  ggplot (aes (x = date, y = mean)) +
+  #geom_point() +
   geom_line() +
-  stat_summary(aes(group=var), fun.y=mean, geom="line", colour="black", lwd = 2) +
-  facet_wrap (~var) +
+  facet_grid (rows = vars(model)) +
   theme_bw()
+
+projection_means %>%
+  filter (ssp == 585, var == "sst") %>%
+  ggplot (aes (x = date, y = sd)) +
+  #geom_point() +
+  geom_line() +
+  facet_grid (rows = vars(model)) +
+  theme_bw()
+
+
+projection_means %>%
+  filter (ssp == 585, var == "sst") %>%
+  #filter (model == "gfdl") %>%
+  group_by(year(date), model) %>%
+  summarize(annual_sd = mean(sd)) %>%
+  rename (year = `year(date)`) %>% 
+  ggplot (aes (x = year, y = annual_sd)) +
+  #geom_point() +
+  geom_line() +
+  facet_grid (rows = vars(model)) +
+  theme_bw()
+
+# what is the projected mean warming?
+
+# should I use the slope of the trend, or difference in means historical vs future?
+summary (lm (mean ~ date, data = filter (projection_means, ssp == 245, var == "sst")))
+# y = 6.3 + 4.733e-05x
+4.733e-05 * 1032 # 0.05
+
+projection_means %>% filter (ssp == 245, var == "sst", year(date) %in% c(2015:2020)) %>% summarise (mean = mean(mean)) # 7.15
+projection_means %>% filter (ssp == 245, var == "sst", year(date) %in% c(2091:2100)) %>% summarise (mean = mean(mean)) # 8.56
+
+projection_means %>% filter (ssp == 585, var == "sst", year(date) %in% c(2015:2020)) %>% summarise (mean = mean(mean)) # 6.8
+projection_means %>% filter (ssp == 585, var == "sst", year(date) %in% c(2091:2100)) %>% summarise (mean = mean(mean)) # 10.3
+
+projection_means %>% 
+  filter (year(date) %in% c(2015:2020, 2091:2100)) %>%
+  mutate (period = ifelse (year(date) %in% 2015:2020, "past", "future")) %>%
+  group_by (ssp, var, period) %>%
+  summarize (mean = mean(mean)) %>% 
+  pivot_wider (names_from = period, values_from = mean) %>% 
+  mutate (diff = future - past)
+
+summary (lm (mean ~ date, data = filter (projection_means, ssp == 585, var == "sst")))
+# y = 4.506 + 1.163e-04x
+
+# what are the predicted increases in iceland's waters?
+# moved deltas to external hard drive
+load ("../../D")
