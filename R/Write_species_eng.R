@@ -243,7 +243,7 @@ spp_therm <- mfri_abun %>%
 # campana only did years 1996-2018, only autumn?
 spp_therm_campana <- mfri_abun %>%
   left_join (mfri_pred, by = "sample_id") %>%
-  filter (between (year, 1996, 2018), season == "autumn") %>% length (unique (station))
+  filter (between (year, 1996, 2018), season == "autumn") %>% 
   group_by (species) %>%
   summarise (
     TB = (weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE) - med_bw),
@@ -261,9 +261,22 @@ spp_therm_campana <- mfri_abun %>%
     left_join (spp_yrs_sampled, by = "Spp_ID") %>%
     arrange (Spp_ID) %>%
     mutate (Quota = ifelse (Spp_ID %in% quota_spp, 1, 0)) %>%
-    left_join (spp_therm, by = "Spp_ID")
+    left_join (spp_therm, by = "Spp_ID") %>%
+    # fill in missing common names with sci names
+    mutate (Common_name = ifelse (is.na (Common_name), 
+                                  Scientific_name,
+                                  Common_name)
+    )
     
 
-  
-  
+  ### things I'm doing a lot but haven't changed yet (12/10/20): 
+  spp_list  <- read_csv ("Data/species_eng.csv",
+                         col_types = cols(
+                           Spp_ID = col_factor()
+                         )) %>%
+    rename (species = sci_name_underscore) %>% #rename to match species column
+    # only take first option for common names
+    # https://stackoverflow.com/questions/42565539/using-strsplit-and-subset-in-dplyr-and-mutate
+    mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
+
   write.csv (spp_table_cat, file = "Data/species_eng.csv", row.names = FALSE)
