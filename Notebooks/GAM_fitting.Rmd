@@ -896,7 +896,13 @@ dev.off()
 ```
 
 ```{r var_imp_borm_14}
-b14 <- read_csv("../Models/var_imp_Borm_14.csv")
+b14 <- read_csv("../Models/var_imp_Borm_14_alltemp.csv")
+
+# filter suitable from borm_diag below
+b14_suit <- b14 %>% filter (species %in% borm_spp$sci_name_underscore)
+b14_suit %>% group_by (Var, GAM) %>%
+  summarise (Diff_mn = mean (Diff_f)) %>%
+  arrange (desc (Diff_mn)) %>% View()
 
 b14 %>%
   ggplot (aes (x = reorder(Var, Diff_f, mean), y = Diff_f)) +
@@ -1030,7 +1036,18 @@ dev.off()
 ```
 
 ```{r diagnostics_borm}
-borm_diag <- read_csv ("../Models/Bormicon_allTemp_GAM_diagnostics.csv")
+borm_diag <- read_csv ("../Models/GAM_performance_Borm_14_alltemp.csv")
+
+# summarize just the suitable/demersal species
+load ("../Models/spp_Smooth_latlon.RData") 
+borm_spp <- spp_Smooth_latlon %>%
+  filter (! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis", "Clupea_harengus", "Scomber_scombrus", "Mallotus_villosus"))
+
+diag_suitable <- borm_diag %>%
+  filter (species %in% borm_spp$sci_name_underscore, 
+          MASE_GAM < 1, DM_GAM_p < 0.05)
+
+summary (diag_suitable$PA_dev)
 
 # order metrics how I want them
 diag_lev <- c("PA_dev", "AUC", "TSS_mx", "Kap_mx", "LB_dev", "LB_cor")
@@ -1787,3 +1804,43 @@ plot (gam_LB)
 not that many points, only 1031 presences. sst, depth, sst_max significant, but sst, bt, bt_Dev, sst_max, bt_max all edf 1. all except bt_max sig for PA. SST, sst_Dev, bt_max are edf 1 for PA, 
 
 I think it's due to a sine pattern for both PA and LB depth. max depth is 1200
+
+# a denticulatus, weird depth rltp
+```{r a denticulatus}
+library (mgcv)
+load ("../Models/Borm_14_alltemp/Anarhichas_denticulatus_LB.Rdata")
+load ("../Models/Borm_14_alltemp/Anarhichas_denticulatus_PA.Rdata")
+
+summary (gam_LB)
+summary (gam_PA)
+
+plot (gam_PA)
+plot (gam_LB)
+
+```
+
+### cross validation--should I have used k = -1? ----
+```{r}
+load ("../Models/Borm_14_alltemp/Gadus_morhua_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Gadus_morhua_PA.Rdata")
+
+cod_pa <- mfri_pa %>%
+  dplyr::select (sample_id, Gadus_morhua) %>%
+  rename (Presence = Gadus_morhua)
+
+# append to sample info
+cod_pred <- cod_pa %>%
+  right_join (mfri_pred, by = "sample_id") 
+
+PA_k1 <- gam (Presence ~ bormicon_region + s(surface_temp, k = -1) + s(bottom_temp, k = -1) + s(tow_depth_begin, k = -1) + s(sst_dev, k = -1) + s(bt_dev, k = -1) + s(sst_max, k = -1) + s(sst_min, k = -1) + s(bt_max, k = -1), family = "binomial", data = cod_pred)
+
+PA_s <- gam (Presence ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_dev) + s(bt_dev) + s(sst_max) + s(sst_min) + s(bt_max), family = "binomial", data = cod_pred); beep()
+
+AIC (gam_PA, PA_k1)
+
+concurvity(gam_PA)
+
+anova (gam_PA)
+```
+
+k1 has lower AIC, slightly higher dev expl (70.4 vs 69.6). but way curvier--6-8 edf. For concurvity, the observed estimates are all slightly lower for PA k1, but the worst/estimate are the same. doesn't look like it's just due to edf =1. K1 is identical to not specifying anything???
