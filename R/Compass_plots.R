@@ -5,8 +5,9 @@
 library (geosphere) # for distHaversine and bearing
 library (raster)
 library (tidyverse)
+library (beepr) # for alerting me when code is done
 library (SDMTools) # for calculating circular average. Not available for R version 4.0.2, downloaded from https://www.rforge.net/SDMTools/git.html
-library (spatstat) # for weighted quantiles
+#library (spatstat) # for weighted quantiles
 
 
 
@@ -25,6 +26,10 @@ hist_centroids_fun <- function (sci_name) {
   # spatial points df so I have a value corresponding to each lat/lon combo
   df_pre <- data.frame(rasterToPoints(hist_mn))
   
+  
+  # subset above a certain threshold for warm and cool edge. for cod, 0.05 is 67th percentile and 0.5 is 70th percentile. go with 0.5? Tried this, changing to 0.05 because was zero for a lot of species
+  df_pre_suit <- filter (df_pre, layer > 0.05)
+  
   # eventually want something about circular movement around iceland??
   data.frame (
     species = sci_name,
@@ -33,11 +38,15 @@ hist_centroids_fun <- function (sci_name) {
     #warm and cool edges, Fredston-Herman 2020. should probably get this from obs, not backcast? 5th and 95th latitude quantile
     # might not be that helpful because i'm limiting to EEZ, and might run into borm problems
     # weighted quantile is making these very central. Fredston used 5th and 95th where occurs above 80% probability, but not sure how to capture that with thermpred. 
-    hist_warm = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.05, na.rm = TRUE),
-    hist_cold  = weighted.quantile (df_pre$y, w = df_pre$layer, probs = 0.95, na.rm = TRUE)
+    hist_warm = quantile (df_pre_suit$y, probs = 0.05, na.rm = TRUE),
+    hist_cold  = quantile (df_pre_suit$y,  probs = 0.95, na.rm = TRUE)
   )
 }
 
+
+load ("Models/spp_Smooth_latlon.RData") 
+borm_spp <- spp_Smooth_latlon %>%
+  filter (!sci_name_underscore == "Myoxocephalus_scorpius")
 
 system.time( hist_centroids <- map_df (borm_spp$sci_name_underscore, hist_centroids_fun)); beep() # 98s
 
@@ -52,6 +61,7 @@ future_centroids_fun <- function (sci_name, CM, scenario) {
   pred_mn <- calc (pred_br, mean) # calc is faster
   df_post <- data.frame(rasterToPoints(pred_mn))
   
+  df_post_suit <- filter (df_post, layer > 0.05)
   
   # eventually want something about circular movement around iceland??
   # calculate mean lon and lat, store as data.frame to match with climate models
@@ -62,8 +72,8 @@ future_centroids_fun <- function (sci_name, CM, scenario) {
     scenario = scenario,
     pred_lat = weighted.mean(df_post$y, df_post$layer),
     pred_lon = weighted.mean(df_post$x, df_post$layer),
-    pred_warm = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.05, na.rm = TRUE),
-    pred_cold = weighted.quantile (df_post$y, w = df_post$layer, probs = 0.95, na.rm = TRUE)
+    pred_warm = quantile (df_post_suit$y,  probs = 0.05, na.rm = TRUE),
+    pred_cold = quantile (df_post_suit$y,  probs = 0.95, na.rm = TRUE)
   )
 }
 
@@ -71,13 +81,13 @@ future_centroids_fun <- function (sci_name, CM, scenario) {
 # list of all the possible combinations of species, CM, and scenario. I couldn't figure out how to use cross and filter to get rid of the CM2.6 and 245 combination
 CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 
-cm_expand <- expand_grid (sci_name = landed_spp,
+cm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
                           CM = CM_list,
                           scenario = c(245, 585)) %>%
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list() # convert to list to feed to pmap
 
-system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)); beep() # 382s landed, 1206.62  full
+system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)); beep() # 382s landed, 1206.62  full. 923 secodn time
 
 # combine and save 
 # start with just centroids, do warm/cold later
@@ -111,7 +121,7 @@ save (centroid_change, file = "Data/centroids_Borm14_alltemp_allscenarios.RData"
 
 #################################################################################################
 
-# plot
+# load and plot ----
 
 # spp I ran models for
 load ("Models/spp_Smooth_latlon.RData") 
@@ -124,7 +134,10 @@ spp_list  <- read_csv ("Data/species_eng.csv",
                        col_types = cols(
                          Spp_ID = col_factor()
                        )) %>%
-  rename (species = sci_name_underscore) # rename to match species column
+  rename (species = sci_name_underscore) %>% #rename to match species column
+  # only grab first option for species name (more legible graphs)
+  # https://stackoverflow.com/questions/42565539/using-strsplit-and-subset-in-dplyr-and-mutate
+  mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
 
 
 load ("Data/centroids_Borm14_alltemp_allscenarios.RData")
@@ -135,15 +148,12 @@ centroid_mean_change <- centroid_change %>%
              sd_dist = sd (dist),
              mean_bearing = mean(bearing),
              sd_bearing = sd(bearing)
-  )
-
-
-png ("Figures/Compass_Borm14alltemp_TB_commnames.png", width = 16, height = 9, units = "in", res = 300)
-set.seed(15)
-
-centroid_mean_change %>%
+  ) %>%
   left_join (borm_MASE, by = "species") %>%
   left_join (spp_list, by = "species") %>%
+  # this replaces apostrophes with chinese characters??
+  #https://stackoverflow.com/questions/10294284/remove-all-special-characters-from-a-string-in-r
+  #mutate (Common_name = strsplit (Common_name, ",")[[1]][1]) %>%
   # just cut out not suitable
   filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>%
   mutate (
@@ -157,36 +167,56 @@ centroid_mean_change %>%
       scenario == 585 ~ "Worst case scenario"
     ),
     # convert bearing to 0-360
-    bearing = ifelse (mean_bearing < 0, mean_bearing + 360, mean_bearing)) %>%
-  #filter (dist < 100) %>%
-  ggplot(aes (x = bearing,
-              y = mean_dist, 
-              colour = Therm_pref,
-              label = species)) +
+    bearing = ifelse (mean_bearing < 0, mean_bearing + 360, mean_bearing))
+
+# not seeing much of a pattern. is there a difference in circular average?
+# overall CA
+cir_avg <- centroid_mean_change %>%
+  mutate (dist_km = mean_dist/1000) %>%
+  group_by (scenario, Therm_pref) %>%
+  summarize (CA = circular.averaging (direction = bearing),
+             dist = mean (dist_km))
+
+png ("Figures/Compass_Borm14alltemp_TB_commnames.png", width = 16, height = 9, units = "in", res = 300)
+set.seed(15)
+
+centroid_mean_change %>%
+  mutate (dist_km = mean_dist/1000) %>%
+  #mutate (Common_name = str_replace_all(Common_name, "[^[:alnum:]]", " ")) %>%
+  # ggplot() +aes (x = bearing,
+  #             y = dist_km, 
+  #             colour = Therm_pref,
+  #             label = species)) +
+  ggplot() +
   coord_polar(start = 0) +
-  geom_segment(aes (y = 0,
+  geom_segment(aes (y = 0,x = bearing,
                     xend = bearing, 
-                    yend = mean_dist
+                    yend = dist_km,
+                    col = Therm_pref
   ), 
-  size = 1.2
+  size = 1.2,
+  alpha = 0.7
   ) +  
   geom_text(aes(label = Common_name,#species, 
                 x = bearing,
-                y = 150000,  
+                y = 150,  
 
                 # not sure what angle is doing here but it seems right
                 angle = ifelse (bearing < 180,
                                 -bearing + 90,
-                                -bearing + 270
-                )
-  ),
-  col = "black",
-  position = position_jitter(width = 0.5, height = 50),
-  size = 3.5, 
-  vjust = 0.1) +
-  facet_wrap (~ scen_long) +
+                                -bearing + 270)
+                ),
+            col = "black",
+            alpha = 0.7,
+           # position = position_jitter(width = 4, height = 5),
+            size = 3.5, 
+            vjust = 0.1) +
+  # add circular average?
+  geom_point (aes (x = CA, y = dist, col = Therm_pref), data = cir_avg, shape = 24, size = 5) +
+  facet_wrap (~ scenario) +
   labs(y= "Distance (km)") + 
-  scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
+  # scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
+  scale_x_continuous(breaks= c(0, 90, 180, 270), limits = c(0,360)) + 
   scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
   labs (color = "") + 
   theme_bw() +
@@ -198,10 +228,125 @@ centroid_mean_change %>%
     strip.text = element_text (size = 20),
     legend.text = element_text (size = 20),
   ) +
-
   ggtitle ("Centroid shift bearing and distance, 2000-2018 vs. 2060-2081")
+
 dev.off()
 
+
+
+
+# plot just 585 with depth, TB, steno, like campana figure 5----
+steno_cir_avg <- centroid_mean_change %>%
+  mutate (dist_km = mean_dist/1000,
+           Sten_cat = case_when (
+              mean_Steno > 0 ~ "Warm",
+              between (mean_Steno, -3, 0) ~ "Cool",
+              mean_Steno < 0 ~ "Cold"
+            )) %>%
+  group_by (scenario, Therm_pref) %>%
+  summarize (CA = circular.averaging (direction = bearing),
+             dist = mean (dist_km))
+png ("Figures/Compass_Borm14alltemp_steno_585_commnames.png", width = 8, height = 9, units = "in", res = 300)
+set.seed(15)
+
+centroid_mean_change %>%
+  filter (scenario == 585) %>%
+  mutate (dist_km = mean_dist/1000) %>%
+  
+  ggplot(aes (x = bearing,
+              y = mean_dist, 
+              colour = mean_Steno,
+              label = species)) +
+  coord_polar(start = 0) +
+  geom_segment(aes (y = 0,
+                    xend = bearing, 
+                    yend = dist_km), 
+               size = 1.2) +  
+  # geom_text(aes(label = Common_name,#species, 
+  #               x = bearing,
+  #               y = 150000,  
+  #               
+  #               # not sure what angle is doing here but it seems right
+  #               angle = ifelse (bearing < 180,
+  #                               -bearing + 90,
+  #                               -bearing + 270)
+  #               ),
+  #           col = "black",
+  #           position = position_jitter(width = 0.5, height = 50),
+  #           size = 3.5, 
+  #           vjust = 0.1) +
+
+  labs(y = "", x = "") +
+
+  scale_x_continuous(breaks= c(0, 90, 180, 270), limits = c(0,360)) + 
+  scale_color_binned (breaks = c (2, 4, 6), low = "orange", high = "blue" ) +
+
+  labs (color = "Stenothermal Index") + 
+  theme_bw() +
+  theme (
+    axis.text.x = element_text (size = 18),
+    axis.text.y = element_text (size = 18),
+    axis.title = element_text (size = 20),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 20),
+    legend.text = element_text (size = 18),
+    legend.title = element_text (size = 20),
+    legend.position = c(0.75, 0.25)
+  
+  ) 
+dev.off()
+
+
+png ("Figures/Compass_Borm14alltemp_depth_585_commnames.png", width = 8, height = 9, units = "in", res = 300)
+set.seed(15)
+
+centroid_mean_change %>%
+  filter (scenario == 585) %>%
+  mutate (dist_km = mean_dist/1000) %>%
+  
+  ggplot(aes (x = bearing,
+              y = mean_dist, 
+              colour = mean_depth,
+              label = species)) +
+  coord_polar(start = 0) +
+  geom_segment(aes (y = 0,
+                    xend = bearing, 
+                    yend = dist_km), 
+               size = 1.2) +  
+  # geom_text(aes(label = Common_name,#species, 
+  #               x = bearing,
+  #               y = 150000,  
+  #               
+  #               # not sure what angle is doing here but it seems right
+  #               angle = ifelse (bearing < 180,
+  #                               -bearing + 90,
+  #                               -bearing + 270)
+  # ),
+  # col = "black",
+  # position = position_jitter(width = 0.5, height = 50),
+  # size = 3.5, 
+  # vjust = 0.1) +
+  
+  labs(y = "", x = "") + 
+  scale_x_continuous(breaks= c(0, 90, 180, 270), limits = c(0,360)) + 
+  scale_color_binned (breaks = c (200, 400), low = "lightblue", high = "darkblue" ) +
+  
+  labs (color = "Depth") + 
+  theme_bw() +
+  theme (
+    axis.text.x = element_text (size = 18),
+    axis.text.y = element_text (size = 18),
+    axis.title = element_text (size = 20),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 20),
+    legend.text = element_text (size = 18),
+    legend.title = element_text (size = 20),
+    legend.position =  c(0.75, 0.25)
+  ) 
+dev.off()
+
+
+#######################
 
 
 #################################################################################################
@@ -295,166 +440,7 @@ centroids_df %>%
   group_by (scenario) %>%
   summarize (CA = circular.averaging (direction = bearing)) # seems to figure out 0-360 automatically?
 
-# CA based on category
-centroids_df %>%
-  left_join (smoothLL_MASE, by = "species") %>%
-  left_join (quota_status, by = "species") %>%
-  mutate (
-    # categorize based on suitability
-    fill_col = case_when(
-      MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
-    )) %>%
-      group_by (scenario, fill_col) %>%
-      summarize (CA = circular.averaging (direction = bearing))
 
-
-# plot smooth lat/lon ----  
-png ("Figures/Compass_SmoothLL_all.png", width = 16, height = 9, units = "in", res = 300)
-centroids_df %>%
-  left_join (smoothLL_MASE, by = "species") %>%
-  left_join (quota_status, by = "species") %>%
-  mutate (
-    # categorize based on suitability
-    fill_col = case_when(
-      MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
-    ),
-    # convert bearing to 0-360
-    bearing = ifelse (bearing < 0, bearing + 360, bearing)) %>%
-  filter (dist < 100) %>%
-ggplot(aes (x = bearing,
-            y = dist, 
-            colour = fill_col,
-            label = species)) +
-  coord_polar(start = 0) +
-  geom_segment(aes (y = 0,
-                    xend = bearing, 
-                    yend = dist
-                    ), 
-               size = 1.2
-               ) +  
-  geom_text(aes(label = species, 
-                x = bearing,
-                y = 200,  
-                # not sure what angle is doing here but it seems right
-                angle = ifelse (bearing < 180,
-                                -bearing + 90,
-                                -bearing + 270
-                )
-  ),
-  size = 3.5, 
-  vjust = 0.1) +
-  facet_wrap (~ scenario) +
-  labs(y= "Maximum distance/decade (km)") + #, 
-  #title=paste("Spring, North, Circular Average = ", 
-  #round(CA[1], 2))) +
-  scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
-  scale_color_manual (values = c("gray",  "#F8766D", "#00BFC4")) +
-  labs (color = "") + 
-  theme_bw() +
-  
-  theme(plot.title = element_text(size = rel(1.5)), 
-        axis.title = element_text(size = rel(1.25)), 
-        legend.text = element_text(size = rel(1.25) ), 
-        axis.text = element_text(size = rel(1)), 
-        legend.title= element_text(size = rel(1.25) )) +
-  ggtitle ("Smoothed Lat/Lon Bearing and Distance, 2000-2018 vs. 2060-2081")
-
-dev.off()
-
-## Depth/Temp model ----
-# load smooth_latlon spp
-load ("Models/spp_Depth_Temp.RData")
-
-calculate_centroids_fun(model = "Depth_Temp", spp_names = td_spp_names, year_range = "2061_2080")
-
-# diagnostics to designate based on certainty ----
-TD_MASE <- read_csv ("Models/Temp_Depth_GAM_diagnostics.csv") 
-
-# quota status ----
-quota_status <- read_csv ("Data/species_eng.csv") %>%
-  select (sci_name_underscore, Quota) %>%
-  rename (species = sci_name_underscore)
-
-# calculate circular average ----
-centroids_df %>%
-  group_by (scenario) %>%
-  summarize (CA = circular.averaging (direction = bearing)) # seems to figure out 0-360 automatically?
-
-# CA based on category
-centroids_df %>%
-  left_join (TD_MASE, by = "species") %>%
-  left_join (quota_status, by = "species") %>%
-  mutate (
-    # categorize based on suitability
-    fill_col = case_when(
-      MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
-    )) %>%
-  group_by (scenario, fill_col) %>%
-  summarize (CA = circular.averaging (direction = bearing))
-
-
-# plot depth temp ----  
-png ("Figures/Compass_DepthTemp_all.png", width = 16, height = 9, units = "in", res = 300)
-centroids_df %>%
-  left_join (TD_MASE, by = "species") %>%
-  left_join (quota_status, by = "species") %>% 
-  # more species in depth/temp than I was able to calculate MASE GAM bc of testing/training. may need to rethink this
-  filter (!is.na (MASE_GAM)) %>%
-  mutate (
-    # categorize based on suitability
-    fill_col = case_when(
-      MASE_GAM >= 1 | DM_GAM_p >= 0.05 ~ "Model unsuitable",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 1 ~ "Quota",
-      MASE_GAM < 1 & DM_GAM_p < 0.05 & Quota == 0 ~ "Non-Quota"
-    ),
-    # convert bearing to 0-360
-    bearing = ifelse (bearing < 0, bearing + 360, bearing)) %>%
-  filter (dist < 100) %>%
-  ggplot(aes (x = bearing,
-              y = dist, 
-              colour = fill_col,
-              label = species)) +
-  coord_polar(start = 0) +
-  geom_segment(aes (y = 0,
-                    xend = bearing, 
-                    yend = dist
-  ), 
-  size = 1.2
-  ) +  
-  geom_text(aes(label = species, 
-                x = bearing,
-                y = 200,  
-                # not sure what angle is doing here but it seems right
-                angle = ifelse (bearing < 180,
-                                -bearing + 90,
-                                -bearing + 270
-                )
-  ),
-  size = 3.5, 
-  vjust = 0.1) +
-  facet_wrap (~ scenario) +
-  labs(y= "Maximum distance/decade (km)") + #, 
-  #title=paste("Spring, North, Circular Average = ", 
-  #round(CA[1], 2))) +
-  scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
-  scale_color_manual (values = c("gray",  "#F8766D", "#00BFC4")) +
-  labs (color = "") + 
-  theme_bw() +
-  
-  theme(plot.title = element_text(size = rel(1.5)), 
-        axis.title = element_text(size = rel(1.25)), 
-        legend.text = element_text(size = rel(1.25) ), 
-        axis.text = element_text(size = rel(1)), 
-        legend.title= element_text(size = rel(1.25) )) +
-  ggtitle ("Depth/Temp Bearing and Distance, 2000-2018 vs. 2060-2081")
-
-dev.off()
 
 ## Code test with simulated data----
 # generate random simulated data for 10 species
@@ -512,112 +498,3 @@ ggplot(test_df,
         axis.text = element_text(size = rel(1.5)), 
         legend.title= element_text(size = rel(1.25) ))#+ 
 #scale_color_manual(values = colorit_cluster)
-
-# Morely et al. 2018 code ----
-# https://github.com/pinskylab/project_velocity/blob/master/MS_figures.R
-
-library (raster)
-
-# I'm going to assume I don't need to do the correction for biomass weighting? something about converging longitude? all of my stuff should be on the same grid. 
-
-# projection grid
-load ("Data/prediction_raster_template.RData")
-
-pred_r_template[] <- area(pred_r_template)[] # don't know what this does. adds a layer columm, 140 unique
-
-# # make df of lat/lon points. In Morely code this has depth and two other values (rugosity, sediment size?). not sure if I need them. 
-# 
- grid_area <- data.frame(rasterToPoints(pred_r_template), stringsAsFactors = FALSE) 
-# 
-# grid_area <- unique(data.frame(lat = grid_area$y, area = grid_area$layer)) # 140 rows, just lat
-# 
-# # from morely: # now get the latitude values to match up as sig-figs altered in raster
-# lats <- unique(pred_r_template$)
-# grid_area$latitude<- NA
-
-# columns for init and final lat and lon, mean + SD in latitudinal change, mean + SD in absolute shift distance
-centroids245 <- data.frame(
-  latPre=numeric(), lonPre=numeric(), 
-  latPost=numeric(), lonPost=numeric(), 
-  meanLat=numeric(), sdLat=numeric(), 
-  meanDist=numeric(), sdDist=numeric(), 
-  radius=numeric()
-  )
-
-centroids585 <- data.frame(
-  latPre=numeric(), lonPre=numeric(), 
-  latPost=numeric(), lonPost=numeric(), 
-  meanLat=numeric(), sdLat=numeric(),
-  meanDist=numeric(), sdDist=numeric(), 
-  radius=numeric()
-  )
-options(warn=0) 
-
-
-# load my one prediction brick
-tmp_brick <- brick ("Models/Prediction_bricks/Gadus_morhua_245_slatlon_temp.grd")
-
-# iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
-library (sf)
-eez <- st_read("Data/eez.shp")
-
-# clip to eez
-pred_clip <- mask (tmp_brick, eez)
-
-
-brick_pre <- pred_clip[[1:10]] # 2015-2024
-brick_post <- pred_clip[[1023:1032]] # 2091-2100
-
-pred_pre <- calc (brick_pre, mean)
-pred_post <- calc (brick_post, mean)
-
-# spatial points df so I have a value corresponding to each lat/lon combo
-df_pre <- data.frame(rasterToPoints(pred_pre))
-df_post <- data.frame(rasterToPoints(pred_post))
-
-mean_Lat_pre <- weighted.mean(df_pre$y, df_pre$layer) # layer is the thermpred prediction value
-mean_Lat_post <- weighted.mean(df_post$y, df_post$layer)
-
-mean_Lon_pre <- weighted.mean(df_pre$x, df_pre$layer)
-mean_Lon_post <- weighted.mean(df_post$x, df_post$layer)
-
-
-# line 366
-library (geosphere) # distHaverstine
-dist <- distHaversine(c(mean_Lon_pre, mean_Lat_pre), c(mean_Lon_post, mean_Lat_post))/ 1000 # km
-bearing <- bearing (c(mean_Lon_pre, mean_Lat_pre), c(mean_Lon_post, mean_Lat_post))
-
-library (plotrix) # polar.plot
-# line 651 of morely
-polar.plot(lengths = dist, polar.pos = bearing,
-           lwd = 2.5, line.col = "red",
-           lables = c(), 
-           boxed.radial = F, start = 90, clockwise= T) #, radial.lim = c(0, 1500))
-
-
-# nothing is showing up. try with test_df simulated data
-
-polar.plot(lengths = test_df$dist, polar.pos = test_df$bearing,
-           lwd = 2.5, line.col = "red",
-           labels = c(), 
-           boxed.radial = F, start = 90, clockwise= T) #, radial.lim = c(0, 1500))
-
-yearRange <- c('2015-2024', '2091-2100')
-cent_preds26lat <- matrix(data=NA, nrow=2, ncol=16)
-cent_preds26lon <- matrix(data=NA, nrow=2, ncol=16)
-
-for(j in 1:2){
-  years = yearRange[j]
-  preds <- pred.agg26[pred.agg26$year_range == years,]
-  for(k in 4:19){
-    weights_adj <- preds[,k] * (preds$area) #*100) # the '*100' is in case I want to do hectares_it shouldn't matter
-    valueLat = wtd.mean(preds$latitude, weights = weights_adj, na.rm=FALSE) 
-    valueLon = wtd.mean(preds$longitude, weights = weights_adj, na.rm=FALSE) 
-    if(is.na(valueLat)){
-      print('Problem')
-    }
-    cent_preds26lat[j,k-3] = valueLat
-    cent_preds26lon[j,k-3] = valueLon
-  }
-}  
-
