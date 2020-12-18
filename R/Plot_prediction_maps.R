@@ -1,12 +1,16 @@
 # Plot prediction maps
 # 9/22/2020
 #JGM
-
+library (tidyverse)
 library (raster)
 library (viridis)
 library (maps)
 library (mapdata)
 library (gridExtra)
+
+library (beepr)
+
+# Note--maps breaks when mgcv is loaded (I think)
 
 
 # centroids df, so I can look at centroid, warm edge, cool edge?
@@ -61,7 +65,7 @@ plot_cm_maps_fun <- function (sci_name) {
   
 }
 
-plot_cm_maps_fun("Gadus_morhua")
+plot_cm_maps_fun("Cyclopterus_lumpus")
 
 # look at monthly differences for predictions----
 plot_monthly_maps_fun <- function (sci_name, model) {
@@ -103,8 +107,7 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   overall_vals <- stack (mn_hist, mn_245, mn_585)
   col_lims <- c (min (log(getValues (overall_vals)), na.rm = TRUE), max (log(getValues (overall_vals)), na.rm = TRUE))
   
-  #spp_breaks <- quantile (getValues(overall_vals), probs = c(seq (0, .9, 0.1), 0.95, 0.99, 1), na.rm = TRUE)
-  
+
   # add centroid?
   centroid <- centroid_change %>%
     filter (species == sci_name) %>%
@@ -116,15 +119,14 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   
   par (mfrow = c (1, 3))
   plot (log(mn_hist), 
-        #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
-        #breaks = quantile (getValues(overall_vals), probs = c (0, 0.25, .5, .75, 1), na.rm = TRUE), 
         col = viridis(25),
         xlim = c (-32, -3), ylim = c (60, 69),
         zlim = col_lims,
         cex.main = 2,
         legend = FALSE,
         main = paste0(sci_name, " historical"))
-  map('worldHires',add=TRUE, col='grey90', fill=TRUE)
+  maps::map('worldHires', add=TRUE, col='grey90', fill=TRUE)
+
   
   # add centroid of distribution and triangles for warm and cold edges
   points (x = centroid$hist_lon[1], y = centroid$hist_lat[1], pch = 21, bg = "white", col = "black", cex = 2)
@@ -136,7 +138,7 @@ plot_pred_maps_fun <- function (sci_name, model_name) {
   plot (log(mn_245), 
         col = viridis(25),
         xlim = c (-32, -3), ylim = c (60, 69),
-        zlim = col_lims,
+       # zlim = col_lims,
         cex.main = 2,
         legend = FALSE,
         main = paste0(sci_name, " 245"))
@@ -166,43 +168,13 @@ system.time(plot_pred_maps_fun (sci_name = "Gadus_morhua",
 plot_pred_maps_fun (sci_name = "Cyclopterus_lumpus", 
                     model_name = "Borm_14_alltemp")
 
-plot_pred_maps_fun (sci_name = "Anarhichas_lupus", 
-                    model_name = "Borm_14_alltemp")
+plot_pred_maps_fun (sci_name = "Hippoglossoides_platessoides", 
+                    model_name = "Borm_14_alltemp"); beep()
 
-plot_pred_maps_fun (sci_name = "Argentina_silus", 
-                    model_name = "Borm_14_alltemp")
+comm_spp <- c("Brosme_brosme", "Microstomus_kitt", "Merlangius_merlangus", "Limanda_limanda", "Glyptocephalus_cynoglossus", "Sebastes_marinus", "Anarchicus_minor", "Clupea_harengus", "Scomber_scombrus")
 
-plot_pred_maps_fun (sci_name = "Eutrigla_gurnardus", 
-                    model_name = "Borm_14_alltemp")
+purrr::map (comm_spp, plot_pred_maps_fun); beep()
 
-plot_pred_maps_fun (sci_name = "Micromesistius_poutassou", 
-                    model_name = "Borm_14_alltemp")
-
-plot_pred_maps_fun (sci_name = "Pollachius_virens", 
-                    model_name = "Borm_14_alltemp")
-
-plot_pred_maps_fun (sci_name = "Lepidorhombus_whiffiagonis", 
-                    model_name = "Borm_14_alltemp")
-
-plot_pred_maps_fun (sci_name = "Pleuronectes_platessa", 
-                    model_name = "Borm_14_alltemp")
-
-
-plot_pred_maps_fun (sci_name = "Melanogrammus_aeglefinus", 
-                    model_name = "Borm_14_alltemp")
-
-plot_pred_maps_fun (sci_name = "Scomber_scombrus", 
-                    model_name = "Borm_14_alltemp")
-
-plot_pred_maps_fun (sci_name = "Mallotus_villosus", 
-                    model_name = "Borm_14_alltemp")
-
-plot_pred_maps_fun (sci_name = "Lophius_piscatorius", 
-                    model_name = "Borm_14_alltemp")
-
-
-plot_pred_maps_fun (sci_name = "Phycis_blennoides", 
-                    model_name = "Borm_14_alltemp")
 # test maps ----
 
 # cod and pollock for science deep dive
