@@ -866,19 +866,23 @@ mfri_pred <-  read_csv ("../Data/MFRI_predictor_df.csv",
 )
 
 mfri_pred_vars <- mfri_pred %>%
-  dplyr::select ( tow_depth_begin, surface_temp, bottom_temp, sst_max, sst_min, bt_max, bt_min, sst_dev, bt_dev)
+  dplyr::select (tow_depth_begin, surface_temp, bottom_temp, sst_dev, bt_dev, sst_max, sst_min, bt_max, bt_min)
 
 mfri_comp <- mfri_pred_vars [ complete.cases (mfri_pred_vars),]
 cont.corr <- round (cor (mfri_comp), 1)
 
-png (file = "../Figures/Depth_Temp_Corrplot.png")
-ggcorrplot (cont.corr, hc.order = TRUE,
+png (file = "../Figures/Depth_Temp_Corrplot.png", width = 6, height = 6, units = "in", res = 150)
+ggcorrplot (cont.corr, #hc.order = TRUE,
             type = "lower",
             lab = TRUE, 
             lab_size = 3,
             method = "circle",
             ggtheme = theme_bw
-          )
+          ) +
+  theme (axis.text.x = element_text(margin=margin(-2,0,-4,0), size = 14),
+         axis.text.y = element_text(margin=margin(0,0,0,0), size = 14),
+         legend.text = element_text (size = 14),
+         legend.title = element_text (size = 16))
 dev.off()
 
 # panel pairplot
@@ -897,10 +901,23 @@ Looking at temperature_AIC_check.csv, dropping bt is much more problematic than 
 
 # bormicon region and depth, temp
 ```{r bormicon}
-
+png ("../Figures/borm_depth_sst_bt_boxplot.png", width = 16, height = 9, units = "in", res = 300)
 mfri_pred %>%
-  ggplot (aes (x = bormicon_region, y = tow_depth_begin)) +
-  geom_boxplot()
+  dplyr::select (bormicon_region, tow_depth_begin, surface_temp, bottom_temp) %>%
+  pivot_longer (!bormicon_region, names_to = "Var", values_to = "Value") %>%
+  ggplot (aes (x = as.factor(as.character(bormicon_region)), y = Value)) +
+  geom_boxplot() +
+  facet_wrap (~Var, scales = "free") +
+  theme_bw() +
+  theme (
+    axis.text = element_text (size = 18),
+    axis.title = element_text (size = 20),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 20)
+    
+  ) +
+  ggtitle ("Temperature and depth, Bormicon regions")
+dev.off()
 
 mfri_pred %>%
   ggplot (aes (x = bormicon_region, y = surface_temp)) +
@@ -915,7 +932,7 @@ mfri_pred %>%
 Definitely big differences in depth. 3 in particular are below 1000
 surface temp also some differences, but actually fairly similar spread. bottom temp bigger differences, where deeper sites prob have lower temps. 
 
-
+### VIF with Borm 14 predictor variables
 
 ## Run linear models and look at residuals?
 
