@@ -1,4 +1,4 @@
-# landings data
+# Bring in MFRI landings data
 
 # Pamela Woods sent landings data on 11/24/2020: Data are kg per haul, but I can also aggregate by month if it's just too big. I think most of the columns are self-explanatory, but all the spatial information just refers to the harbor where the landings were reported. The operations column may not actually be 100% correct - there is some strange data and no clear guidelines on how these values are reported or entered, so I don't know how informative they are but at least you can have a look. 
 
@@ -11,13 +11,15 @@
 library (tidyverse)
 library (beepr)
 # very large file, >1 GB
-#ldgs <- read.csv ("Data/Raw_data/MFRI_landings.csv"); beep() # crashes with read_csv?
-
+# ldgs <- read.csv ("Data/Raw_data/MFRI_landings.csv"); beep() # crashes with read_csv?
+# 
+# Just look at domestic landings in the last decade for now
 # ldgs %>%
 #   filter (year > 2010, sampling_type == "landings") %>%
 #   write_csv ("Data/MFRI_landings_last_decade.csv")
 
 
+# bring in species table to match common names
 spp_list <- read_csv ("Data/species_eng.csv") %>%
   rename (species = sci_name_underscore) %>% # rename to match species column
   mutate (Common_name = ifelse (is.na (Common_name), 
@@ -28,7 +30,7 @@ spp_list <- read_csv ("Data/species_eng.csv") %>%
 
 # only look at last 10 years for now. did 2010-2020 just since 2020 isn't totally complete. 
 ldgs <- read_csv ("Data/MFRI_landings_last_decade.csv"); beep()
-ldgs <- ldgs %>% filter (sampling_type == "landings")
+
 
 sort (unique (ldgs$license_system))
 length (unique (ldgs$harbor))
@@ -39,6 +41,57 @@ sort (unique (ldgs$species))
 
 # ~8000 negative species weights measurements? most have NA harbor. assuming this is some kind of quota balancing thing??
 
+
+# how to separate quota types? have GRT, operations, and license_system
+ldgs_smallGRT <- ldgs %>% 
+  filter (GRT <= 15)
+
+table (ldgs_smallGRT$license_system)
+table (ldgs_smallGRT$operations)
+
+# for small, coastal fishing is the same, non commercial license has the same as Def fund. seaweed harvesting the same. hook permit = hook and line boat
+
+# coastal fishing--4462 are >= 15, 320690 are <= 15
+
+# hook permit is max 30 (as of 2013, but ), quota is big boats. 
+hooks_lic <- ldgs %>% filter (license_system == "Hook permit")
+hooks_op <- ldgs %>% filter (operations == "Hook and line boat")
+
+# hook license_system includes operations: hook and line boat, hook permit (12), recreational fishery
+
+hook_diff <- hooks_lic %>% 
+  filter (vessel %in% hooks_op$vessel) %>%
+  distinct_at (vars (vessel, registered_length, GRT, gear, operations, license_system))
+
+str (hook_diff)
+
+ldgs %>%
+  group_by (license_system) %>%
+  summarize (min = min (GRT, na.rm = TRUE),
+             mean = mean (GRT, na.rm = TRUE),
+             max = max (GRT, na.rm = TRUE))
+
+#license vs ops contingency table?
+lic_ops_cont <- table ( "ops" = ldgs$operations, "license" = ldgs$license_system)
+
+# plan (see GAM method notes): split into coastal fishery, small quota (operations: small boat quota + hook and line boat + hook permit), large boat (trawler + quota vessel). this doesn't completely cleanly match 30 GRT. 
+
+# this takes out recreational, seaweed, divers, lumpfishery (although there are still lumpfish landings in small boats), uncategorized, non-commercial
+
+ldgs_3sector <- ldgs %>%
+  mutate (Sector = case_when (
+    operations == "Costal fishing" ~ "Coastal fishing",
+    operations %in% c("Small quota boat", "Hook and line boat", "Hook permit") ~ "Small quota boats", 
+    operations %in% c("Trawler", "Quota vessel") ~ "Large quota boats"
+  )) %>%
+  filter (!is.na (Sector))
+
+# look at 15 vs larger, per cat's request
+ldgs_15 <- ldgs %>%
+  mutate (Vessel_size = ifelse (GRT > 15, "GRT > 15", "GRT <= 15"))
+# doesn't really matter, none is exactly 30. but 412 are exactly 15
+
+# map harbor points ----
 
 harb_pts <- ldgs %>%
   distinct_at (vars (latitude, longitude, harbor)) %>%
@@ -109,6 +162,10 @@ harb_pts <- harb_pts %>%
 
 # https://mattherman.info/blog/point-in-poly/
 
+library (sf)
+
+load ("Data/borm_polys.RData")
+
 # convert to sf
 harb_sf <- harb_pts %>%
   filter (!is.na (latitude)) %>%
@@ -135,15 +192,15 @@ harb_borm <- st_join (
 
 
 
-borm_op_props <- ldgs %>%
+borm_op_props <- ldgs_3sector %>%
   # fix lumpfish, just adults m/f
   mutate (species = ifelse (species %in% c(950, 951), 48, species)) %>%
   filter (weight_total > 0, !is.na (latitude)) %>%
   left_join (harb_borm, by = "harbor") %>%
-  dplyr::select (division, species, operations, weight_total) %>%
-  group_by (division, operations) %>%
+  dplyr::select (division, species, Sector, weight_total) %>%
+  group_by (division, Sector) %>%
   mutate (tot_wt = sum (weight_total)) %>%
-  group_by (division, operations, species) %>%
+  group_by (division, Sector, species) %>%
   mutate (spp_wt = sum (weight_total), 
           spp_prop_wt = spp_wt / tot_wt, 
           .keep = "unused") %>%
@@ -159,18 +216,18 @@ borm_op_props %>%
   filter (spp_prop_wt > 0.1) %>%
   ggplot () +
   geom_bar (aes(x = division, y = spp_prop_wt, fill = as.factor(species)), stat = "identity") +
-  facet_wrap (~operations)
+  facet_wrap (~Sector)
 
 
 # overall props by operation
-op_props <- ldgs %>%
+op_props <- ldgs_3sector %>%
   # fix lumpfish, just adults m/f
   mutate (species = ifelse (species %in% c(950, 951), 48, species)) %>%
   filter (weight_total > 0, !is.na (latitude)) %>%
-  dplyr::select (species, operations, weight_total) %>%
-  group_by (operations) %>%
+  dplyr::select (species, Sector, weight_total) %>%
+  group_by (Sector) %>%
   mutate (tot_wt = sum (weight_total)) %>%
-  group_by (operations, species) %>%
+  group_by (Sector, species) %>%
   mutate (spp_wt = sum (weight_total), 
           spp_prop_wt = spp_wt / tot_wt, 
           .keep = "unused") %>%
@@ -181,7 +238,7 @@ op_props <- ldgs %>%
   left_join (dplyr::select (spp_list, Spp_ID, species), by = "Spp_ID")
 
 # overall props by division
-div_props <- ldgs %>%
+div_props <- ldgs_3sector %>%
   # fix lumpfish, just adults m/f
   mutate (species = ifelse (species %in% c(950, 951), 48, species)) %>%
   filter (weight_total > 0, !is.na (latitude)) %>%
@@ -210,7 +267,10 @@ div_props <- ldgs %>%
 
 # https://gis.stackexchange.com/questions/171124/data-frame-to-spatialpolygonsdataframe-with-multiple-polygons
 
-# using borm_coords from Rasterize_bormicon_regions.R. 
+# using borm_coords from Rasterize_bormicon_regions.R.
+
+library (sp)
+
 load ("Data/borm_coords.Rdata")
 
 borm_ls <- borm_coords %>% 
@@ -357,6 +417,64 @@ save (pred_hist_hab_borm, file = "Data/pred_hist_hab_borm_df.RData")
 
 # calculate risk exposure/fishing opportunity: catch proportion * habitat change ----
 
+# plot total biomass change for each region ----
+load ("Data/pred_hist_hab_borm_df.RData")
+
+hab_means_borm <- pred_hist_hab_borm  %>%
+  filter (!species %in% c("Phycis_blennoides"), species %in% borm_suit) %>% # weird high values. borm_suit in percent_habitat change. need to combine these anyway
+  
+  group_by (species, scenario, division) %>%
+  summarise (hab_future = mean(pred_mean),
+             hab_hist = mean (hist_mean)) %>% 
+  pivot_wider (names_from = scenario,
+               values_from = hab_future, 
+               names_prefix = "hab_") %>%
+  pivot_longer (!c(species, division), 
+                names_to = "period", 
+                names_prefix = "hab_",
+                values_to = "habitat")
+
+
+top_hab_spp_borm <- hab_means_borm %>%
+  group_by (species) %>%
+  summarize (max_hab = max (habitat)) %>%
+  
+  left_join (spp_list, by = "species") %>% 
+  top_n (7, max_hab)  # qual color palettes have 8-12 options
+
+png ("Figures/Hab_change_overall_biomass_bormicon_commnames_suitable.png", width = 16, height = 9, res = 300, units = "in")
+hab_means_borm %>%
+  left_join (spp_list, by = "species") %>% 
+  # use same levels as top_hab_spp for overall, for clarity in presentation
+  mutate (Common_name = ifelse (species %in% top_hab_spp$species, 
+                                Common_name,
+                                "Other"),
+          # set factor order?
+          period = factor (period, levels = c("hist", 245, 585)),
+          Common_name = factor (Common_name, levels = c (top_hab_spp$Common_name, "Other"))
+  ) %>% 
+  ggplot (aes (x = period, y = habitat, fill = Common_name)) +
+  facet_grid (.~division) +
+  geom_bar (stat = "identity") +
+  scale_fill_brewer (palette = "Dark2", name = "Species") +
+  labs (y = "Suitable thermal habitat", x = "Period") +
+  theme_bw() +
+  theme (
+    axis.text.x = element_text (size = 16, angle = 90),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18),
+    strip.text = element_text (size = 16)
+  ) +
+  ggtitle ("Total suitable thermal habitat in Iceland's EEZ by Bormicon region, all species")
+dev.off()
+
+
+
+### Risk exposure by region and sector  ----
+
 
 # bring in GAM diagnostics for model suitability
 MASE <- read_csv ("Models/GAM_performance_Borm_14_alltemp.csv")
@@ -370,19 +488,19 @@ div_ops_risk <- pred_hist_hab_borm %>%
   mutate (division = as.character (division),
     perc_change = (pred_mean - hist_mean) / hist_mean, 
     log10_change = log10(pred_mean / hist_mean)) %>%
-  inner_join (filter (borm_op_props, 
-                      !operations %in% c("Def fund", "Research vessel", "Hook permit", "Quota permit", "Uncategorised")),
+  inner_join (borm_op_props,
               by = c("species", "division")) %>%
-  group_by (division, operations, model, scenario) %>%
+  group_by (division, Sector, model, scenario) %>%
   summarise (risk = sum (log10_change * spp_prop_wt, na.rm = TRUE))
 
 
 png ("Figures/Risk_exposure_region_sector_allspp.png", width = 16, height = 9, res = 300, units = "in") 
 div_ops_risk %>%
-  mutate (operations = factor (operations, levels = c ("Trawler", "Quota vessel", "Small quota boat", "Hook and line boat", "Costal fishing", "Lumpfishery", "Recreational fishery"))) %>%
+  mutate (Sector = factor (Sector, levels = c ("Large quota boats", "Small quota boats", "Coastal fishing"))
+          ) %>%
   ggplot () +
   geom_boxplot (aes (y = risk, x = division)) +
-  facet_grid (scenario ~ operations, scales = "free_x") +
+  facet_grid (scenario ~ Sector, scales = "free_x") +
   theme_bw () +
   geom_hline (yintercept  = 0, lty = 2) +
     theme (
@@ -403,81 +521,56 @@ div_ops_risk_suitable <- pred_hist_hab_borm %>%
   mutate (division = as.character (division),
           perc_change = (pred_mean - hist_mean) / hist_mean, 
           log10_change = log10(pred_mean / hist_mean)) %>%
-  inner_join (filter (borm_op_props, 
-                      !operations %in% c("Def fund", "Research vessel", "Hook permit", "Quota permit", "Uncategorised")),
+  inner_join (borm_op_props,
               by = c("species", "division")) %>%
-  group_by (division, operations, model, scenario) %>%
+  group_by (division, Sector, model, scenario) %>%
   summarise (risk = sum (log10_change * spp_prop_wt, na.rm = TRUE))
 
+# also keep a version with species broken out to show species driving trends
+div_ops_risk_with_spp <- pred_hist_hab_borm %>%
+  filter (species %in% suit_spp) %>%
+  mutate (division = as.character (division),
+          perc_change = (pred_mean - hist_mean) / hist_mean,
+          log10_change = log10(pred_mean / hist_mean)) %>%
+  inner_join (borm_op_props, by = c("species", "division")) %>%
+  # filter species with < 5% for a sector
+  filter (spp_prop_wt > 0.05) %>%
+  mutate (risk = perc_change * spp_prop_wt) %>%
+  # would take average among models? median maybe to match boxplot
+  group_by (species, scenario, division, Sector) %>%
+  summarise (md_change = median (log10_change),
+             prop_wt = first (spp_prop_wt)) %>%
+  left_join (spp_list, by = "species") %>%
+  mutate (Sector = factor (Sector, levels = c ("Large quota boats", "Small quota boats", "Coastal fishing")))
 
-png ("Figures/Risk_exposure_region_sector_suitable_log10.png", width = 16, height = 9, res = 300, units = "in") 
+
+png ("Figures/Risk_exposure_region_sector_suitable_log10_3sector_spplabs.png", width = 16, height = 9, res = 300, units = "in") 
 div_ops_risk_suitable %>%
-  mutate (operations = factor (operations, levels = c ("Trawler", "Quota vessel", "Small quota boat", "Hook and line boat", "Costal fishing", "Lumpfishery", "Recreational fishery"))) %>%
+  mutate (Sector = factor (Sector, levels = c ("Large quota boats", "Small quota boats", "Coastal fishing"))
+                           ) %>%
   ggplot () +
   geom_boxplot (aes (y = risk, x = division)) +
-  facet_grid (scenario ~ operations, scales = "free_x") +
+  geom_text (aes (x = division, y = md_change, label = Common_name, size = prop_wt), data = div_ops_risk_with_spp) +
+  facet_grid (scenario ~ Sector) +
   theme_bw () +
   geom_hline (yintercept  = 0, lty = 2) +
+  scale_size_continuous (name = "Catch proportion", range = c(3, 8)) +
   theme (
-    axis.text.x = element_text (size = 12, angle = 90),
-    axis.text.y = element_text (size = 12),
-    axis.title = element_text (size = 14),
-    plot.title = element_text (size = 16),
-    legend.text = element_text (size = 14),
-    legend.title = element_text (size = 14)
+    axis.text.x = element_text (size = 16),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.title = element_text (size = 16),
+    legend.text = element_text (size = 14)
+    
   ) +
   labs (y = "Relative change in fishing opportunity", x = "Region") +
   ggtitle ("Catch-weighted regional climate impact risk by fisheries sector")
 dev.off()
 
 
-# plot total biomass change for each region ----
 
-hab_means_borm <- pred_hist_hab_borm  %>%
-  filter (!species %in% c("Phycis_blennoides")) %>% # weird high values
-  
-  group_by (species, scenario, division) %>%
-  summarise (hab_future = mean(pred_mean),
-             hab_hist = mean (hist_mean)) %>% 
-  pivot_wider (names_from = scenario,
-               values_from = hab_future, 
-               names_prefix = "hab_") %>%
-  pivot_longer (!c(species, division), 
-                names_to = "period", 
-                names_prefix = "hab_",
-                values_to = "habitat")
-
-
-top_hab_spp_borm <- hab_means_borm %>%
-  group_by (species) %>%
-  summarize (max_hab = max (habitat)) %>%
-  top_n (7, max_hab) # qual color palettes have 8-12 options
-
-png ("Figures/Hab_change_overall_biomass_bormicon.png", width = 16, height = 9, res = 300, units = "in")
-hab_means_borm %>%
-   mutate (species = ifelse (species %in% top_hab_spp$species, 
-                            species,
-                            "Other"),
-          # set factor order?
-          period = factor (period, levels = c("hist", 245, 585)),
-         species = factor (species, levels = c (top_hab_spp$species, "Other"))
-  ) %>%
-  ggplot (aes (x = period, y = habitat, fill = species)) +
-  facet_grid (.~division) +
-  geom_bar (stat = "identity") +
-  scale_fill_brewer (palette = "Dark2") +
-  labs (y = "Suitable thermal habitat") +
-  theme_bw() +
-  theme (
-    axis.text.x = element_text (size = 14, angle = 90),
-    axis.text.y = element_text (size = 12),
-    axis.title = element_text (size = 14),
-    plot.title = element_text (size = 16),
-    legend.text = element_text (size = 14),
-    legend.title = element_text (size = 14)
-  ) +
-  ggtitle ("Total suitable thermal habitat in Iceland's EEZ by Bormicon region, all species")
-dev.off()
 
 ### plot opportunity/risk by region ----
 div_risk <- pred_hist_hab_borm %>%
@@ -514,23 +607,27 @@ div_risk_with_spp <- pred_hist_hab_borm %>%
                prop_wt = first (spp_prop_wt)) %>%
   left_join (spp_list, by = "species")
 
-png ("Figures/Risk_exposure_region_suitable_spplabs_log10.png", width = 16, height = 9, res = 300, units = "in")  
+png ("Figures/Risk_exposure_region_suitable_log10.png", width = 16, height = 9, res = 300, units = "in")  
 div_risk_suitable %>%
   
   ggplot () +
   geom_boxplot (aes (x = factor(scenario), y = risk)) +
   #geom_point (aes (x = factor(scenario), y = risk), alpha = 0.5) +
-  geom_text (aes (x = factor(scenario), y = md_change, label = Common_name, size = prop_wt), data = div_risk_with_spp, alpha = 0.6) +
+  geom_text (aes (x = factor(scenario), y = md_change, label = Common_name, size = prop_wt), data = div_risk_with_spp, alpha = 0) +
   facet_grid (.~division) +
   theme_bw () +
   geom_hline (yintercept  = 0, lty = 2) +
+  scale_size_continuous (name = "Catch proportion", range = c(3, 8)) +
   labs (y = "Relative change in fishing opportunity", x = "Scenario") +
   ggtitle ("Catch-weighted climate impact risk by region") +
   theme (
-    axis.text.x = element_text (size = 14),
-    axis.text.y = element_text (size = 12),
-    axis.title = element_text (size = 14),
-    plot.title = element_text (size = 16)
+    axis.text.x = element_text (size = 16),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.title = element_text (size = 16),
+    legend.text = element_text (size = 14)
     
   )
 dev.off() 
@@ -544,19 +641,20 @@ load ("Data/pred_hist_hab_df.RData")
 ops_risk <- pred_hist_hab %>%
   mutate (perc_change = (pred_mean - hist_mean) / hist_mean,
           log10_change = log10(pred_mean / hist_mean)) %>%
-  inner_join (filter (op_props, 
-                      !operations %in% c("Def fund", "Research vessel", "Hook permit", "Quota permit", "Uncategorised")),
+  inner_join (op_props,
               by = c("species")) %>%
-  group_by (operations, model, scenario) %>%
+  group_by (Sector, model, scenario) %>%
   summarise (risk = sum (log10_change * spp_prop_wt, na.rm = TRUE))
 
 
 png ("Figures/Risk_exposure_sector_allspp.png", width = 16, height = 9, res = 300, units = "in")  
 ops_risk %>%
+  mutate (Sector = factor (Sector, levels = c ("Large quota boats", "Small quota boats", "Coastal fishing"))
+  ) %>%
 ggplot () +
   geom_boxplot (aes (x = factor(scenario), y = risk)) +
   #geom_point (aes (x = factor(scenario), y = risk), alpha = 0.5) +
-  facet_grid (.~operations) +
+  facet_grid (.~Sector) +
   theme_bw () +
   geom_hline (yintercept  = 0, lty = 2) +
   labs (y = "Relative change in fishing opportunity", x = "Scenario") +
@@ -583,68 +681,212 @@ ops_risk_suitable <- pred_hist_hab %>%
   mutate (perc_change = (pred_mean - hist_mean) / hist_mean, 
           log10_change = log10(pred_mean / hist_mean)) %>%
   inner_join (filter (op_props, 
-                      !operations %in% c("Def fund", "Research vessel", "Hook permit", "Quota permit", "Uncategorised")),
+                      !Sector %in% c("Def fund", "Research vessel", "Hook permit", "Quota permit", "Uncategorised")),
               by = c("species")) %>%
-  group_by (operations, model, scenario) %>%
+  group_by (Sector, model, scenario) %>%
   summarise (risk = sum (log10_change * spp_prop_wt, na.rm = TRUE)) 
-
-png ("Figures/Risk_exposure_sector_suitable.png", width = 16, height = 9, res = 300, units = "in")  
-ops_risk_suitable %>%
-  ggplot () +
-  geom_boxplot (aes (x = factor(scenario), y = risk)) +
-  #geom_point (aes (x = factor(scenario), y = risk), alpha = 0.5) +
-  facet_grid (.~operations) +
-  theme_bw () +
-  geom_hline (yintercept  = 0, lty = 2) +
-  labs (y = "Relative change in fishing opportunity", x = "Scenario") +
-  ggtitle ("Catch-weighted climate impact risk by fisheries sector") +
-  theme (
-    axis.text.x = element_text (size = 14),
-    axis.text.y = element_text (size = 12),
-    axis.title = element_text (size = 14),
-    plot.title = element_text (size = 16)
-    
-  )
-dev.off() 
 
 # try to do something like Rogers where you plot the individual component species too. mean habitat change, with size proportional to spp_prop_wt
 ops_risk_with_spp <- pred_hist_hab %>%
   filter (species %in% suit_spp) %>%
   mutate (perc_change = (pred_mean - hist_mean) / hist_mean, 
           log10_change = log10(pred_mean / hist_mean)) %>%
-  inner_join (filter (op_props, 
-                      !operations %in% c("Def fund", "Research vessel", "Hook permit", "Quota permit", "Uncategorised")),
+  inner_join (op_props,
               by = c("species")) %>%
   # filter out species with < 5% for a sector
   filter (spp_prop_wt > 0.01) %>%
-  group_by (species, scenario, operations) %>%
+  group_by (species, scenario, Sector) %>%
   summarise (md_change = median (log10_change),
              prop_wt = first (spp_prop_wt)) %>%
   left_join (spp_list, by = "species") %>% 
-  mutate (operations = factor (operations, levels = c ("Trawler", "Quota vessel", "Small quota boat", "Hook and line boat", "Costal fishing", "Lumpfishery", "Recreational fishery")))
+  mutate (Sector = factor (Sector, levels = c ("Large quota boats", "Small quota boats", "Coastal fishing"))
+  )
 
-png ("Figures/Risk_exposure_sector_suitable_spplabs_log10.png", width = 16, height = 9, res = 300, units = "in") 
+png ("Figures/Risk_exposure_sector_suitable_spplabs_log10_3sector.png", width = 16, height = 9, res = 300, units = "in") 
 ops_risk_suitable %>%
-  mutate (operations = factor (operations, levels = c ("Trawler", "Quota vessel", "Small quota boat", "Hook and line boat", "Costal fishing", "Lumpfishery", "Recreational fishery"))) %>%
+  mutate (Sector = factor (Sector, levels = c ("Large quota boats", "Small quota boats", "Coastal fishing"))) %>%
   ggplot () +
   geom_boxplot (aes (x = factor(scenario), y = risk)) +
   #geom_point (aes (x = factor(scenario), y = md_change, size = prop_wt), alpha = 0.5, data = ops_risk_with_spp) +
   geom_text (aes (x = factor (scenario), y = md_change, size = prop_wt, label = Common_name), alpha = 0.6, data = ops_risk_with_spp) +
-  facet_grid (.~operations) +
+  facet_grid (.~Sector) +
   theme_bw () +
   geom_hline (yintercept  = 0, lty = 2) +
+  scale_size_continuous (name = "Catch proportion", range = c(3, 8)) +
   labs (y = "Relative change in fishing opportunity", x = "Scenario") +
   ggtitle ("Catch-weighted climate impact risk by fisheries sector") +
+
   theme (
-    axis.text.x = element_text (size = 14),
-    axis.text.y = element_text (size = 12),
-    axis.title = element_text (size = 14),
-    plot.title = element_text (size = 16)
+    axis.text.x = element_text (size = 16),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.title = element_text (size = 16),
+    legend.text = element_text (size = 14)
     
   )
 dev.off()
 #############################3  
 
+
+# look at vessels by 15 GRT, per Cat's request ----
+
+# try to do iceland names?
+isl_spp <- read_csv ("Data/Raw_data/species.csv") %>%
+  rename (Spp_ID = tegund)
+
+spp_list_isl <- left_join (spp_list, isl_spp, by = "Spp_ID")
+
+# look at 15 vs larger, per cat's request
+ldgs_15 <- ldgs %>%
+  mutate (Vessel_size = ifelse (GRT > 15, "GRT > 15", "GRT <= 15")) %>%
+  filter (!is.na (Vessel_size))
+# doesn't really matter, none is exactly 30. but 412 are exactly 15
+
+borm_op_props_15 <- ldgs_15 %>%
+  # fix lumpfish, just adults m/f
+  mutate (species = ifelse (species %in% c(950, 951), 48, species)) %>%
+  filter (weight_total > 0, !is.na (latitude)) %>%
+  left_join (harb_borm, by = "harbor") %>%
+  dplyr::select (division, species, Vessel_size, weight_total) %>%
+  group_by (division, Vessel_size) %>%
+  mutate (tot_wt = sum (weight_total)) %>%
+  group_by (division, Vessel_size, species) %>%
+  mutate (spp_wt = sum (weight_total), 
+          spp_prop_wt = spp_wt / tot_wt, 
+          .keep = "unused") %>%
+  ungroup() %>%
+  distinct ()  %>%
+  #convert spp_ID to scientific name
+  rename (Spp_ID = species) %>%
+  left_join (dplyr::select (spp_list, Spp_ID, species), by = "Spp_ID")
+  
+  
+
+
+# suitable species only
+div_ops_risk_suitable_15 <- pred_hist_hab_borm %>%
+  filter (species %in% suit_spp) %>%
+  mutate (division = as.character (division),
+          perc_change = (pred_mean - hist_mean) / hist_mean, 
+          log10_change = log10(pred_mean / hist_mean)) %>%
+  inner_join (borm_op_props_15,
+              by = c("species", "division")) %>%
+  group_by (division, Vessel_size, model, scenario) %>%
+  summarise (risk = sum (log10_change * spp_prop_wt, na.rm = TRUE))
+
+# also keep a version with species broken out to show species driving trends
+div_ops_risk_with_spp_15 <- pred_hist_hab_borm %>%
+  filter (species %in% suit_spp) %>%
+  mutate (division = as.character (division),
+          perc_change = (pred_mean - hist_mean) / hist_mean,
+          log10_change = log10(pred_mean / hist_mean)) %>%
+  inner_join (borm_op_props_15, by = c("species", "division")) %>%
+  # filter species with < 5% for a sector
+  filter (spp_prop_wt > 0.05) %>%
+  mutate (risk = perc_change * spp_prop_wt) %>%
+  # would take average among models? median maybe to match boxplot
+  group_by (species, scenario, division, Vessel_size) %>%
+  summarise (md_change = median (log10_change),
+             prop_wt = first (spp_prop_wt)) %>%
+  left_join (spp_list, by = "species") 
+
+
+png ("Figures/Risk_exposure_region_sector_suitable_log10_GRT15_spplabs.png", width = 16, height = 9, res = 300, units = "in") 
+div_ops_risk_suitable_15 %>%
+
+  ggplot () +
+  geom_boxplot (aes (y = risk, x = division)) +
+  geom_text (aes (x = division, y = md_change, label = Common_name, size = prop_wt), data = div_ops_risk_with_spp_15) +
+  facet_grid (scenario ~ Vessel_size) +
+  theme_bw () +
+  geom_hline (yintercept  = 0, lty = 2) +
+  scale_size_continuous (name = "Catch proportion", range = c(3, 8)) +
+  theme (
+    axis.text.x = element_text (size = 16),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.title = element_text (size = 16),
+    legend.text = element_text (size = 14)
+    
+  ) +
+  labs (y = "Relative change in fishing opportunity", x = "Region") +
+  ggtitle ("Catch-weighted regional climate impact risk by vessel size")
+dev.off()
+
+# gRT 15 by sector only ----
+# overall props by operation
+op_props_15 <- ldgs_15 %>%
+  # fix lumpfish, just adults m/f
+  mutate (species = ifelse (species %in% c(950, 951), 48, species)) %>%
+  filter (weight_total > 0, !is.na (latitude)) %>%
+  dplyr::select (species, Vessel_size, weight_total) %>%
+  group_by (Vessel_size) %>%
+  mutate (tot_wt = sum (weight_total)) %>%
+  group_by (Vessel_size, species) %>%
+  mutate (spp_wt = sum (weight_total), 
+          spp_prop_wt = spp_wt / tot_wt, 
+          .keep = "unused") %>%
+  ungroup() %>%
+  distinct ()  %>%
+  # convert spp_ID to scientific name
+  rename (Spp_ID = species) %>%
+  left_join (dplyr::select (spp_list, Spp_ID, species), by = "Spp_ID")
+
+ops_risk_suitable_15 <- pred_hist_hab %>%
+  filter (species %in% suit_spp) %>%
+  mutate (perc_change = (pred_mean - hist_mean) / hist_mean, 
+          log10_change = log10(pred_mean / hist_mean)) %>%
+  inner_join (op_props_15,
+              by = c("species")) %>%
+  group_by (Vessel_size, model, scenario) %>%
+  summarise (risk = sum (log10_change * spp_prop_wt, na.rm = TRUE)) 
+
+# try to do something like Rogers where you plot the individual component species too. mean habitat change, with size proportional to spp_prop_wt
+ops_risk_with_spp <- pred_hist_hab %>%
+  filter (species %in% suit_spp) %>%
+  mutate (perc_change = (pred_mean - hist_mean) / hist_mean, 
+          log10_change = log10(pred_mean / hist_mean)) %>%
+  inner_join (op_props_15,
+              by = c("species")) %>%
+  # filter out species with < 5% for a sector
+  filter (spp_prop_wt > 0.01) %>%
+  group_by (species, scenario, Vessel_size) %>%
+  summarise (md_change = median (log10_change),
+             prop_wt = first (spp_prop_wt)) %>%
+  left_join (spp_list, by = "species") 
+
+png ("Figures/Risk_exposure_sector_suitable_log10_GRT15_spplabs.png", width = 16, height = 9, res = 300, units = "in") 
+ops_risk_suitable %>%
+  
+  ggplot () +
+  geom_boxplot (aes (x = factor(scenario), y = risk)) +
+  #geom_point (aes (x = factor(scenario), y = md_change, size = prop_wt), alpha = 0.5, data = ops_risk_with_spp) +
+  geom_text (aes (x = factor (scenario), y = md_change, size = prop_wt, label = Common_name), alpha = 0.6, data = ops_risk_with_spp) +
+  facet_grid (.~Vessel_size) +
+  theme_bw () +
+  geom_hline (yintercept  = 0, lty = 2) +
+  scale_size_continuous (name = "Catch proportion", range = c(3, 8)) +
+  labs (y = "Relative change in fishing opportunity", x = "Scenario") +
+  ggtitle ("Catch-weighted climate impact risk by vessel size") +
+  
+  theme (
+    axis.text.x = element_text (size = 16),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.title = element_text (size = 16),
+    legend.text = element_text (size = 14)
+    
+  )
+dev.off()
+
+
+#############################################################################
 
 # http://www.spectdata.com/index.php/2018/10/25/how-to-use-ggplot-to-plot-pie-charts-on-a-map/
 library (maps)
@@ -664,7 +906,7 @@ world <- ne_countries(scale = "medium", returnclass = "sf")
 
 harb_ops <- harb_ldgs %>%
   select (-species) %>%
-  group_by (harbor, operations) %>%
+  group_by (harbor, Sector) %>%
   mutate (value = sum (tot_wt), .keep = "unused") %>%
   ungroup() %>%
   distinct () 
@@ -677,11 +919,11 @@ ggplot() +
   geom_point (data = harb_ops,
               aes (x = -longitude,
                    y = latitude, 
-                   col = operations, 
+                   col = Sector, 
                    size = value), alpha = 0.5)
   geom_scatterpie (data = harb_ops, aes (x = longitude,
                         y = latitude),
-                   cols = "operations", long_format = TRUE)
+                   cols = "Sector", long_format = TRUE)
   
   # plot harbors with bormicon regions
   borm <- read.csv('Data/Raw_data/subdivision_coords.csv') %>%
