@@ -242,7 +242,7 @@ system.time (pmap (borm_expand, predict_brick_fun)); beep (sound = 3)
 
 # redo with borm_empty spp
 # try with just one first
-monk_expand <- expand_grid (sci_name = c("Merlangius_merlangus", "Molva_molva", "Molva_dypterygia", "Dipturus_batis", "Argentina_silus", "Pleuronectes_platessa", "Microstomus_kitt", "Glyptocephalus_cynoglossus", "Lepidorhombus_whiffiagonis", "Limanda_limanda"),
+monk_expand <- expand_grid (sci_name = c("Phycis_blennoides", "Cottunculus_microps", "Bathyraja_spinicauda"),
                         GAM = "Borm_14_alltemp",
                         CM = CM_list,
                         scenario = c(245, 585),
@@ -251,7 +251,7 @@ monk_expand <- expand_grid (sci_name = c("Merlangius_merlangus", "Molva_molva", 
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list()
 
-system.time (pmap (monk_expand, predict_brick_fun)); beep() # 2.17 hrs for monkfish
+system.time (pmap (monk_expand, predict_brick_fun)) # 2.17 hrs for monkfish
 
 # do a few at a time
 

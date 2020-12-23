@@ -121,7 +121,8 @@ spp_suit <- MASE %>%
   filter (MASE_GAM < 1, DM_GAM_p < 0.05)
 
 borm_suit <- borm_spp %>% filter (sci_name_underscore %in% spp_suit$species) %>% pull (sci_name_underscore)
-
+# save for running on remote desktop. 49 species
+save (borm_suit, file = "Models/spp_Borm_suit.RData")
 
 # calculate prediction means for looking at overall change
 
