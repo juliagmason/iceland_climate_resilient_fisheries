@@ -345,7 +345,9 @@ hist_brick_fun <- function (sci_name, GAM, year1, year2) {
 } # end brick function
 
 
-borm_expand_hist <- expand_grid (sci_name = borm_spp$sci_name_underscore,
+# run again on empty species, defined in fit_GAMS_fun
+
+borm_expand_hist <- expand_grid (sci_name = empty_spp$sci_name_underscore,
                             GAM = "Borm_14_alltemp",
                             year1 = 2000,
                             year2 = 2018) %>%
