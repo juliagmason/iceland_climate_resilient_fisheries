@@ -154,6 +154,74 @@ projection_means %>%
 summary (lm (mean ~ date, data = filter (projection_means, ssp == 585, var == "sst")))
 # y = 4.506 + 1.163e-04x
 
-# what are the predicted increases in iceland's waters?
+# what are the predicted increases in iceland's waters? ----
 # moved deltas to external hard drive
-load ("../../D")
+
+## Calculate avg warming deltas
+# 12/23/2020
+
+
+library (tidyverse)
+library (raster)
+library (lubridate)
+library (sf)
+
+
+# iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
+eez <- st_read("Data/eez.shp")
+
+# create vector of dates. should be jan 2015 - december 2100
+# when including CM 2.5, only 80 years, not 86, 2001-2080
+#projected_dates <- seq (ymd("2015-01-01"), ymd("2100-12-12"), by = "months")
+
+# list of my saved raster bricks
+delta_files <- list.files ("Data/CMIP6_deltas/", pattern = "deltas.grd")
+
+
+# make empty data frame
+delta_means <- data.frame()
+
+for (file in delta_files) {
+  
+  deltas <- brick(paste0("Data/CMIP6_deltas/", file))
+  
+  #crop CMIP6 files to smaller time period
+  #if (dim (projections)[3]  == 1032)  {projections  <-  projections[[73:1032]] }
+  # actually should crop cm 2.6, because that should cut off at 2080? take off the first 15 years. # assuming CM 2.6 is 960, so assuming 2001 -2080. 
+  if (dim (deltas)[3] != 1032) {
+    
+    deltas <- deltas[[169:960]]
+    projected_dates <- seq (ymd("2015-01-01"), ymd("2080-12-12"), by = "months")
+    
+  } else {projected_dates <- seq (ymd("2015-01-01"), ymd("2100-12-12"), by = "months")}
+  
+  
+  # crop raster to EEZ extent
+  proj_ISL <- mask (deltas, eez) # it's doing a box, not the shapefile
+  
+  # grab mean and sd values, and create tidy data frame
+  # https://gis.stackexchange.com/questions/200394/calculate-mean-value-for-each-raster-and-convert-output-array-to-data-frame
+  
+  means_df <- data.frame (date = projected_dates,
+                          mean = cellStats (proj_ISL, "mean"),
+                          sd = cellStats (proj_ISL, "sd"),
+                          model = strsplit (file, "_")[[1]][1],
+                          ssp = strsplit (file, "_")[[1]][2],
+                          var = strsplit (file, "_")[[1]][3]
+  )
+  
+  delta_means <- rbind (delta_means, means_df)
+  
+}
+
+save (delta_means, file = "Data/CMIP6_deltas/delta_mn_sd_table_CM26.RData")
+
+delta_means %>%
+  filter (year(date) %in% 2061:2080) %>%
+  group_by (ssp, var, model) %>%
+  summarise (mean = mean(mean))
+
+delta_means %>%
+  filter (year(date) %in% 2061:2080) %>%
+  group_by (ssp, var) %>%
+  summarise (mean = mean(mean))

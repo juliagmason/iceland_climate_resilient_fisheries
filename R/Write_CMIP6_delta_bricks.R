@@ -71,10 +71,13 @@ plot (cnrm_585, 1000)
 ## # do with CM 2.6----
 base_path <- "../Documents/MATLAB/CM2_6/"
 #sst_file_list <- list.files (path = base_path, pattern = "sst_projection")
-bt_file_list <- list.files (path = base_path, pattern = "bt_projection")
+#bt_file_list <- list.files (path = base_path, pattern = "bt_projection")
 
+# repeat with deltas
+bt_file_list <- list.files (path = base_path, pattern = "bt_delta")
+sst_file_list <- list.files (path = base_path, pattern = "sst_delta")
 # did a run-through and they're each only 8MB. I think I can get away with stacking them first. do the first one, and then iteratively stack the rest?
-mat1 <- readMat(paste0(base_path, bt_file_list[1]))
+mat1 <- readMat(paste0(base_path, sst_file_list[1]))
 
 # in list format, so get actual data
 deltas1 <- mat1[[1]] #not actually the deltas. actually the projection. 
@@ -85,14 +88,14 @@ deltas1 <- mat1[[1]] #not actually the deltas. actually the projection.
 rev1 <- apply (deltas1, c(2,3), rev)
 
 # rasterize and set extent
-bt_stack <- brick(rev1)
-projection(bt_stack) <- CRS(projstring)
-extent (bt_stack) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
+sst_stack <- brick(rev1)
+projection(sst_stack) <- CRS(projstring)
+extent (sst_stack) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
 
 
-for (i in 2:length(bt_file_list)) {
+for (i in 2:length(sst_file_list)) {
   
-  file = bt_file_list[i]
+  file = sst_file_list[i]
   
   #open matlab file
   mat <- readMat(paste0(base_path, file))
@@ -110,9 +113,10 @@ for (i in 2:length(bt_file_list)) {
   projection(deltas_r) <- CRS(projstring)
   extent (deltas_r) <- c(xmn = min(latlons$lon), xmx = max (latlons$lon), ymn = min(latlons$lat), ymx = max(latlons$lat))
   
-  bt_stack <- raster::stack (bt_stack, deltas_r) # new one goes underneath
+  sst_stack <- raster::stack (sst_stack, deltas_r) # new one goes underneath
   
 }
 
 # Write and save raster. label as 585 because it's analogous. 
-CM26_deltas_r <- writeRaster(bt_stack, filename = "Data/CMIP6_delta_projections/CM26_585_bt_projection.grd") #, overwrite = TRUE) # add overwrite = TRUE if redoing
+#CM26_deltas_r <- writeRaster(bt_stack, filename = "Data/CMIP6_delta_projections/CM26_585_bt_projection.grd") #, overwrite = TRUE) # add overwrite = TRUE if redoing
+CM26_deltas_r <- writeRaster(sst_stack, filename = "Data/CMIP6_deltas/CM26_585_sst_deltas.grd")
