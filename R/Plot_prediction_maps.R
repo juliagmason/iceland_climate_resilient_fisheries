@@ -1,6 +1,7 @@
 # Plot prediction maps
 # 9/22/2020
 #JGM
+
 library (tidyverse)
 library (raster)
 library (viridis)
@@ -17,71 +18,8 @@ library (beepr)
 load ("Data/centroids_Borm14_alltemp_allscenarios.RData")
 
 
-# look at differences among CM predictions----
-plot_cm_maps_fun <- function (sci_name) {
-  
-  # find filenames
-  files_245 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*245_2061_2080.grd"), full.names = TRUE)
-  files_585 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*585_2061_2080.grd"), full.names = TRUE)
-  
-  # reorder 585 files so CM26 is at the end
-  files_585 <- files_585[c(2:5, 1)]
-  
-  png (paste0("Figures/Thermpred_map_allCM_", sci_name, ".png"), width = 16, height = 9, res = 300, unit = "in")
-  par (mfrow = c (2, 5))
-  
-  for (file in files_585) {
-    br <- brick (file)
-    br_mean <- calc (br, mean)
-    
-    model <- strsplit (file, "_")[[1]][7]
-    
-    plot (br_mean, 
-          #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
-          xlim = c (-32, -3), ylim = c (60, 69),
-          cex.main = 2,
-          #legend = FALSE,
-          main = paste0(model, " 585")
-    )
-  }
-  
-  for (file in files_245) {
-    br <- brick (file)
-    br_mean <- calc (br, mean)
-    
-    model <- strsplit (file, "_")[[1]][7]
-    
-    plot (br_mean, 
-          #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
-          xlim = c (-32, -3), ylim = c (60, 69),
-          cex.main = 2,
-          #legend = FALSE,
-          main = paste0(model, " 245")
-    )
-    
-  }
-  
-  dev.off()
-  
-}
-
-plot_cm_maps_fun("Cyclopterus_lumpus")
-
-# look at monthly differences for predictions----
-plot_monthly_maps_fun <- function (sci_name, model) {
-  # use "hist" for historical or 4-letter cm abbreviation 
-  if (model == "hist") {
-    br <- brick (paste0("Models/Prediction_bricks/", sci_name, "Borm_14_alltemp_2000_2018.grd"))
-    month_index <- seq ()
-    stackApply....
-  }
-  
-}
-
-
-
-# Function to plot historical, 245, and 585 in a panel
-plot_pred_maps_fun <- function (sci_name, model_name) {
+# Function to plot historical, 245, and 585 in a panel ----
+plot_pred_maps_fun <- function (sci_name) {
   
   # load bricks, which have a layer for each month and year
   br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_Borm_14_alltemp_2000_2018.grd"))
@@ -168,12 +106,241 @@ system.time(plot_pred_maps_fun (sci_name = "Gadus_morhua",
 plot_pred_maps_fun (sci_name = "Cyclopterus_lumpus", 
                     model_name = "Borm_14_alltemp")
 
-plot_pred_maps_fun (sci_name = "Hippoglossoides_platessoides", 
+plot_pred_maps_fun (sci_name = "Pleuronectes_platessa", 
                     model_name = "Borm_14_alltemp"); beep()
 
 comm_spp <- c("Brosme_brosme", "Microstomus_kitt", "Merlangius_merlangus", "Limanda_limanda", "Glyptocephalus_cynoglossus", "Sebastes_marinus", "Anarchicus_minor", "Clupea_harengus", "Scomber_scombrus")
 
 purrr::map (comm_spp, plot_pred_maps_fun); beep()
+
+# plot habitat difference ----
+
+
+
+# for the difference maps, I would want to make sure the colors are centered around zero. Looks like this is possible with ggplot but not sure about base R. 
+
+# Going with RasterVis for now: 
+#https://stackoverflow.com/questions/33750235/plotting-a-raster-with-the-color-ramp-diverging-around-zero
+
+# also would be possible with ggplot:
+# https://stackoverflow.com/questions/50805606/use-viridis-and-map-values-to-colour-in-a-histogram-plot
+# https://stackoverflow.com/questions/33748871/raster-map-with-discrete-color-scale-for-negative-and-positive-values-r
+
+library (rasterVis)
+
+library(maps) # for plotting country shapefile
+library(mapdata)
+library(maptools)
+
+library (gridExtra)
+library (RColorBrewer)
+
+plot_diff_maps_fun <- function (sci_name) {
+  
+  # load bricks, which have a layer for each month and year
+  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_Borm_14_alltemp_2000_2018.grd"))
+  
+  # load predictions and stack to get mean and sd
+  files_245 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*245_2061_2080.grd"), full.names = TRUE)
+  files_585 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*585_2061_2080.grd"), full.names = TRUE)
+  
+  br_245 <- stack (files_245)
+  # does it make sense to take an overall mean and sd of all the models, all the months? this captures more of the variation than taking a mean for each model and sd btw models, but the standard deviation could be within model, not among models. 
+  br_585 <- stack (files_585) # 23s
+  
+  # calculate a mean, so just one layer
+  mn_hist <- calc (br_hist, mean)
+  
+  mn_245 <- calc (br_245, mean, na.rm = TRUE) # 36s
+
+  mn_585 <- calc (br_585, mean, na.rm = TRUE)
+  
+  # calculate difference
+  diff_245 <- overlay (mn_245, mn_hist, 
+                       fun = function (r1, r2) {return (r1 - r2)}
+                       )
+  
+  diff_585 <- overlay (mn_585, mn_hist, 
+                       fun = function (r1, r2) {return (r1 - r2)}
+  )
+  
+ 
+  # create levelplot objects for hist map and differences, with country polygon
+  # add country polygon:
+  # https://stackoverflow.com/questions/17582532/r-overlay-plot-on-levelplot
+
+  p_245 <- levelplot (diff_245, margin = F,  
+                      xlim = c (-32, -3), ylim = c (60, 69),
+                      xlab = NULL, ylab = NULL,
+                      main = "Habitat difference, SSP 2-4.5") + 
+    layer(sp.polygons(bPols, fill = "white"))
+  
+  p_585 <- levelplot (diff_585, margin = F,  
+                      xlim = c (-32, -3), ylim = c (60, 69),
+                      xlab = NULL, ylab = NULL,
+                      main = "Habitat difference, SSP 5-8.5") + 
+    layer(sp.polygons(bPols, fill = "white"))
+  
+  # show log habitat for hist
+  # for color palettes for rasterViw: https://www.r-graph-gallery.com/27-levelplot-with-lattice.html
+  p_hist <- levelplot (log (mn_hist), margin = F, 
+                       xlim = c (-32, -3), ylim = c (60, 69), 
+                       xlab = NULL, ylab = NULL,
+                       col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
+                       main = "Log (habitat suitability), historical") + 
+    layer(sp.polygons(bPols, fill = "white"))
+  
+  
+  
+  png (paste0("Figures/Thermpred_Diff_map_", sci_name, "_Borm_14_alltemp.png"), width = 16, height = 9, units = "in", res = 300)
+  
+  grid.arrange (p_hist, diverge0(p_245, ramp = "BrBG"), 
+                diverge0(p_585, ramp = "BrBG"), ncol = 3,
+                top = textGrob(str_replace (sci_name, "_", " "), gp = gpar(fontface="italic", fontsize = 20), vjust = 0.7)
+  )
+
+  
+  dev.off()
+}
+
+plot_diff_maps_fun("Pleuronectes_platessa")
+
+# look at differences among CM predictions----
+plot_cm_maps_fun <- function (sci_name) {
+  
+  # find filenames
+  files_245 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*245_2061_2080.grd"), full.names = TRUE)
+  files_585 <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*585_2061_2080.grd"), full.names = TRUE)
+  
+  # reorder 585 files so CM26 is at the end
+  files_585 <- files_585[c(2:5, 1)]
+  
+  png (paste0("Figures/Thermpred_map_allCM_", sci_name, ".png"), width = 16, height = 9, res = 300, unit = "in")
+  par (mfrow = c (2, 5))
+  
+  for (file in files_585) {
+    br <- brick (file)
+    br_mean <- calc (br, mean)
+    
+    model <- strsplit (file, "_")[[1]][7]
+    
+    plot (br_mean, 
+          #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+          xlim = c (-32, -3), ylim = c (60, 69),
+          cex.main = 2,
+          #legend = FALSE,
+          main = paste0(model, " 585")
+    )
+  }
+  
+  for (file in files_245) {
+    br <- brick (file)
+    br_mean <- calc (br, mean)
+    
+    model <- strsplit (file, "_")[[1]][7]
+    
+    plot (br_mean, 
+          #breaks = spp_breaks, col = viridis(length(spp_breaks) -1),
+          xlim = c (-32, -3), ylim = c (60, 69),
+          cex.main = 2,
+          #legend = FALSE,
+          main = paste0(model, " 245")
+    )
+    
+  }
+  
+  dev.off()
+  
+}
+
+plot_cm_maps_fun("Cyclopterus_lumpus")
+
+# # plot CM variance ----
+
+# use a similar helper function approach to what I did for predict_ensemble_rasters. make one function that calculates a temporal mean for a model and scenario. Then lapply that for a species and calculate SD.
+calc_CM_mean <- function (sci_name, CM, scenario) {
+  
+  br <- brick (list.files(path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*", CM, "_", scenario, "_2061_2080.grd"), full.names = TRUE))
+  
+  br_mn <- calc (br, mean, na.rm = TRUE)
+}
+
+plot_cm_varmap_fun <- function (sci_name) {
+
+  # just copy/pasting the scenarios
+  
+  # model mean input list to feed into calc_CM_mean
+  model_mean_ls_245 <- expand.grid (sci_name = sci_name,
+                                CM = c("gfdl", "cnrm", "ipsl", "mohc"),
+                                scenario = 245)
+  
+  # apply calc_CM function
+  model_means_245 <- pmap (model_mean_ls_245, calc_CM_mean)
+  
+  # convert list to raster brick
+  model_br_245 <- brick (model_means_245)
+  
+  # calculate SD
+  model_sd_245 <- calc (model_br_245, sd, na.rm = TRUE)
+  
+  # 585
+  model_mean_ls_585 <- expand.grid (sci_name = sci_name,
+                                    CM = c("gfdl", "cnrm", "ipsl", "mohc", "CM26"),
+                                    scenario = 585)
+  
+  # apply calc_CM function
+  model_means_585 <- pmap (model_mean_ls_585, calc_CM_mean)
+  
+  # convert list to raster brick
+  model_br_585 <- brick (model_means_585)
+  
+  # calculate SD
+  model_sd_585 <- calc (model_br_585, sd, na.rm = TRUE)
+  
+ ## plot
+  
+  # make one standard color bar based on full range of values
+  overall_vals <- stack (model_sd_245, model_sd_585)
+  col_lims <- c (min (getValues (overall_vals), na.rm = TRUE), max (getValues (overall_vals), na.rm = TRUE))
+  
+  png (paste0("Figures/Thermpred_map_CM_SD_", sci_name, "_Borm_14_alltemp.png"), width = 16, height = 9, units = "in", res = 300)
+  
+  par (mfrow = c (1, 2))
+  plot (model_sd_245, 
+        col = viridis(25),
+        xlim = c (-32, -3), ylim = c (60, 69), zlim = col_lims,
+        legend = FALSE,
+        cex.main = 2,
+
+        main = paste0(sci_name, " SD, SSP 2-4.5"))
+  maps::map('worldHires', add=TRUE, col='grey90', fill=TRUE)
+  
+  plot (model_sd_585, 
+        col = viridis(25),
+        xlim = c (-32, -3), ylim = c (60, 69), zlim = col_lims,
+        cex.main = 2,
+
+        main = paste0(sci_name, " SD, SSP 5-8.5"))
+  maps::map('worldHires', add=TRUE, col='grey90', fill=TRUE)
+  
+  dev.off()
+  
+}
+
+plot_cm_varmap_fun ("Gadus_morhua")
+
+# look at monthly differences for predictions----
+plot_monthly_maps_fun <- function (sci_name, model) {
+  # use "hist" for historical or 4-letter cm abbreviation 
+  if (model == "hist") {
+    br <- brick (paste0("Models/Prediction_bricks/", sci_name, "Borm_14_alltemp_2000_2018.grd"))
+    month_index <- seq ()
+    stackApply....
+  }
+  
+}
+
+
 
 # test maps ----
 
