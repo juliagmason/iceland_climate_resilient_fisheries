@@ -2,7 +2,7 @@
 # 9/22/2020
 #JGM
 
-library (tidyverse)
+#library (tidyverse)
 library (raster)
 library (viridis)
 library (maps)
@@ -115,8 +115,6 @@ purrr::map (comm_spp, plot_pred_maps_fun); beep()
 
 # plot habitat difference ----
 
-
-
 # for the difference maps, I would want to make sure the colors are centered around zero. Looks like this is possible with ggplot but not sure about base R. 
 
 # Going with RasterVis for now: 
@@ -126,14 +124,26 @@ purrr::map (comm_spp, plot_pred_maps_fun); beep()
 # https://stackoverflow.com/questions/50805606/use-viridis-and-map-values-to-colour-in-a-histogram-plot
 # https://stackoverflow.com/questions/33748871/raster-map-with-discrete-color-scale-for-negative-and-positive-values-r
 
+# may want to revisit ggplot for also standardizing color bars across scenarios and species
+
+library (raster)
 library (rasterVis)
 
 library(maps) # for plotting country shapefile
 library(mapdata)
 library(maptools)
 
+library (grid)
 library (gridExtra)
+library (stringr)
+
 library (RColorBrewer)
+
+library (beepr)
+
+# for diverge0
+devtools::source_gist('306e4b7e69c87b1826db')
+
 
 plot_diff_maps_fun <- function (sci_name) {
   
@@ -166,14 +176,25 @@ plot_diff_maps_fun <- function (sci_name) {
   
  
   # create levelplot objects for hist map and differences, with country polygon
-  # add country polygon:
+  # add country polygon for levelplot:
   # https://stackoverflow.com/questions/17582532/r-overlay-plot-on-levelplot
-
+  ext <- as.vector(extent(mn_hist))
+  
+  boundaries <- maps::map('worldHires', fill=TRUE,
+                          xlim=ext[1:2], ylim=ext[3:4],
+                          plot=FALSE)
+  
+  ## read the map2SpatialPolygons help page for details
+  IDs <- sapply(strsplit(boundaries$names, ":"), function(x) x[1])
+  bPols <- map2SpatialPolygons(boundaries, IDs=IDs,
+                               proj4string=CRS(projection(mn_hist)))
+  
+  
   p_245 <- levelplot (diff_245, margin = F,  
                       xlim = c (-32, -3), ylim = c (60, 69),
                       xlab = NULL, ylab = NULL,
                       main = "Habitat difference, SSP 2-4.5") + 
-    layer(sp.polygons(bPols, fill = "white"))
+    latticeExtra::layer(sp.polygons(bPols, fill = "white"))
   
   p_585 <- levelplot (diff_585, margin = F,  
                       xlim = c (-32, -3), ylim = c (60, 69),
@@ -193,17 +214,20 @@ plot_diff_maps_fun <- function (sci_name) {
   
   
   png (paste0("Figures/Thermpred_Diff_map_", sci_name, "_Borm_14_alltemp.png"), width = 16, height = 9, units = "in", res = 300)
-  
+  print(
   grid.arrange (p_hist, diverge0(p_245, ramp = "BrBG"), 
                 diverge0(p_585, ramp = "BrBG"), ncol = 3,
                 top = textGrob(str_replace (sci_name, "_", " "), gp = gpar(fontface="italic", fontsize = 20), vjust = 0.7)
   )
-
+)
   
   dev.off()
 }
 
-plot_diff_maps_fun("Pleuronectes_platessa")
+plot_diff_maps_fun("Cyclopterus_lumpus"); beep()
+load ("Models/spp_Borm_suit.RData")
+
+lapply (borm_suit, plot_diff_maps_fun); beep()
 
 # look at differences among CM predictions----
 plot_cm_maps_fun <- function (sci_name) {
