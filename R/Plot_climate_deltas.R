@@ -6,7 +6,9 @@
 
 # I have a raster brick for each model's deltas and projections, all interpolated to OISST. 
 
-# I want to subset the brick for the values that correspond to the mfri survey/Iceland's waters (especially for MOHC which has some suspect cropping). This code makes a box with the boundaries of Iceland's EEZ; may want to eventually clip to the actual shapefile, or decide on a bounding box. 
+# I want to subset the brick for the values that correspond to the mfri survey/Iceland's waters (especially for MOHC which has some suspect cropping). 
+
+
 library (tidyverse)
 library (raster)
 library (lubridate)
@@ -49,7 +51,7 @@ for (file in brick_files) {
 
 
   # crop raster to EEZ extent
-  proj_ISL <- mask (projections, eez) # it's doing a box, not the shapefile
+  proj_ISL <- mask (projections, eez) 
   
   # grab mean and sd values, and create tidy data frame
   # https://gis.stackexchange.com/questions/200394/calculate-mean-value-for-each-raster-and-convert-output-array-to-data-frame
@@ -130,7 +132,154 @@ projection_means %>%
   facet_grid (rows = vars(model)) +
   theme_bw()
 
-# what is the projected mean warming?
+## plot warming map for 2000-2018 and 2061-2080----
+
+
+library (raster)
+library (rasterVis)
+
+library(maps) # for plotting country shapefile
+library(mapdata)
+library(maptools)
+library (sp)
+library (sf)
+
+library (gridExtra)
+library (RColorBrewer)
+
+# for diverge0
+# https://stackoverflow.com/questions/33750235/plotting-a-raster-with-the-color-ramp-diverging-around-zero
+devtools::source_gist('306e4b7e69c87b1826db')
+
+# just plot deltas ----
+
+# plot deltas (red/blue) binned by decades for SST and BT
+# for mean, could just bring in all the deltas for  a scenario, cut into decade chunks, and take overall mean (calc)
+# for sd, would first need to do mean for each model, and then take sd for those means, as I did in plot_prediction_maps
+
+
+#just break into decade chunks and calculate all decades
+calc_CM_delta_mean <- function (CM, scenario, var) {
+  
+  br <- brick (list.files(path = "Data/CMIP6_deltas/", pattern = paste(CM, scenario, var, "deltas.grd", sep = "_"), full.names = TRUE))
+  
+  # mask to iceland EEZ
+  br_mask <- mask (br, eez)
+  
+  # break into appropriate decades and calculate mean
+  # https://stackoverflow.com/questions/31798389/sum-nlayers-of-a-rasterstack-in-r
+  
+  # cmip6 is 1032 layers, representing 2015-2100. the years I'm interested in would be 2021-2040, 2041-2060, 2061-2080, and 2081-2100, so would want to start at 73. CM28 has 960 layers, 2001-2080, would want to start at 241
+  if (CM == "CM26") {
+    #subset appropriate years, starting at 2021
+    br_sub <- br_mask[[241:960]]
+    dec_index <- rep(1:3, each = 20*12)
+    
+    # calculate mean for each period
+    br_dec_mean <- stackApply (br_sub, dec_index, mean, na.rm = TRUE) # this should have 3 layers
+    
+    
+    
+  } else { 
+    br_sub <- br_mask[[73:1032]]
+    dec_index <- rep(1:4, each = 20*12)
+    
+    # calculate mean for each period
+    br_dec_mean <- stackApply (br_sub, dec_index, mean, na.rm = TRUE)
+    } # end ifelse
+
+} # end function 
+
+# then would use overlay to get the mean of multiple models. Or, if I use lapply with calc_CM_delta_mean, I would get one big list that I would convert into a brick. then I would need to calculate the mean and sd of every 4th layer. 
+
+plot_delta_mean_sd_maps <- function (var, scenario) {
+  
+  # CM_list depends on scenario and dec_index
+  if (scenario == 245) {
+    CM_list <- CM_list <- c("gfdl", "cnrm", "ipsl", "mohc")
+    
+    # index to take mean of models for the different periods
+    dec_avg_index <- rep(1:4, 4)
+    
+  } else { 
+    CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+    dec_avg_index <- rep (1:4, 5)[-20]
+   
+  
+  }
+  
+  # get decadal means for the variable and scenario
+  CMs_ls <- lapply (CM_list, calc_CM_delta_mean, scenario = scenario, var = var) # returns a list
+  
+  # convert to brick
+  CMs_br <- brick (CMs_ls) # should have 19 layers for 585 and 16 for 245, because CM 2.6 doesn't have 2080
+  
+  
+  # calculate mean and sd for each period. returns a brick with 4 layers
+  CMs_mn <- stackApply (CMs_br, dec_avg_index, mean, na.rm = TRUE)
+  CMs_sd <- stackApply (CMs_br, dec_avg_index, sd, na.rm = TRUE)
+  
+  # make levelplot object for mean--want to center color ramp at 0, so takes two steps
+  p_mean <- levelplot (CMs_mn, margin = F,  
+                  xlim = c (-32, -3), ylim = c (60, 69),
+                  xlab = NULL, ylab = NULL,
+                  #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
+                  main = paste0(toupper(var), " delta, mean, ", scenario),
+                  names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100"))
+  
+  # save to file
+  
+  png (paste0("Figures/Deltas_map_", var, "_", scenario, "_mean.png"), width = 16, height = 9, units = "in", res = 300)
+  print(
+  diverge0(p_mean, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))) # best I can figure out for reversing RdBu for now
+  )
+  dev.off()
+  
+  # plot sd with different color scale
+  png (paste0("Figures/Deltas_map_", var, "_", scenario, "_sd.png"), width = 16, height = 9, units = "in", res = 300)
+  print(
+  levelplot (CMs_sd, margin = F,  
+              xlim = c (-32, -3), ylim = c (60, 69),
+              xlab = NULL, ylab = NULL,
+              col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
+              main = paste0(toupper(var), " delta, SD, ", scenario),
+              names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100"))
+  )
+  dev.off()
+  
+  
+} # end function
+
+plot_delta_mean_sd_maps (var = "bt", scenario = 245)
+
+var_cross <- expand_grid (scenario = c(245, 585), var = c("bt", "sst")) %>% as.list()
+
+pmap (var_cross, plot_delta_mean_sd_maps)
+
+
+# add country polygon for levelplot:
+# https://stackoverflow.com/questions/17582532/r-overlay-plot-on-levelplot
+
+load ("Data/prediction_raster_template.RData")
+ext <- as.vector(extent(sst_245_mn))
+
+boundaries <- maps::map('worldHires', fill=TRUE,
+                        xlim=ext[1:2], ylim=ext[3:4],
+                        plot=FALSE)
+
+## read the map2SpatialPolygons help page for details
+IDs <- sapply(strsplit(boundaries$names, ":"), function(x) x[1])
+bPols <- map2SpatialPolygons(boundaries, IDs=IDs,
+                             proj4string=CRS(projection(sst_245_mn)))
+
+levelplot (sst_245_mn_mask, margin = F,  
+           xlim = c (-32, -3), ylim = c (60, 69),
+           xlab = NULL, ylab = NULL,
+           col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
+           main = "Mean SST delta, 2061-2080") #+ 
+  #layer(sp.polygons(bPols, fill = "white")) # bPols not working anymore...
+
+# what is the projected mean warming? ----
 
 # should I use the slope of the trend, or difference in means historical vs future?
 summary (lm (mean ~ date, data = filter (projection_means, ssp == 245, var == "sst")))
