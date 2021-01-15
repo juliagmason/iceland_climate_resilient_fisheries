@@ -219,13 +219,28 @@ plot_delta_mean_sd_maps <- function (var, scenario) {
   CMs_mn <- stackApply (CMs_br, dec_avg_index, mean, na.rm = TRUE)
   CMs_sd <- stackApply (CMs_br, dec_avg_index, sd, na.rm = TRUE)
   
+  #add country polygon for levelplot:
+    # https://stackoverflow.com/questions/17582532/r-overlay-plot-on-levelplot
+    ext <- as.vector(extent(CMs_mn))
+  
+  boundaries <- maps::map('worldHires', fill=TRUE,
+                          xlim=ext[1:2], ylim=ext[3:4],
+                          plot=FALSE)
+  
+  ## read the map2SpatialPolygons help page for details
+  IDs <- sapply(strsplit(boundaries$names, ":"), function(x) x[1])
+  bPols <- map2SpatialPolygons(boundaries, IDs=IDs,
+                               proj4string=CRS(projection(CMs_mn)))
+  
+  
   # make levelplot object for mean--want to center color ramp at 0, so takes two steps
   p_mean <- levelplot (CMs_mn, margin = F,  
                   xlim = c (-32, -3), ylim = c (60, 69),
                   xlab = NULL, ylab = NULL,
                   #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
                   main = paste0(toupper(var), " delta, mean, ", scenario),
-                  names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100"))
+                  names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100")) +
+    latticeExtra::layer(sp.polygons(bPols, fill = "white"))
   
   # save to file
   
@@ -243,7 +258,8 @@ plot_delta_mean_sd_maps <- function (var, scenario) {
               xlab = NULL, ylab = NULL,
               col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
               main = paste0(toupper(var), " delta, SD, ", scenario),
-              names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100"))
+              names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100")) +
+    latticeExtra::layer(sp.polygons(bPols, fill = "white"))
   )
   dev.off()
   
@@ -257,27 +273,135 @@ var_cross <- expand_grid (scenario = c(245, 585), var = c("bt", "sst")) %>% as.l
 pmap (var_cross, plot_delta_mean_sd_maps)
 
 
-# add country polygon for levelplot:
-# https://stackoverflow.com/questions/17582532/r-overlay-plot-on-levelplot
+# plot 8-panel 2061-2080 mean and sd ----
 
-load ("Data/prediction_raster_template.RData")
-ext <- as.vector(extent(sst_245_mn))
+CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 
-boundaries <- maps::map('worldHires', fill=TRUE,
-                        xlim=ext[1:2], ylim=ext[3:4],
-                        plot=FALSE)
+CM_expand <- expand_grid (
+             CM = CM_list,
+             scenario = c(245, 585),
+             var = c ("sst", "bt")
+) %>%
+  filter (!(CM == "CM26" & scenario == 245)) %>% 
+  as.list()
 
-## read the map2SpatialPolygons help page for details
-IDs <- sapply(strsplit(boundaries$names, ":"), function(x) x[1])
-bPols <- map2SpatialPolygons(boundaries, IDs=IDs,
-                             proj4string=CRS(projection(sst_245_mn)))
+# apply mean calculating function, does for all decades
+CMs_ls <- pmap (CM_expand, calc_CM_delta_mean); beep() # 12:30
+# convert to brick
+CMs_br <- brick (CMs_ls) # 70 layers, 19*2 + 16*2. should have 19 layers for 585 and 16 for 245, because CM 2.6 doesn't have 2080. 
+# how do I know which layers correspond to which var/scenario? try plotting. eventually I should be able to take every 3rd layer. I think it's 245 sst gfdl first 4, 245 bt gfdl second 4
+plot (CMs_br[[1:16]])
 
-levelplot (sst_245_mn_mask, margin = F,  
-           xlim = c (-32, -3), ylim = c (60, 69),
-           xlab = NULL, ylab = NULL,
-           col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
-           main = "Mean SST delta, 2061-2080") #+ 
-  #layer(sp.polygons(bPols, fill = "white")) # bPols not working anymore...
+# take every 3rd layer for 2061-80. CM26 is last and only has 3 layers each, so also append the last layer. CMs_2060 should have 18 layers
+CMs_2060 <- subset (CMs_br, c(seq(3,70, by = 4), 70))
+
+# now i need to figure out how to do means. 245 sst--only need 4. 245 bt, 4. 585 sst and bt, 5
+var_index <- c(rep (1:4, 4), 3:4)
+
+# everything i'm doing right now is absurd
+
+# calculate mean and sd for each var/scnario. returns a brick with 4 layers: sst 245, bt 245, sst 585, bt 585
+vars_mn <- stackApply (CMs_2060, var_index, mean, na.rm = TRUE)
+vars_sd <- stackApply (CMs_2060, var_index, sd, na.rm = TRUE)
+
+# only plot sst
+p_sst_245 <- levelplot (vars_mn[[1]], margin = F,  
+                     xlim = c (-32, -3), ylim = c (60, 69),
+                     xlab = NULL, ylab = NULL,
+                     #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
+                     main = "Mean") +
+                     #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+p_sst_585 <- levelplot (vars_mn[[3]], margin = F,  
+                        xlim = c (-32, -3), ylim = c (60, 69),
+                        xlab = NULL, ylab = NULL) +
+                        #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
+                        #main = "SST") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+p_sst_245_sd <- levelplot (vars_sd[[1]], margin = F,  
+                        xlim = c (-32, -3), ylim = c (60, 69),
+                        xlab = NULL, ylab = NULL,
+  col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
+  main = "SD") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+p_sst_585_sd <- levelplot (vars_sd[[3]], margin = F,  
+                        xlim = c (-32, -3), ylim = c (60, 69),
+                        xlab = NULL, ylab = NULL,
+  col.regions = colorRampPalette (brewer.pal (9, "PuBuGn"))) +
+  #main = "SST") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+png (paste0("Figures/Deltas_map_2061_sst.png"), width = 6, height = 6, units = "in", res = 300)
+print(
+  grid.arrange (
+    diverge0(p_sst_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+    p_sst_245_sd,
+    diverge0(p_sst_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+    p_sst_585_sd,
+    ncol = 2,
+    top = textGrob("SST", gp = gpar(fontsize = 20), vjust = 0.7)
+  )
+  )
+dev.off()
+
+
+# plot bt
+
+p_bt_245 <- levelplot (vars_mn[[2]], margin = F,  
+                        xlim = c (-32, -3), ylim = c (60, 69),
+                        xlab = NULL, ylab = NULL,
+                        #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
+                        main = "Mean") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+p_bt_585 <- levelplot (vars_mn[[4]], margin = F,  
+                        xlim = c (-32, -3), ylim = c (60, 69),
+                        xlab = NULL, ylab = NULL) +
+  #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
+  #main = "bt") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+p_bt_245_sd <- levelplot (vars_sd[[2]], margin = F,  
+                           xlim = c (-32, -3), ylim = c (60, 69),
+                           xlab = NULL, ylab = NULL,
+                           col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
+                           main = "SD") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+p_bt_585_sd <- levelplot (vars_sd[[4]], margin = F,  
+                           xlim = c (-32, -3), ylim = c (60, 69),
+                           xlab = NULL, ylab = NULL,
+                           col.regions = colorRampPalette (brewer.pal (9, "PuBuGn"))) +
+  #main = "bt") +
+  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
+  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
+
+png (paste0("Figures/Deltas_map_2061_bt.png"), width = 6, height = 6, units = "in", res = 300)
+print(
+  grid.arrange (
+    diverge0(p_bt_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+    p_bt_245_sd,
+    diverge0(p_bt_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+    p_bt_585_sd,
+    ncol = 2,
+    top = textGrob("BT", gp = gpar(fontsize = 20), vjust = 0.7)
+  )
+)
+dev.off()
+
+# https://stackoverflow.com/questions/48921217/r-center-red-to-blue-color-palette-at-0-in-levelplot
+
+
+#
 
 # what is the projected mean warming? ----
 
