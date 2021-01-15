@@ -104,13 +104,15 @@ ipcc_red <- rgb (153, 0, 2, maxColorValue = 255)
 ipcc_blue <- rgb (112, 160, 205, maxColorValue = 255)
 
 png ("Figures/Temp_ts_GLORYS_CMIP_BT_only.png" , width = 16, height = 9, units = "in", res = 300)
+
+png ("Figures/Temp_ts_GLORYS_CMIP_SST_only.png" , width = 16, height = 9, units = "in", res = 300)
 ggplot () +
-  geom_point (aes (x = date, y = mean), data = filter (glorys_annual, var == "BT")) +
-  geom_line (aes (x = date, y = mean), data = filter (glorys_annual, var == "BT")) +
+  geom_point (aes (x = date, y = mean), data = filter (glorys_annual, var == "SST")) +
+  geom_line (aes (x = date, y = mean), data = filter (glorys_annual, var == "SST")) +
   #stat_summary(aes(group=ssp, x = year, y =annual_mn, lty = ssp), fun = mean, geom="line", colour="black", lwd = 1.5, data = cmip) +
-  geom_point (aes (x = year, y =annual_mn, shape = model, col = ssp), data = filter(cmip, var == "BT") , alpha = 0.5) +  
-  geom_line (aes (x = year, y =annual_mn, shape = model, col = ssp), data = filter(cmip, var == "BT"), alpha = 0.5) +  
-  geom_smooth (aes (x = year, y = annual_mn, col = ssp), data = filter(cmip, var == "BT"), method = "loess") +
+  geom_point (aes (x = year, y =annual_mn, shape = model, col = ssp), data = filter(cmip, var == "SST") , alpha = 0.5) +  
+  geom_line (aes (x = year, y =annual_mn, shape = model, col = ssp), data = filter(cmip, var == "SST"), alpha = 0.5) +  
+  geom_smooth (aes (x = year, y = annual_mn, col = ssp), data = filter(cmip, var == "SST"), method = "loess") +
   
   #facet_grid (rows = vars(var), scales = "free_y") + 
   theme_bw() +
@@ -125,6 +127,6 @@ ggplot () +
   ) +
   scale_x_continuous (breaks = c (2000, 2020, 2040, 2060, 2080, 2100)) +
   scale_color_manual (values = c (ipcc_blue, ipcc_red), name = "Scenario") +
-  ggtitle ("Mean annual bottom temperature in Iceland's EEZ, GLORYS reanalysis and CMIP6 projections")
+  ggtitle ("Mean annual surface temperature in Iceland's EEZ, GLORYS reanalysis and CMIP6 projections")
 dev.off()
 
