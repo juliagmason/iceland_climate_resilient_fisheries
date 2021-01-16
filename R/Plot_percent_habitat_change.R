@@ -5,7 +5,6 @@
 library (raster)
 library (tidyverse)
 library (beepr) # for letting me know when long runs finish
-#library (rgeos)
 
 
 # list of species
@@ -18,8 +17,6 @@ spp_list  <- read_csv ("Data/species_eng.csv",
   # https://stackoverflow.com/questions/42565539/using-strsplit-and-subset-in-dplyr-and-mutate
   mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
 
-          
-   # fill in any missing common names, for more legible graphs
 
 # spp I ran models for
 load ("Models/spp_Smooth_latlon.RData") 
@@ -108,97 +105,34 @@ save (pred_hist_hab, file = "Data/pred_hist_hab_df.RData")
 # ==================
 # load and plot habitat change ----
 # ==================
+
 load ("Data/pred_hist_hab_df.RData")
 
+# Plot only 47 suitable species presented in publication
 # list of suitable/used species. 49
 load ("Models/spp_Smooth_latlon.RData")
 
+# filter out pelagics and spp that didn't have enough data for training, so couldn't determine suitability
 borm_spp <- spp_Smooth_latlon %>% 
-  filter (! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis", "Clupea_harengus", "Scomber_scombrus", "Mallotus_villosus"))
+  filter (! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis", "Clupea_harengus", "Scomber_scombrus", "Mallotus_villosus", "Micromesistius_poutassou", "Argentina_silus"))
 
+# GAM performance suitability measures
 MASE <- read_csv ("Models/GAM_performance_Borm_14_alltemp.csv")
+
 spp_suit <- MASE %>%
   filter (MASE_GAM < 1, DM_GAM_p < 0.05)
 
 borm_suit <- borm_spp %>% filter (sci_name_underscore %in% spp_suit$species) %>% pull (sci_name_underscore)
-# save for running on remote desktop. 49 species
+# save for running on remote desktop. 49 species. 47 without blue whiting or argentine. 
 save (borm_suit, file = "Models/spp_Borm_suit.RData")
 
-# calculate prediction means for looking at overall change
 
-# manipulate habitat predictions so I have a long/tidy df with 3 columns: species name, period (hist, 245, 585), and mean habitat. Mean for historical is the mean for 2000-2018; mean for future is a mean of means, 2060-2080 for all climate models
-hab_means <- pred_hist_hab  %>%
-  filter (!species %in% c("Phycis_blennoides"), species %in% borm_suit) %>% # weird high values due to sinusoid depth rltp. also remove pelagic/non-suitable.
-  # could I use map here instead?
-  group_by (species, scenario) %>%
-  summarise (hab_future = mean(pred_mean),
-             hab_hist = first (hist_mean)) %>% 
-  pivot_wider (names_from = scenario,
-               values_from = hab_future, 
-               names_prefix = "hab_") %>%
-  pivot_longer (!species, 
-                names_to = "period", 
-                names_prefix = "hab_",
-                values_to = "habitat") 
-   # 48 total bc also took out p. blennoides
-  
+# species-by-species change ----
 
-# For a more legible graph, only show the top few species
-top_hab_spp <- hab_means %>%
-  group_by (species) %>%
-  summarize (max_hab = max (habitat)) %>%
-  # join to spp_list to use common_names
-  left_join (spp_list, by = "species") %>% 
-  top_n (7, max_hab) # qual color palettes have 8-12 options
+# Looking at various metrics. Percent change is the most common, but hard to interpret when negative and positive changes are very large. Makes positive changes look way more important than negative changes. 
 
 
-# plot total change in biomass  ----
-png ("Figures/Hab_change_overall_biomass_commnames_suitable.png", width = 16, height = 9, res = 300, units = "in")
-
-# stacked barplot with columns for historical, 245, and 585. color is species habitat, total height of bar is total amount of suitable habitat. 
-
-hab_means %>%
-  
-  # add common names
-  left_join (spp_list, by = "species") %>% 
- 
-  mutate (Common_name = ifelse (species %in% top_hab_spp$species, 
-                                Common_name,
-                            "Other"),
-          # set factor order 
-          period = factor (period, levels = c("hist", 245, 585)),
-          Common_name = factor (Common_name, levels = c (top_hab_spp$Common_name, "Other"))
-          ) %>%
-  ggplot (aes (x = period, y = habitat, fill = Common_name)) +
-  geom_bar (stat = "identity") +
-  scale_fill_brewer (palette = "Dark2", name = "Species") +
-  labs (y = "Suitable thermal habitat", x = "Period") +
-  theme_bw() +
-  theme (
-    axis.text.x = element_text (size = 18),
-    axis.text.y = element_text (size = 16),
-    axis.title = element_text (size = 18),
-    plot.title = element_text (size = 24),
-    legend.text = element_text (size = 16),
-    legend.title = element_text (size = 18)
-  ) +
-  ggtitle ("Total suitable thermal habitat in Iceland's EEZ, all species")
-dev.off()
-  
-
-# OR facet wrap 
-hab_means %>% 
-
-  ggplot (aes (x = period, y = log(habitat), fill = species)) +
-  geom_bar (stat = "identity") +
-  facet_wrap (~scenario)
-
-
-
-# compile various metrics of change for looking at species-by-species change ----
-
-
-# bring in icelandic names
+# bring in icelandic names for graphs for stakeholders
 isl_spp <- read_csv ("Data/Raw_data/species.csv",
                      col_types = cols(
                        tegund = col_factor()
@@ -209,8 +143,13 @@ isl_spp <- read_csv ("Data/Raw_data/species.csv",
 
 
 hab_change <- pred_hist_hab %>%
+  
+  # filter suitable (makes some of the below code unnecessary)
+  filter (species %in% borm_suit) %>%
   left_join (spp_list, by = "species") %>% 
+  # use isl_spp instead of spp_list for icelandic names. 
   #left_join (isl_spp, by = "species") %>%
+  
   left_join (MASE, by = "species") %>%
   
 
@@ -252,10 +191,10 @@ hab_change <- pred_hist_hab %>%
     
     # reorder species values by amt of change
     #https://www.r-graph-gallery.com/267-reorder-a-variable-in-ggplot2.html
-    # would depend on change variable of interest...?
-    species = fct_reorder (species, perc_change),
+    # would depend on change variable of interest...
+    species = fct_reorder (species, log10_foldchange),
     # also reorder common_name for changing labels
-    Common_name = fct_reorder (Common_name, perc_change)
+    Common_name = fct_reorder (Common_name, log10_foldchange)
     # icelandic name is heiti
    # heiti = fct_reorder (heiti, perc_change)
   ) 
@@ -264,18 +203,24 @@ hab_change <- pred_hist_hab %>%
 # make a ggplot unit that I can manipulate for different uses ----
 # can manipulate boxplot aesthetics, col and fill values, legend position, title. Labs command gets overridden, so put in subsequent
 
-# legend position: c(0.83, 0.15) works well for percent change,c(0.6, 0.9) for log10 fold change 
+# legend position: c(0.83, 0.15) works well for percent change, c(0.6, 0.9) for log10 fold change 
+
+# re-label scenarios
+scen_labs <- c("SSP 2-4.5", "SSP 5-8.5")
+names (scen_labs) <- c(245, 585) 
 
 hab_change_gg <- hab_change %>%
+  
   # filter landed species, using MFRI data loaded in plot_region_sector_exposure. remember to include lumpfish
   #filter (Spp_ID %in% ldgs$species | Spp_ID == 48) %>% 
   # get rid of species that I didn't have enough data for model diagnostics
-  filter (!is.na (Model_suitable)) %>%
+  #filter (!is.na (Model_suitable)) %>%
   #filter (Model_suitable == 1, species != "Leptoclinus_maculatus") %>%
   ggplot () +
   guides (color = FALSE) +
   geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
-  facet_wrap (~scenario) +
+  facet_wrap (~scenario, 
+              labeller = labeller(scenario = scen_labs)) +
   theme_bw() +
   theme (
     axis.text.x = element_text (size = 14),
@@ -286,28 +231,23 @@ hab_change_gg <- hab_change %>%
     legend.text = element_text (size = 14)
   ) 
 
-# plot log10 change, by quota ----
-png (file = "Figures/Log10_hab_change_quota_boxplot_Borm14_alltemp_commnames.png", width = 16, height = 9, units = "in", res = 300)
 
-hab_change_gg +
-  geom_boxplot (aes (y = Common_name, 
-                     x = log10_foldchange,
-                     color = Quota,
-                     fill = fill_quota,
-                     width = 0.85)) +
-  labs (fill = "", y = "",
-        x = "Habitat change") +
-  scale_fill_manual (values = alpha (c("lightgray",  "#F8766D", "#00BFC4"), 0.5)) +
-  ggtitle ("Log x-fold Habitat change, 2000-2018 vs. 2061-2080") + 
-  theme (legend.position = c(0.6, 0.9))
+# try to bold if commercial
+# https://stackoverflow.com/questions/38862303/customize-ggplot2-axis-labels-with-different-colors
 
-dev.off()
+# hab_change is ordered. I just need to take distinct spp and then if it has a landed_name?
+hc_landed <- hab_change %>%
+  dplyr::select (species, Landed_name) %>% 
+  distinct()
 
-# plot percent change, by TB ----
- #png (file = "Figures/Log10_hab_change_TB_boxplot_Borm14_commnames.png", width = 16, height = 9, units = "in", res = 300)
+# not supported
+face_landed <- ifelse (is.na(hc_landed$Landed_name), "plain", "bold")
+# manually fix lumpfish
+face_landed[2] <- "bold"
 
-#png (file = "Figures/Log10_hab_change_TB_boxplot_Borm14_alltemp_islnames.png", width = 10, height = 8, units = "in", res = 150)
-png (file = "Figures/Log10_hab_change_TB_boxplot_Borm14_commnames_simplified.png", width = 16, height = 9, units = "in", res = 300)
+
+
+png (file = "Figures/Fig3_Hab_change_TB_boxplot_suitable.png", width = 16, height = 9, units = "in", res = 300)
 
 hab_change_gg +
   geom_boxplot (aes (y = Common_name,
@@ -320,25 +260,21 @@ hab_change_gg +
                      )) +
   labs (fill = "",
         y = "",
-        x = "Log Habitat change") +
+        x = "Log (Thermal habitat change)") +
   #scale_color_binned (breaks = c (2, 4, 6), low = "orange", high = "blue" ) +
-  scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
+  scale_color_manual (values = c("blue", "deepskyblue", "red2")) #+
   #scale_fill_manual (values = alpha (c("lightgray", "blue", "deepskyblue", "red2"), 0.5)) +
   #scale_fill_binned (breaks = c (2, 4, 6), low = "orange", high = "blue" ) +
   #theme (legend.position = c(0.6, 0.9)) +
   #theme (legend.position = c(0.65))
   #theme (legend.title = element_text (size = 18)) +
-  ggtitle ("Log x-fold change, 2000-2018 vs. 2061-2080") 
+  #theme (axis.text.x = element_text (face = face_landed)) +
+  #ggtitle ("Log x-fold change, 2000-2018 vs. 2061-2080") 
 
 dev.off()
 
 
-
-# plot portrait with TB for Cat
-
-png (file = paste0("Figures/Percent_hab_change_TB_boxplot_portrait_", GAM, ".png"), width = 8.5, height = 11, units = "in", res = 300)
-
-# how many overall increased vs. decreased?
+# count how many overall increased vs. decreased ----
 hab_inc <- hab_change %>% 
   filter (species %in% borm_suit) %>%
   group_by (species, scenario) %>% summarise (med = median (log10_foldchange)) %>% filter (med > 0)
@@ -358,6 +294,7 @@ hab_change %>%
   group_by (scenario) %>%
   summarise (count = n())
 # 14 spp in 245, 18 in 585
+# among borm_suit, 13, in 245, 15 in 585
 
 hab_change %>%
   filter (species %in% hab_dec$species) %>%
@@ -367,7 +304,85 @@ hab_change %>%
   group_by (scenario) %>%
   summarise (count = n())
 # 16 species
+# borm_suit, 15, in 245, 16 585
+
+# ==================
+# calculate prediction means for looking at overall change ----
+# ==================
+
+
+# manipulate habitat predictions so I have a long/tidy df with 3 columns: species name, period (hist, 245, 585), and mean habitat. Mean for historical is the mean for 2000-2018; mean for future is a mean of means, 2060-2080 for all climate models
+hab_means <- pred_hist_hab  %>%
+  filter (!species %in% c("Phycis_blennoides"), species %in% borm_suit) %>% # weird high values due to sinusoid depth rltp. also remove pelagic/non-suitable.
+  # could I use map here instead?
+  group_by (species, scenario) %>%
+  summarise (hab_future = mean(pred_mean),
+             hab_hist = first (hist_mean)) %>% 
+  pivot_wider (names_from = scenario,
+               values_from = hab_future, 
+               names_prefix = "hab_") %>%
+  pivot_longer (!species, 
+                names_to = "period", 
+                names_prefix = "hab_",
+                values_to = "habitat") 
+# 48 total bc also took out p. blennoides
+
+
+# For a more legible graph, only show the top few species
+top_hab_spp <- hab_means %>%
+  group_by (species) %>%
+  summarize (max_hab = max (habitat)) %>%
+  # join to spp_list to use common_names
+  left_join (spp_list, by = "species") %>% 
+  top_n (7, max_hab) # qual color palettes have 8-12 options
+
+
+# plot total change in biomass  ----
+png ("Figures/Hab_change_overall_biomass_commnames_suitable.png", width = 16, height = 9, res = 300, units = "in")
+
+# stacked barplot with columns for historical, 245, and 585. color is species habitat, total height of bar is total amount of suitable habitat. 
+
+hab_means %>%
   
+  # add common names
+  left_join (spp_list, by = "species") %>% 
+  
+  mutate (Common_name = ifelse (species %in% top_hab_spp$species, 
+                                Common_name,
+                                "Other"),
+          # set factor order 
+          period = factor (period, levels = c("hist", 245, 585)),
+          Common_name = factor (Common_name, levels = c (top_hab_spp$Common_name, "Other"))
+  ) %>%
+  ggplot (aes (x = period, y = habitat, fill = Common_name)) +
+  geom_bar (stat = "identity") +
+  scale_fill_brewer (palette = "Dark2", name = "Species") +
+  labs (y = "Suitable thermal habitat", x = "Period") +
+  theme_bw() +
+  theme (
+    axis.text.x = element_text (size = 18),
+    axis.text.y = element_text (size = 16),
+    axis.title = element_text (size = 18),
+    plot.title = element_text (size = 24),
+    legend.text = element_text (size = 16),
+    legend.title = element_text (size = 18)
+  ) +
+  ggtitle ("Total suitable thermal habitat in Iceland's EEZ, all species")
+dev.off()
+
+
+# OR facet wrap 
+hab_means %>% 
+  
+  ggplot (aes (x = period, y = log(habitat), fill = species)) +
+  geom_bar (stat = "identity") +
+  facet_wrap (~scenario)
+
+
+# ================== 
+# Statistical relationships btw hab_change and thermal preference ----
+# ==================
+
 # scatterplot habitat change vs. TB, steno ----
 
 # median log10 change for each species
@@ -413,7 +428,7 @@ png ("Figures/scatter_TB_log10change.png")
 dev.off()
 
 
-# bring in centroid change
+# statistical relationships btw therm pref and centroid change ----
 load ("Data/centroids_Borm14_alltemp_allscenarios.RData")
 
 # calculate distance between warm and cold edges too
