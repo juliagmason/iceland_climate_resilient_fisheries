@@ -15,6 +15,10 @@ library (lubridate)
 library (sf)
 
 
+# ==================
+# Calculate projected mean and sd for Iceland's EEZ for each time step ----
+# ==================
+
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
 
@@ -39,9 +43,7 @@ for (file in brick_files) {
   
   projections <- brick(paste0("Data/CMIP6_delta_projections/", file))
   
-  #crop CMIP6 files to smaller time period
-  #if (dim (projections)[3]  == 1032)  {projections  <-  projections[[73:1032]] }
-  # actually should crop cm 2.6, because that should cut off at 2080? take off the first 15 years. # assuming CM 2.6 is 960, so assuming 2001 -2080. 
+  # CMIP6 projections have 1032 time steps (2015-2100) and CM 2.6 has 960 (2001-2080). Crop off the first 15 years for CM 2.6 
   if (dim (projections)[3] != 1032) {
     
     projections <- projections[[169:960]]
@@ -172,33 +174,27 @@ dev.off()
 
 ## plot delta warming maps----
 
+library (tidyverse)
+library (sf) # for eez shapefile
 
 library (raster)
 library (rasterVis)
 
-library(maps) # for plotting country shapefile
-library(mapdata)
-library(maptools)
-library (sp)
-library (sf)
-
 library (grid)
 library (gridExtra)
-library (RColorBrewer)
 
-# for diverge0
-# https://stackoverflow.com/questions/33750235/plotting-a-raster-with-the-color-ramp-diverging-around-zero
-devtools::source_gist('306e4b7e69c87b1826db')
+# iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
+eez <- st_read("Data/eez.shp")
 
-# just plot deltas
+# using several functions to get here. Unfortunately can't figure out how to do more sophisticated raster layer naming/facetting to do this within a list column.
 
-# plot deltas (red/blue) binned by decades for SST and BT
-# for mean, could just bring in all the deltas for  a scenario, cut into decade chunks, and take overall mean (calc)
-# for sd, would first need to do mean for each model, and then take sd for those means, as I did in plot_prediction_maps
-
-
-#just break into decade chunks and calculate all decades
-calc_CM_delta_mean <- function (CM, scenario, var) {
+# return a raster layer where each lat/lon cell is the mean temperature over the period provided
+calc_CM_delta_mean <- function (CM, scenario, var, period) {
+  
+  # CM is lowercase 4-digit climate model code
+  # scenario is 245 or 585
+  # var is sst or bt
+  # period should be the first year, e.g. 2021, 2061
   
   br <- brick (list.files(path = "Data/CMIP6_deltas/", pattern = paste(CM, scenario, var, "deltas.grd", sep = "_"), full.names = TRUE))
   
@@ -206,30 +202,173 @@ calc_CM_delta_mean <- function (CM, scenario, var) {
   br_mask <- mask (br, eez)
   
   # break into appropriate decades and calculate mean
-  # https://stackoverflow.com/questions/31798389/sum-nlayers-of-a-rasterstack-in-r
-  
+
   # cmip6 is 1032 layers, representing 2015-2100. the years I'm interested in would be 2021-2040, 2041-2060, 2061-2080, and 2081-2100, so would want to start at 73. CM28 has 960 layers, 2001-2080, would want to start at 241
+
   if (CM == "CM26") {
-    #subset appropriate years, starting at 2021
-    br_sub <- br_mask[[241:960]]
-    dec_index <- rep(1:3, each = 20*12)
     
-    # calculate mean for each period
-    br_dec_mean <- stackApply (br_sub, dec_index, mean, na.rm = TRUE) # this should have 3 layers
+    # make a years index to select the appropriate starting layer based on period of interest
+    CM_yrs <- rep(2001:2080, each = 12)
+    start_layer <- which (CM_yrs == period)[1]
+    
+    #subset appropriate years, starting at 2021
+    br_sub <- br_mask[[start_layer:(start_layer + 239)]]
+    
+    # calculate mean for period
+    br_mean <- calc (br_sub, mean, na.rm = TRUE) 
     
     
     
   } else { 
-    br_sub <- br_mask[[73:1032]]
-    dec_index <- rep(1:4, each = 20*12)
     
-    # calculate mean for each period
-    br_dec_mean <- stackApply (br_sub, dec_index, mean, na.rm = TRUE)
+    CM_yrs <- rep(2015:2100, each = 12)
+    start_layer <- which (CM_yrs == period)[1]
+
+    #subset appropriate years, starting at 2021
+    br_sub <- br_mask[[start_layer:(start_layer + 239)]]
+
+    # calculate mean for period
+    br_mean <- calc (br_sub, mean, na.rm = TRUE) 
+    
     } # end ifelse
 
 } # end function 
 
-# then would use overlay to get the mean of multiple models. Or, if I use lapply with calc_CM_delta_mean, I would get one big list that I would convert into a brick. then I would need to calculate the mean and sd of every 4th layer. 
+tmp <- calc_CM_delta_mean(CM = "gfdl", scenario = 245, var = "sst", period = 2061)
+
+# then would use overlay to get the mean of multiple models. Or, if I use lapply with calc_CM_delta_mean, I would get one big list that I would convert into a brick. 
+
+# returns one layer that provides either the mean or sd of all the climate models
+calc_ensemble_delta <- function (scenario, var, period, metric) {
+  # scenario is 245 or 585
+  # var is "sst" or "bt"
+  # period should be the first year, e.g. 2021, 2061
+  # metric is either "mean" or "sd"
+  
+  # CM_list depends on scenario 
+  if (scenario == 245) {
+    CM_list <- CM_list <- c("gfdl", "cnrm", "ipsl", "mohc")
+
+    
+  } else { 
+    
+    CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
+    
+  } # end ifelse
+  
+  # get decadal means for the variable and scenario
+  CMs_ls <- lapply (CM_list, calc_CM_delta_mean, scenario = scenario, var = var, period = period) # returns a list
+  
+  # convert to brick
+  CMs_br <- brick (CMs_ls)
+  
+  # not sure how to use functions as arguments...
+  if (metric == "mean") {
+    func = function (x) mean (x, na.rm = TRUE)
+  } else if (metric == "sd") {
+    func = function (x) sd (x, na.rm = TRUE)
+  }
+  
+  # calculate metric of interest, either mean or SD. should be one layer 
+  CMs_metric <- calc (CMs_br, func)
+
+  
+} # end function
+
+tmp2 <- calc_ensemble_delta(scenario = 245, var = "sst", period = 2061, metric = "mean"); beep()
+
+# I eventually would want a nested dataframe with var (sst, bt), scenario (245, 585), decade, measure (mean, sd)
+# don't think it will ultimately work to have a listcolumn, don't think gplot could handle
+
+# instead, an additional function to calculate and plot?
+plot_delta_map_fun <- function (var, period, metric) {
+  
+  # apply ensemble function for both scenarios
+  delta_ls <- lapply (c(245, 585), calc_ensemble_delta, var = var, metric = metric, period = period)
+  
+  # convert to brick
+  delta_br <- brick (delta_ls) # should just have two layers
+  
+  # fix names for labeller
+  # labels_names <- setNames(raster_names, unique(NDVI_HARV_stack_df$variable))
+  scen_labs <- setNames ( c("SSP 2-4.5", "SSP 5-8.5"), names (delta_br))
+ 
+
+  # set colorbar
+  
+  # for 2061: mean -2.55 - 8.46; sd 0 - 4.17
+  if (metric == "mean") {
+    # colors from RdBu R colorbrewer
+    low_val <- "#2166AC"
+    mid_val <- "#F7F7F7"
+    high_val <- "#B2182B"
+    mdpt <- 0
+    lim <- c(-2.6, 8.5)
+  } else if (metric == "sd") {
+    low_val <- "#F7FCFD"
+    high_val <- "#00441B"
+    mid_val <- "#66C2A4"
+    mdpt <- median (getValues (delta_br), na.rm = TRUE)
+    lim <- c(0, 4.2)
+
+  }
+  
+  # plot
+
+  
+  gplot (delta_br) +
+    geom_raster (aes (fill = value)) +
+    borders (fill = "grey90", col = "black", 
+             xlim = c (-32, -3), ylim = c (60, 69)) +
+    coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+    facet_wrap (~variable, labeller = labeller (variable = scen_labs)) +
+    scale_fill_gradient2 (low = low_val, mid = mid_val, high = high_val, midpoint = mdpt, na.value = "white", limits = lim) +
+    labs (fill = expression(paste(degree, 'C'))) +
+    theme_bw () +
+    theme (
+      axis.text = element_text (size = 12),
+      axis.title = element_blank (),
+      strip.text = element_text (size = 14),
+      legend.text = element_text (size = 12),
+      legend.title = element_text (size = 14)
+    ) 
+  
+
+  
+} # end function
+
+system.time(p_sst <- plot_delta_map_fun ("sst", 2061, "mean"));beep() # about 90s
+p_bt <- plot_delta_map_fun ("bt", 2061, "mean")
+
+grid.arrange (p_sst, p_bt, nrow = 2)
+
+deltas_ls <- expand_grid (var = c("sst", "bt"),
+                          scenario = c(245, 585),
+                          period = c(2021, 2041, 2061, 2081),
+                          metric = c("mean", "sd")
+                          ) %>%
+  as.list()
+  # nest() %>%
+  # mutate (raster = purrr::pmap(., calc_ensemble_delta(var, scenario, period, metric))) %>%
+  # unnest()
+
+system.time(deltas_rasters <- pmap(deltas_ls, calc_ensemble_delta)); beep()
+
+tmp_ls <-  expand_grid (var = "sst",
+                        scenario = c(245, 585),
+                        period = c(2021, 2041, 2061, 2081),
+                        metric = "mean") %>%
+  as.list()
+
+# can I just give a raster names with a list
+sample_names <- c( "SST mean, SSP 2-4.5",
+                   "BT mean, SSP 5-8.5",
+                   "SST mean, SSP 2-4.5",
+                   "BT mean, SSP 5-8.5"
+)
+  as.list()
+
+names (vars_mn) <- sample_names
 
 plot_delta_mean_sd_maps <- function (var, scenario) {
   
@@ -340,6 +479,33 @@ var_index <- c(rep (1:4, 4), 3:4)
 # calculate mean and sd for each var/scnario. returns a brick with 4 layers: sst 245, bt 245, sst 585, bt 585
 vars_mn <- stackApply (CMs_2060, var_index, mean, na.rm = TRUE)
 vars_sd <- stackApply (CMs_2060, var_index, sd, na.rm = TRUE)
+
+# try gplot rastervis
+# https://rpubs.com/markpayne/134739
+
+# some plot beautification tips:
+#https://datacarpentry.org/r-raster-vector-geospatial/13-plot-time-series-rasters-in-r/
+vars_stack <- stack (vars_mn, vars_sd)
+
+
+gplot (vars_stack) +
+  geom_raster (aes (fill = value)) +
+  borders (fill = "grey90", col = "black", 
+           xlim = c (-32, -3), ylim = c (60, 69)) +
+  coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+  facet_wrap (~variable) +
+  scale_fill_gradient2 (low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", midpoint = 0)
+
+
+gplot (vars_mn) +
+  geom_raster (aes (fill = value)) +
+  borders (fill = "grey90", col = "black", 
+           xlim = c (-32, -3), ylim = c (60, 69)) +
+  coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+  facet_wrap (~variable, byrow = TRUE) +
+  scale_fill_gradient2 (low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", midpoint = 0)
+
+
 
 # only plot sst ----
 p_sst_245 <- levelplot (vars_mn[[1]], margin = F,  
