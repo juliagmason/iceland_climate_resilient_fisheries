@@ -71,9 +71,10 @@ for (file in brick_files) {
 save (projection_means, file = "Data/CMIP6_delta_projections/projection_mn_sd_table_CM26.RData")
 
 ### load and plot ----
+
 load ("Data/CMIP6_delta_projections/projection_mn_sd_table_CM26.RData")
 
-# plot annual values 
+# plot projection TS with 2 panels for scenarios----
 png ("Figures/CMIP_CM26_temp_projections_ts_widescreen.png", width = 16, height = 9, units = "in", res = 300)
 projection_means %>%
   mutate (var = factor(var, levels = c("sst", "bt"))) %>%
@@ -103,36 +104,73 @@ projection_means %>%
   ggtitle ("Climate model projections (delta + climatology) for Iceland's EEZ")
 dev.off()
 
-projection_means %>%
-  filter (ssp == 585, var == "sst") %>%
-  ggplot (aes (x = date, y = mean)) +
-  #geom_point() +
-  geom_line() +
-  facet_grid (rows = vars(model)) +
-  theme_bw()
 
-projection_means %>%
-  filter (ssp == 585, var == "sst") %>%
-  ggplot (aes (x = date, y = sd)) +
-  #geom_point() +
-  geom_line() +
-  facet_grid (rows = vars(model)) +
-  theme_bw()
+## Plot projection TS with GLORYS backcast ----
+
+# GLORYS north atlantic raster bricks. monthly observations (16th day of each month) from 1993-2018
+gl_sst <- brick ("Data/glorys_sst_16_sample.grd") # 140-240-312, for 1993-2018. 
+gl_bt <- brick ("Data/glorys_bt_16_sample.grd")
+
+# clip Iceland's waters
+sst_clip <- mask (gl_sst, eez)
+bt_clip <- mask (gl_bt, eez)
+
+# vector of dates
+glorys_dates <- seq (ymd("1993-01-16"), ymd("2018-12-16"), by = "months")
+
+# extract mean value for each month and convert to df
+glorys_df <- data.frame (
+  date = rep (glorys_dates, 2),
+  # cellStats will return one value for each layer
+  mean = c(cellStats (sst_clip, "mean"), cellStats(bt_clip, "mean")), 
+  sd = c(cellStats (sst_clip, "sd"), cellStats (bt_clip, "sd")),
+  var = c (rep ("SST", 312), rep ("BT", 312))
+)
+
+cmip <- projection_means %>%
+  mutate (var = factor(toupper(var), levels = c("SST", "BT")),
+          model = toupper(model)) %>%
+  group_by(year(date), model, ssp, var) %>%
+  summarize(annual_mn = mean(mean)) %>%
+  rename (year = `year(date)`) 
+
+# plot with SST and BT as panels, models as shapes ----
+# use IPCC colors for scenarios
+#https://www.ipcc.ch/site/assets/uploads/2019/04/IPCC-visual-style-guide.pdf
+#https://stackoverflow.com/questions/41811653/rgb-with-ggplot2-in-r
+ipcc_red <- rgb (153, 0, 2, maxColorValue = 255)
+ipcc_blue <- rgb (112, 160, 205, maxColorValue = 255)
+
+ts_plot <- ggplot () +
+  geom_point (aes (x = date, y = mean), data = glorys_annual) +
+  geom_line (aes (x = date, y = mean), data = glorys_annual) +
+  #stat_summary(aes(group=ssp, x = year, y =annual_mn, lty = ssp), fun = mean, geom="line", colour="black", lwd = 1.5, data = cmip) +
+  geom_point (aes (x = year, y = annual_mn, shape = model, col = ssp), data = cmip , alpha = 0.5) +  
+  geom_line (aes (x = year, y = annual_mn, shape = model, col = ssp), data = cmip, alpha = 0.5) +  
+  geom_smooth (aes (x = year, y = annual_mn, col = ssp), data = cmip, method = "loess") +
+  
+  facet_grid (rows = vars(var), scales = "free_y") + 
+  theme_bw() +
+  labs (y = "Degrees C, annual mean", x = "") +
+  theme (
+    axis.text = element_text (size = 12),
+    axis.title = element_text (size = 14),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.position = "none"
+    # legend.title = element_text (size = 20),
+    # legend.text = element_text (size = 18)
+  ) +
+  scale_x_continuous (breaks = c (2000, 2020, 2040, 2060, 2080, 2100)) +
+  scale_color_manual (values = c (ipcc_blue, ipcc_red), name = "Scenario") 
+  #ggtitle ("Mean annual surface temperature in Iceland's EEZ, GLORYS reanalysis and CMIP6 projections")
 
 
-projection_means %>%
-  filter (ssp == 585, var == "sst") %>%
-  #filter (model == "gfdl") %>%
-  group_by(year(date), model) %>%
-  summarize(annual_sd = mean(sd)) %>%
-  rename (year = `year(date)`) %>% 
-  ggplot (aes (x = year, y = annual_sd)) +
-  #geom_point() +
-  geom_line() +
-  facet_grid (rows = vars(model)) +
-  theme_bw()
+png ("Figures/CMIP_Glorys_ts_mockup.png", width = 4, height = 5, units = "in", res = 300)
+print (ts_plot)
+dev.off()
 
-## plot warming map for 2000-2018 and 2061-2080----
+## plot delta warming maps----
 
 
 library (raster)
@@ -144,6 +182,7 @@ library(maptools)
 library (sp)
 library (sf)
 
+library (grid)
 library (gridExtra)
 library (RColorBrewer)
 
@@ -151,7 +190,7 @@ library (RColorBrewer)
 # https://stackoverflow.com/questions/33750235/plotting-a-raster-with-the-color-ramp-diverging-around-zero
 devtools::source_gist('306e4b7e69c87b1826db')
 
-# just plot deltas ----
+# just plot deltas
 
 # plot deltas (red/blue) binned by decades for SST and BT
 # for mean, could just bring in all the deltas for  a scenario, cut into decade chunks, and take overall mean (calc)
@@ -298,13 +337,11 @@ CMs_2060 <- subset (CMs_br, c(seq(3,70, by = 4), 70))
 # now i need to figure out how to do means. 245 sst--only need 4. 245 bt, 4. 585 sst and bt, 5
 var_index <- c(rep (1:4, 4), 3:4)
 
-# everything i'm doing right now is absurd
-
 # calculate mean and sd for each var/scnario. returns a brick with 4 layers: sst 245, bt 245, sst 585, bt 585
 vars_mn <- stackApply (CMs_2060, var_index, mean, na.rm = TRUE)
 vars_sd <- stackApply (CMs_2060, var_index, sd, na.rm = TRUE)
 
-# only plot sst
+# only plot sst ----
 p_sst_245 <- levelplot (vars_mn[[1]], margin = F,  
                      xlim = c (-32, -3), ylim = c (60, 69),
                      xlab = NULL, ylab = NULL,
@@ -347,11 +384,10 @@ print(
     ncol = 2,
     top = textGrob("SST", gp = gpar(fontsize = 20), vjust = 0.7)
   )
-  )
+)
 dev.off()
 
-
-# plot bt
+# plot bt ----
 
 p_bt_245 <- levelplot (vars_mn[[2]], margin = F,  
                         xlim = c (-32, -3), ylim = c (60, 69),
@@ -397,6 +433,31 @@ print(
   )
 )
 dev.off()
+
+
+# plot TS and maps grid.arrange ----
+ts_map_layout <-  rbind(c(1,2,3),
+                        c(1, 4, 5), 
+                        c(1, 6, 7),
+                        c(1, 8, 9)
+)
+
+grid.arrange (
+  grobs = list (ts_plot, 
+                diverge0(p_sst_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+                p_sst_245_sd,
+                diverge0(p_sst_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+                p_sst_585_sd,
+                diverge0(p_bt_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+                p_bt_245_sd,
+                diverge0(p_bt_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
+                p_bt_585_sd),
+  layout_matrix = ts_map_layout
+)
+
+# this works, just horrendous margins and colorbars
+
+
 
 # https://stackoverflow.com/questions/48921217/r-center-red-to-blue-color-palette-at-0-in-levelplot
 
