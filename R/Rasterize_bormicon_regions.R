@@ -159,7 +159,7 @@ borm_div_r <- writeRaster(borm_div_rcl, filename = "Data/bormicon_divisions.grd"
 borm_div_rcl <- raster ("Data/bormicon_divisions.grd")
 # can I plot this as a raster?
 # https://datacarpentry.org/r-raster-vector-geospatial/02-raster-plot/
-borm_r_poly <- rasterToPolygons(borm_div_rcl)
+borm_r_poly <- rasterToPolygons(borm_div_rcl, dissolve = TRUE)
 
 # https://erinbecker.github.io/r-raster-vector-geospatial/02-raster-plot/index.html
 borm_r_pts <- rasterToPoints (borm_div_rcl, spatial = TRUE)
@@ -176,23 +176,79 @@ div_centroids <- borm_coords %>%
   summarise (lat = mean (lat, na.rm = TRUE),
              lon = mean (lon, na.rm = TRUE))
 
+
+
 library (RColorBrewer)
+
+
+# plot bormicon outlines with EEZ and survey points for study area figure ----
+
+# iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
+eez <- st_read("Data/eez.shp")
+
+# survey points
+mfri_pred <- read_csv ("Data/MFRI_predictor_df.csv",
+                       col_types = cols(
+                         sample_id = col_factor(),
+                         
+                         stat_sq = col_factor(),
+                         bormicon_region = col_factor(),
+                         sst_dev = col_number(),
+                         bt_dev = col_number(),
+                         sst_max = col_number(),
+                         sst_min = col_number(),
+                         bt_max = col_number(),
+                         bt_min = col_number()
+                       )
+) %>%
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn"))  %>%
+  # round lat/lon to reduce overlapping points
+  mutate (lat = round (lat, 2), lon = round (lon, 2)) %>%
+  distinct_at (vars(lat, lon))
+
+# https://stackoverflow.com/questions/34756755/plot-outline-around-raster-cells
+library (rgeos)
+
+borm_r_poly <- rasterToPolygons(borm_div_rcl, dissolve = TRUE)
+borm_outline <- sf::st_as_sf (borm_r_poly) %>% st_cast("LINESTRING")
+
+png ("Figures/Fig1_Map_EEZ_bormicon_survey_pts.png", width = 4, height = 4, units = "in", res = 300)
+
+ggplot() +
+ 
+  geom_sf (data  = eez, fill = NA, lwd = 1, lty = 1) +
+  geom_point (data = mfri_pred, aes (x = lon, y = lat), alpha = 0.3, pch = 1, cex = 0.5) +
+  geom_sf(data = borm_outline, lwd = 0.5, col = "red", lty = 2) +
+  geom_polygon(data = map_data("world",'Iceland'), 
+               aes(long,lat,group = group),
+               col = 'black', fill = 'gray90',size = 0.3) +
+  theme_bw() +
+  theme (legend.position = "none",
+         axis.text.x = element_text (size = 10),
+         axis.text.y = element_text (size = 10),
+         axis.title = element_blank ()) +
+  lims (y = c(59, 70), x = c(-34, -4))
+
+dev.off()
+
+
 png ("Figures/Bormicon_division_EEZ_map_biglabels.png", width = 16, height = 9, units = "in", res = 300)
 ggplot() +
   geom_raster(data = borm_r_df , aes(x = x, y = y, fill = as.factor(layer))) +
   
-  geom_path(aes(lon,lat,group=SUBDIVISION), 
-            data=filter (test, SUBDIVISION %in% c(1151, 1101, 1121)),
-            size = 0.3, lty = 2, col = "gray30") +
+  # geom_path(aes(lon,lat,group=SUBDIVISION), 
+  #           data=filter (test, SUBDIVISION %in% c(1151, 1101, 1121)),
+  #           size = 0.3, lty = 2, col = "gray30") +
 
   geom_polygon(data = map_data("world",'Iceland'), 
                aes(long,lat,group = group),
                col = 'gray80' ,fill = 'gray90',size = 0.3) +
   
   geom_sf (data  = eez, fill = NA, lwd = 0.5) +
-  geom_text(aes(lon,lat,label=division),
-            data = div_centroids,
-            col = "black", size = 18) +
+  # geom_text(aes(lon,lat,label=division),
+  #           data = div_centroids,
+  #           col = "black", size = 18) +
   #coord_sf( xlim=c(-40,0),ylim=c(60,70)) +
   coord_sf( xlim=c(-35,-5),ylim=c(60,70)) +
   theme_bw() +
