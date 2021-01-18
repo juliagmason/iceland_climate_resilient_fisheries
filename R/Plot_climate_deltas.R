@@ -129,6 +129,13 @@ glorys_df <- data.frame (
   var = c (rep ("SST", 312), rep ("BT", 312))
 )
 
+glorys_annual <- glorys_df %>%
+  group_by (year(date), var) %>%
+  summarise (mean = mean(mean))%>%
+  rename (date = `year(date)`) %>%
+  # https://stackoverflow.com/questions/30255833/convert-four-digit-year-values-to-a-date-type
+  mutate (var = factor(var, levels = c("SST", "BT")))
+
 cmip <- projection_means %>%
   mutate (var = factor(toupper(var), levels = c("SST", "BT")),
           model = toupper(model)) %>%
@@ -159,16 +166,16 @@ ts_plot <- ggplot () +
     axis.title = element_text (size = 14),
     plot.title = element_text (size = 24),
     strip.text = element_text (size = 14),
-    legend.position = "none"
-    # legend.title = element_text (size = 20),
-    # legend.text = element_text (size = 18)
+    #legend.position = "none"
+    legend.title = element_text (size = 20),
+    legend.text = element_text (size = 18)
   ) +
   scale_x_continuous (breaks = c (2000, 2020, 2040, 2060, 2080, 2100)) +
   scale_color_manual (values = c (ipcc_blue, ipcc_red), name = "Scenario") 
-  #ggtitle ("Mean annual surface temperature in Iceland's EEZ, GLORYS reanalysis and CMIP6 projections")
+  ggtitle ("Mean annual surface temperature in Iceland's EEZ, GLORYS reanalysis and CMIP6 projections")
 
 
-png ("Figures/CMIP_Glorys_ts_mockup.png", width = 4, height = 5, units = "in", res = 300)
+png ("Figures/CMIP_Glorys_ts_mockup.png", width = 12, height = 8, units = "in", res = 300)
 print (ts_plot)
 dev.off()
 
@@ -257,7 +264,19 @@ calc_ensemble_delta <- function (scenario, var, period, metric) {
   } # end ifelse
   
   # get decadal means for the variable and scenario
-  CMs_ls <- lapply (CM_list, calc_CM_delta_mean, scenario = scenario, var = var, period = period) # returns a list
+  CM_input <- expand_grid (
+    CM = CM_list,
+    scenario = scenario,
+    var = var, 
+    period = period
+  ) %>% 
+    
+    # need to remove CM26 missing period and/or scenario.
+    filter (!(CM == "CM26" & period == 2081), 
+            !(CM == "CM26" & scenario == 245)) %>%
+    as.list () 
+    
+  CMs_ls <- pmap(CM_input, calc_CM_delta_mean) # returns a list
   
   # convert to brick
   CMs_br <- brick (CMs_ls)
@@ -277,10 +296,9 @@ calc_ensemble_delta <- function (scenario, var, period, metric) {
 
 tmp2 <- calc_ensemble_delta(scenario = 245, var = "sst", period = 2061, metric = "mean"); beep()
 
-# I eventually would want a nested dataframe with var (sst, bt), scenario (245, 585), decade, measure (mean, sd)
-# don't think it will ultimately work to have a listcolumn, don't think gplot could handle
 
-# instead, an additional function to calculate and plot?
+# plot mean or sd 2panel scenarios side by side for grid.arrange ----
+# hard coded for 2061 
 plot_delta_map_fun <- function (var, period, metric) {
   
   # apply ensemble function for both scenarios
@@ -314,8 +332,6 @@ plot_delta_map_fun <- function (var, period, metric) {
   }
   
   # plot
-
-  
   gplot (delta_br) +
     geom_raster (aes (fill = value)) +
     borders (fill = "grey90", col = "black", 
@@ -324,14 +340,15 @@ plot_delta_map_fun <- function (var, period, metric) {
     facet_wrap (~variable, labeller = labeller (variable = scen_labs)) +
     scale_fill_gradient2 (low = low_val, mid = mid_val, high = high_val, midpoint = mdpt, na.value = "white", limits = lim) +
     labs (fill = expression(paste(degree, 'C'))) +
-    theme_bw () +
-    theme (
-      axis.text = element_text (size = 12),
-      axis.title = element_blank (),
-      strip.text = element_text (size = 14),
-      legend.text = element_text (size = 12),
-      legend.title = element_text (size = 14)
-    ) 
+    theme_bw () #+
+    # better to set this in grid.arrange for different figures
+    # theme (
+    #   axis.text = element_text (size = 12),
+    #   axis.title = element_blank (),
+    #   strip.text = element_text (size = 14),
+    #   legend.text = element_text (size = 12),
+    #   legend.title = element_text (size = 14)
+    # ) 
   
 
   
@@ -340,295 +357,136 @@ plot_delta_map_fun <- function (var, period, metric) {
 system.time(p_sst <- plot_delta_map_fun ("sst", 2061, "mean"));beep() # about 90s
 p_bt <- plot_delta_map_fun ("bt", 2061, "mean")
 
-grid.arrange (p_sst, p_bt, nrow = 2)
 
-deltas_ls <- expand_grid (var = c("sst", "bt"),
-                          scenario = c(245, 585),
-                          period = c(2021, 2041, 2061, 2081),
-                          metric = c("mean", "sd")
-                          ) %>%
-  as.list()
-  # nest() %>%
-  # mutate (raster = purrr::pmap(., calc_ensemble_delta(var, scenario, period, metric))) %>%
-  # unnest()
-
-system.time(deltas_rasters <- pmap(deltas_ls, calc_ensemble_delta)); beep()
-
-tmp_ls <-  expand_grid (var = "sst",
-                        scenario = c(245, 585),
-                        period = c(2021, 2041, 2061, 2081),
-                        metric = "mean") %>%
+plots_2060_ls <- expand_grid (var = c("sst", "bt"),
+                              period = 2061,
+                              metric = c("mean", "sd")) %>%
   as.list()
 
-# can I just give a raster names with a list
-sample_names <- c( "SST mean, SSP 2-4.5",
-                   "BT mean, SSP 5-8.5",
-                   "SST mean, SSP 2-4.5",
-                   "BT mean, SSP 5-8.5"
-)
-  as.list()
+plots_2060 <- pmap (plots_2060_ls, plot_delta_map_fun); beep()
 
-names (vars_mn) <- sample_names
+grid.arrange (plots_2060[[1]] + ggtitle ("SST") + theme(legend.position = "none"), plots_2060[[3]] + theme (axis.text.y = element_blank()) + ggtitle ("BT"), ncol = 2, top = textGrob("Mean", gp = gpar(fontsize = 20), vjust = 0.7))
 
-plot_delta_mean_sd_maps <- function (var, scenario) {
+png ("Figures/Deltas_map_2061_bt.png", width = 4, height = 4, units = "in", res = 300)
+grid.arrange (plots_2060[[3]] + theme (
+  axis.text = element_text (size = 8),
+  axis.title = element_blank (),
+  strip.text = element_text (size = 10),
+  legend.text = element_text (size = 8),
+  legend.title = element_text (size = 10)
+),
+plots_2060[[4]]+ theme (
+  axis.text = element_text (size = 8),
+  axis.title = element_blank (),
+  strip.text = element_text (size = 10),
+  legend.text = element_text (size = 8),
+  legend.title = element_text (size = 10)
+) , nrow = 2, top = textGrob("Bottom temperature", gp = gpar(fontsize = 12), vjust = 0.7))
+dev.off()
+
+png ("Figures/Deltas_map_2061_sst.png", width = 4, height = 4, units = "in", res = 300)
+grid.arrange (plots_2060[[1]] + theme (
+  axis.text = element_text (size = 8),
+  axis.title = element_blank (),
+  strip.text = element_text (size = 10),
+  legend.text = element_text (size = 8),
+  legend.title = element_text (size = 10)
+),
+plots_2060[[2]]+ theme (
+  axis.text = element_text (size = 8),
+  axis.title = element_blank (),
+  strip.text = element_text (size = 10),
+  legend.text = element_text (size = 8),
+  legend.title = element_text (size = 10)
+) , nrow = 2, top = textGrob("Surface temperature", gp = gpar(fontsize = 12), vjust = 0.7))
+dev.off()
+
+
+# supplemental figure--plot ensemble mean and sd for all periods ----
+
+plot_ensemble_map_ts <- function (var, metric) {
+  # var is "sst" or "bt"
+  # metric is "mean" or "sd"
   
-  # CM_list depends on scenario and dec_index
-  if (scenario == 245) {
-    CM_list <- CM_list <- c("gfdl", "cnrm", "ipsl", "mohc")
-    
-    # index to take mean of models for the different periods
-    dec_avg_index <- rep(1:4, 4)
-    
-  } else { 
-    CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
-    dec_avg_index <- rep (1:4, 5)[-20]
-   
+  delta_plot_input <- expand_grid (
+    var = var,
+    metric = metric,
+    scenario = c (245, 585),
+    period = c(2021, 2041, 2061, 2081)) %>%
+    as.list()
   
-  }
+  # calculate ensemble mean or sd layer for each period and scenario
+  ens_ls <- pmap(delta_plot_input, calc_ensemble_delta)
   
-  # get decadal means for the variable and scenario
-  CMs_ls <- lapply (CM_list, calc_CM_delta_mean, scenario = scenario, var = var) # returns a list
+  # convert to brick, should have 8 layers
+  ens_br <- brick (ens_ls)
   
-  # convert to brick
-  CMs_br <- brick (CMs_ls) # should have 19 layers for 585 and 16 for 245, because CM 2.6 doesn't have 2080
+  # set names for labeller to indicate the prediction period
+  period_labs <- setNames (c("SSP 2-4.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100", "SSP 5-8.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100"), names (ens_br))
   
+  # plot and save
+  png (paste("Figures/SI_ens_delta_map_allperiods", var, metric, ".png", sep = "_"), width = 8, height = 4, res = 150, unit = "in")
+  gplot (CM_br) +
+    geom_raster (aes (fill = value)) +
+    borders (fill = "grey90", col = "black", 
+             xlim = c (-32, -3), ylim = c (60, 69)) +
+    coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+    facet_wrap (~variable, ncol = 4, 
+                labeller = labeller (variable = period_labs)) +
+    # colors from RdBu R colorbrewer
+    scale_fill_gradient2 (midpoint = 0, low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", na.value = "white") +
+    labs (fill = expression(paste(degree, 'C'))) +
+    ggtitle (toupper (CM)) +
+    theme_bw () +
+    theme (axis.title = element_blank()) 
   
-  # calculate mean and sd for each period. returns a brick with 4 layers
-  CMs_mn <- stackApply (CMs_br, dec_avg_index, mean, na.rm = TRUE)
-  CMs_sd <- stackApply (CMs_br, dec_avg_index, sd, na.rm = TRUE)
-  
-  #add country polygon for levelplot:
-    # https://stackoverflow.com/questions/17582532/r-overlay-plot-on-levelplot
-    ext <- as.vector(extent(CMs_mn))
-  
-  boundaries <- maps::map('worldHires', fill=TRUE,
-                          xlim=ext[1:2], ylim=ext[3:4],
-                          plot=FALSE)
-  
-  ## read the map2SpatialPolygons help page for details
-  IDs <- sapply(strsplit(boundaries$names, ":"), function(x) x[1])
-  bPols <- map2SpatialPolygons(boundaries, IDs=IDs,
-                               proj4string=CRS(projection(CMs_mn)))
-  
-  
-  # make levelplot object for mean--want to center color ramp at 0, so takes two steps
-  p_mean <- levelplot (CMs_mn, margin = F,  
-                  xlim = c (-32, -3), ylim = c (60, 69),
-                  xlab = NULL, ylab = NULL,
-                  #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
-                  main = paste0(toupper(var), " delta, mean, ", scenario),
-                  names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100")) +
-    latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-  
-  # save to file
-  
-  png (paste0("Figures/Deltas_map_", var, "_", scenario, "_mean.png"), width = 16, height = 9, units = "in", res = 300)
-  print(
-  diverge0(p_mean, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))) # best I can figure out for reversing RdBu for now
-  )
   dev.off()
   
-  # plot sd with different color scale
-  png (paste0("Figures/Deltas_map_", var, "_", scenario, "_sd.png"), width = 16, height = 9, units = "in", res = 300)
-  print(
-  levelplot (CMs_sd, margin = F,  
-              xlim = c (-32, -3), ylim = c (60, 69),
-              xlab = NULL, ylab = NULL,
-              col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
-              main = paste0(toupper(var), " delta, SD, ", scenario),
-              names.attr = c ("2021-2040", "2041-2060", "2061-2080", "2081-2100")) +
-    latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-  )
-  dev.off()
   
+  
+}
+
+# supplemental figure--plot maps for each CM, all periods----
+
+plot_CM_delta_map_ts <- function (CM, var) {
+  # CM is 4 letter lowercase code
+  # var is "bt" or "sst
+  
+  delta_plot_input <- expand_grid (
+    CM = CM,
+    var = var,
+    scenario = c (245, 585),
+    period = c(2021, 2041, 2061, 2081)) %>%
+    as.list()
+  
+  # apply calc_delta function
+  CM_ls <- pmap (delta_plot_input, calc_CM_delta_mean)
+  CM_br <- brick (CM_ls)
+  
+  # set names for labeller to indicate the prediction period
+  period_labs <- setNames (c("SSP 2-4.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100", "SSP 5-8.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100"), names (CM_br))
+
+  # plot
+  png (paste("Figures/SI_CM_delta_map_allperiods", CM, var, ".png", sep = "_"), width = 8, height = 4, res = 150, unit = "in")
+  gplot (CM_br) +
+    geom_raster (aes (fill = value)) +
+    borders (fill = "grey90", col = "black", 
+             xlim = c (-32, -3), ylim = c (60, 69)) +
+    coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+    facet_wrap (~variable, ncol = 4, 
+                labeller = labeller (variable = period_labs)) +
+    # colors from RdBu R colorbrewer
+    scale_fill_gradient2 (midpoint = 0, low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", na.value = "white") +
+    labs (fill = expression(paste(degree, 'C'))) +
+    ggtitle (toupper (CM)) +
+    theme_bw () +
+    theme (axis.title = element_blank()) 
+  
+  dev.off()
   
 } # end function
 
-plot_delta_mean_sd_maps (var = "bt", scenario = 245)
 
-var_cross <- expand_grid (scenario = c(245, 585), var = c("bt", "sst")) %>% as.list()
-
-pmap (var_cross, plot_delta_mean_sd_maps)
-
-
-# plot 8-panel 2061-2080 mean and sd ----
-
-CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
-
-CM_expand <- expand_grid (
-             CM = CM_list,
-             scenario = c(245, 585),
-             var = c ("sst", "bt")
-) %>%
-  filter (!(CM == "CM26" & scenario == 245)) %>% 
-  as.list()
-
-# apply mean calculating function, does for all decades
-CMs_ls <- pmap (CM_expand, calc_CM_delta_mean); beep() # 12:30
-# convert to brick
-CMs_br <- brick (CMs_ls) # 70 layers, 19*2 + 16*2. should have 19 layers for 585 and 16 for 245, because CM 2.6 doesn't have 2080. 
-# how do I know which layers correspond to which var/scenario? try plotting. eventually I should be able to take every 3rd layer. I think it's 245 sst gfdl first 4, 245 bt gfdl second 4
-plot (CMs_br[[1:16]])
-
-# take every 3rd layer for 2061-80. CM26 is last and only has 3 layers each, so also append the last layer. CMs_2060 should have 18 layers
-CMs_2060 <- subset (CMs_br, c(seq(3,70, by = 4), 70))
-
-# now i need to figure out how to do means. 245 sst--only need 4. 245 bt, 4. 585 sst and bt, 5
-var_index <- c(rep (1:4, 4), 3:4)
-
-# calculate mean and sd for each var/scnario. returns a brick with 4 layers: sst 245, bt 245, sst 585, bt 585
-vars_mn <- stackApply (CMs_2060, var_index, mean, na.rm = TRUE)
-vars_sd <- stackApply (CMs_2060, var_index, sd, na.rm = TRUE)
-
-# try gplot rastervis
-# https://rpubs.com/markpayne/134739
-
-# some plot beautification tips:
-#https://datacarpentry.org/r-raster-vector-geospatial/13-plot-time-series-rasters-in-r/
-vars_stack <- stack (vars_mn, vars_sd)
-
-
-gplot (vars_stack) +
-  geom_raster (aes (fill = value)) +
-  borders (fill = "grey90", col = "black", 
-           xlim = c (-32, -3), ylim = c (60, 69)) +
-  coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
-  facet_wrap (~variable) +
-  scale_fill_gradient2 (low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", midpoint = 0)
-
-
-gplot (vars_mn) +
-  geom_raster (aes (fill = value)) +
-  borders (fill = "grey90", col = "black", 
-           xlim = c (-32, -3), ylim = c (60, 69)) +
-  coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
-  facet_wrap (~variable, byrow = TRUE) +
-  scale_fill_gradient2 (low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", midpoint = 0)
-
-
-
-# only plot sst ----
-p_sst_245 <- levelplot (vars_mn[[1]], margin = F,  
-                     xlim = c (-32, -3), ylim = c (60, 69),
-                     xlab = NULL, ylab = NULL,
-                     #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
-                     main = "Mean") +
-                     #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-p_sst_585 <- levelplot (vars_mn[[3]], margin = F,  
-                        xlim = c (-32, -3), ylim = c (60, 69),
-                        xlab = NULL, ylab = NULL) +
-                        #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
-                        #main = "SST") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-p_sst_245_sd <- levelplot (vars_sd[[1]], margin = F,  
-                        xlim = c (-32, -3), ylim = c (60, 69),
-                        xlab = NULL, ylab = NULL,
-  col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
-  main = "SD") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-p_sst_585_sd <- levelplot (vars_sd[[3]], margin = F,  
-                        xlim = c (-32, -3), ylim = c (60, 69),
-                        xlab = NULL, ylab = NULL,
-  col.regions = colorRampPalette (brewer.pal (9, "PuBuGn"))) +
-  #main = "SST") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-png (paste0("Figures/Deltas_map_2061_sst.png"), width = 6, height = 6, units = "in", res = 300)
-print(
-  grid.arrange (
-    diverge0(p_sst_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-    p_sst_245_sd,
-    diverge0(p_sst_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-    p_sst_585_sd,
-    ncol = 2,
-    top = textGrob("SST", gp = gpar(fontsize = 20), vjust = 0.7)
-  )
-)
-dev.off()
-
-# plot bt ----
-
-p_bt_245 <- levelplot (vars_mn[[2]], margin = F,  
-                        xlim = c (-32, -3), ylim = c (60, 69),
-                        xlab = NULL, ylab = NULL,
-                        #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
-                        main = "Mean") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-p_bt_585 <- levelplot (vars_mn[[4]], margin = F,  
-                        xlim = c (-32, -3), ylim = c (60, 69),
-                        xlab = NULL, ylab = NULL) +
-  #col.regions = colorRampPalette (rev(brewer.pal (9, "RdBu"))),
-  #main = "bt") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-p_bt_245_sd <- levelplot (vars_sd[[2]], margin = F,  
-                           xlim = c (-32, -3), ylim = c (60, 69),
-                           xlab = NULL, ylab = NULL,
-                           col.regions = colorRampPalette (brewer.pal (9, "PuBuGn")),
-                           main = "SD") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-p_bt_585_sd <- levelplot (vars_sd[[4]], margin = F,  
-                           xlim = c (-32, -3), ylim = c (60, 69),
-                           xlab = NULL, ylab = NULL,
-                           col.regions = colorRampPalette (brewer.pal (9, "PuBuGn"))) +
-  #main = "bt") +
-  #names.attr = c ("SSP 2-4.5", "SSP 5-8.5")) +
-  latticeExtra::layer(sp.polygons(bPols, fill = "white"))
-
-png (paste0("Figures/Deltas_map_2061_bt.png"), width = 6, height = 6, units = "in", res = 300)
-print(
-  grid.arrange (
-    diverge0(p_bt_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-    p_bt_245_sd,
-    diverge0(p_bt_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-    p_bt_585_sd,
-    ncol = 2,
-    top = textGrob("BT", gp = gpar(fontsize = 20), vjust = 0.7)
-  )
-)
-dev.off()
-
-
-# plot TS and maps grid.arrange ----
-ts_map_layout <-  rbind(c(1,2,3),
-                        c(1, 4, 5), 
-                        c(1, 6, 7),
-                        c(1, 8, 9)
-)
-
-grid.arrange (
-  grobs = list (ts_plot, 
-                diverge0(p_sst_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-                p_sst_245_sd,
-                diverge0(p_sst_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-                p_sst_585_sd,
-                diverge0(p_bt_245, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-                p_bt_245_sd,
-                diverge0(p_bt_585, ramp =  colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))),
-                p_bt_585_sd),
-  layout_matrix = ts_map_layout
-)
-
-# this works, just horrendous margins and colorbars
-
-
-
-# https://stackoverflow.com/questions/48921217/r-center-red-to-blue-color-palette-at-0-in-levelplot
-
-
-#
 
 # what is the projected mean warming? ----
 
@@ -657,7 +515,7 @@ summary (lm (mean ~ date, data = filter (projection_means, ssp == 585, var == "s
 # what are the predicted increases in iceland's waters? ----
 # moved deltas to external hard drive
 
-## Calculate avg warming deltas
+## Calculate avg warming deltas ----
 # 12/23/2020
 
 
