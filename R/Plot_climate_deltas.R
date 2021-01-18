@@ -416,6 +416,7 @@ plot_ensemble_map_ts <- function (var, metric) {
     as.list()
   
   # calculate ensemble mean or sd layer for each period and scenario
+  # this takes ~10 minutes
   ens_ls <- pmap(delta_plot_input, calc_ensemble_delta)
   
   # convert to brick, should have 8 layers
@@ -424,9 +425,25 @@ plot_ensemble_map_ts <- function (var, metric) {
   # set names for labeller to indicate the prediction period
   period_labs <- setNames (c("SSP 2-4.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100", "SSP 5-8.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100"), names (ens_br))
   
+  # for 2061: mean -2.55 - 8.46; sd 0 - 4.17
+  if (metric == "mean") {
+    # colors from RdBu R colorbrewer
+    low_val <- "#2166AC"
+    mid_val <- "#F7F7F7"
+    high_val <- "#B2182B"
+    mdpt <- 0
+
+  } else if (metric == "sd") {
+    low_val <- "#F7FCFD"
+    high_val <- "#00441B"
+    mid_val <- "#66C2A4"
+    mdpt <- median (getValues (ens_br), na.rm = TRUE)
+
+  }
+  
   # plot and save
-  png (paste("Figures/SI_ens_delta_map_allperiods", var, metric, ".png", sep = "_"), width = 8, height = 4, res = 150, unit = "in")
-  gplot (CM_br) +
+  png (paste("Figures/SI_ens_delta_map", var, metric, "allperiods.png", sep = "_"), width = 8, height = 4, res = 150, unit = "in")
+  gplot (ens_br) +
     geom_raster (aes (fill = value)) +
     borders (fill = "grey90", col = "black", 
              xlim = c (-32, -3), ylim = c (60, 69)) +
@@ -434,17 +451,18 @@ plot_ensemble_map_ts <- function (var, metric) {
     facet_wrap (~variable, ncol = 4, 
                 labeller = labeller (variable = period_labs)) +
     # colors from RdBu R colorbrewer
-    scale_fill_gradient2 (midpoint = 0, low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", na.value = "white") +
+    scale_fill_gradient2 (midpoint = mdpt, low = low_val, mid = mid_val, high = high_val, na.value = "white") +
     labs (fill = expression(paste(degree, 'C'))) +
-    ggtitle (toupper (CM)) +
+    ggtitle (paste0 ("Ensemble deltas ", metric, ", ", toupper (var))) +
     theme_bw () +
     theme (axis.title = element_blank()) 
   
   dev.off()
   
-  
-  
 }
+
+system.time(plot_ensemble_map_ts(var= "bt", metric = "sd"))
+# works internally but not as function....
 
 # supplemental figure--plot maps for each CM, all periods----
 
@@ -478,7 +496,7 @@ plot_CM_delta_map_ts <- function (CM, var) {
     # colors from RdBu R colorbrewer
     scale_fill_gradient2 (midpoint = 0, low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", na.value = "white") +
     labs (fill = expression(paste(degree, 'C'))) +
-    ggtitle (toupper (CM)) +
+    ggtitle (paste(toupper (CM), var)) +
     theme_bw () +
     theme (axis.title = element_blank()) 
   
