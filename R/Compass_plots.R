@@ -139,32 +139,31 @@ spp_list  <- read_csv ("Data/species_eng.csv",
   # https://stackoverflow.com/questions/42565539/using-strsplit-and-subset-in-dplyr-and-mutate
   mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
 
+# only suitable for paper
+load ("Models/spp_Borm_suit.RData")
 
 load ("Data/centroids_Borm14_alltemp_allscenarios.RData")
 
 centroid_mean_change <- centroid_change %>%
+  filter (species %in% borm_suit) %>%
   group_by (species, scenario) %>%
   summarise (mean_dist = mean(dist),
              sd_dist = sd (dist),
              mean_bearing = mean(bearing),
              sd_bearing = sd(bearing)
   ) %>%
-  left_join (borm_MASE, by = "species") %>%
+  #left_join (borm_MASE, by = "species") %>%
   left_join (spp_list, by = "species") %>%
   # this replaces apostrophes with chinese characters??
   #https://stackoverflow.com/questions/10294284/remove-all-special-characters-from-a-string-in-r
   #mutate (Common_name = strsplit (Common_name, ",")[[1]][1]) %>%
   # just cut out not suitable
-  filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>%
+  #filter (MASE_GAM < 1 & DM_GAM_p < 0.05) %>%
   mutate (
     Therm_pref = case_when (
       mean_TB > 0 ~ "Warm",
       between (mean_TB, -3, 0) ~ "Cool",
       mean_TB < 0 ~ "Cold"
-    ),
-    scen_long = case_when (
-      scenario == 245 ~ "Optimistic scenario",
-      scenario == 585 ~ "Worst case scenario"
     ),
     # convert bearing to 0-360
     bearing = ifelse (mean_bearing < 0, mean_bearing + 360, mean_bearing))
@@ -177,48 +176,50 @@ cir_avg <- centroid_mean_change %>%
   summarize (CA = circular.averaging (direction = bearing),
              dist = mean (dist_km))
 
-png ("Figures/Compass_Borm14alltemp_TB_commnames.png", width = 16, height = 9, units = "in", res = 300)
+# scenario names for labeller
+scen_labs <- setNames ( c("SSP 2-4.5", "SSP 5-8.5"), c(245, 585))
+
+# could I make a vector proportional to segment lengths to feed to the text y?
+
+png ("Figures/Fig5_Compass_TB_commnames_nolabs.png", width = 16, height = 9, units = "in", res = 300)
 set.seed(15)
 
 centroid_mean_change %>%
   mutate (dist_km = mean_dist/1000) %>%
-  #mutate (Common_name = str_replace_all(Common_name, "[^[:alnum:]]", " ")) %>%
-  # ggplot() +aes (x = bearing,
-  #             y = dist_km, 
-  #             colour = Therm_pref,
-  #             label = species)) +
+ 
   ggplot() +
   coord_polar(start = 0) +
   geom_segment(aes (y = 0,x = bearing,
                     xend = bearing, 
                     yend = dist_km,
                     col = Therm_pref
-  ), 
-  size = 1.2,
-  alpha = 0.7
-  ) +  
-  geom_text(aes(label = Common_name,#species, 
-                x = bearing,
-                y = 150,  
-
-                # not sure what angle is doing here but it seems right
-                angle = ifelse (bearing < 180,
-                                -bearing + 90,
-                                -bearing + 270)
-                ),
-            col = "black",
-            alpha = 0.7,
-           # position = position_jitter(width = 4, height = 5),
-            size = 3.5, 
-            vjust = 0.1) +
+                    ), 
+               size = 1.2,
+               alpha = 0.7
+               ) +  
+  # geom_text(aes(label = Common_name,#species, 
+  #               x = bearing,
+  #               #y = ifelse (dist_km < 100, 180, dist_km + 150),  
+  #               y = 180,
+  # 
+  #               # not sure what angle is doing here but it seems right
+  #               angle = ifelse (bearing < 180,
+  #                               -bearing + 90,
+  #                               -bearing + 270),
+  #               col = Therm_pref),
+  #           #col = "black",
+  #           alpha = 0.7,
+  #          # position = position_jitter(width = 4, height = 5),
+  #           size = 3.5, 
+  #           vjust = 0.1) +
   # add circular average?
   geom_point (aes (x = CA, y = dist, col = Therm_pref), data = cir_avg, shape = 24, size = 5) +
-  facet_wrap (~ scenario) +
+  facet_wrap (~ scenario, labeller = labeller (scenario = scen_labs)) +
   labs(y= "Distance (km)") + 
   # scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
   scale_x_continuous(breaks= c(0, 90, 180, 270), limits = c(0,360)) + 
   scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
-  labs (color = "") + 
+  labs (color = "", x ="Bearing") + 
   theme_bw() +
   theme (
     axis.text.x = element_text (size = 18),
@@ -227,8 +228,8 @@ centroid_mean_change %>%
     plot.title = element_text (size = 24),
     strip.text = element_text (size = 20),
     legend.text = element_text (size = 20),
-  ) +
-  ggtitle ("Centroid shift bearing and distance, 2000-2018 vs. 2060-2081")
+  ) 
+  #ggtitle ("Centroid shift bearing and distance, 2000-2018 vs. 2060-2081")
 
 dev.off()
 
