@@ -183,6 +183,14 @@ library (RColorBrewer)
 
 # plot bormicon outlines with EEZ and survey points for study area figure ----
 
+library (sf)
+library (tidyverse)
+library (raster)
+library (rgeos) # for borm region outlines
+
+# bormicon raster
+borm_div_rcl <- raster ("Data/bormicon_divisions.grd")
+
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
 
@@ -205,24 +213,27 @@ mfri_pred <- read_csv ("Data/MFRI_predictor_df.csv",
           !(year < 2000 & season == "autumn"))  %>%
   # round lat/lon to reduce overlapping points
   mutate (lat = round (lat, 2), lon = round (lon, 2)) %>%
-  distinct_at (vars(lat, lon))
+  distinct_at (vars(lat, lon, season))
 
+
+# convert bormicon raster to polygon outlines
 # https://stackoverflow.com/questions/34756755/plot-outline-around-raster-cells
-library (rgeos)
 
 borm_r_poly <- rasterToPolygons(borm_div_rcl, dissolve = TRUE)
 borm_outline <- sf::st_as_sf (borm_r_poly) %>% st_cast("LINESTRING")
 
-png ("Figures/Fig1_Map_EEZ_bormicon_survey_pts.png", width = 4, height = 4, units = "in", res = 300)
+png ("Figures/Fig1_Map_EEZ_bormicon_survey_pts_season.png", width = 4, height = 4, units = "in", res = 300)
 
 ggplot() +
  
   geom_sf (data  = eez, fill = NA, lwd = 1, lty = 1) +
-  geom_point (data = mfri_pred, aes (x = lon, y = lat), alpha = 0.3, pch = 1, cex = 0.5) +
+  geom_point (data = mfri_pred, aes (x = lon, y = lat, shape = season), cex = 0.5) +
   geom_sf(data = borm_outline, lwd = 0.5, col = "red", lty = 2) +
   geom_polygon(data = map_data("world",'Iceland'), 
                aes(long,lat,group = group),
                col = 'black', fill = 'gray90',size = 0.3) +
+  scale_shape_manual (values = c (1, 3)) +
+  # autumn is point, spring is plus
   theme_bw() +
   theme (legend.position = "none",
          axis.text.x = element_text (size = 10),
