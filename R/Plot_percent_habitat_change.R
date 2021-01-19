@@ -18,15 +18,15 @@ spp_list  <- read_csv ("Data/species_eng.csv",
   mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
 
 
+# ==================
+# Calculate habitat change ----
+# ==================
+
 # spp I ran models for
 load ("Models/spp_Smooth_latlon.RData") 
 borm_spp <- spp_Smooth_latlon %>%
   filter (!sci_name_underscore == "Myoxocephalus_scorpius")
 
-
-# ==================
-# Calculate habitat change ----
-# ==================
 
 # Calculate amount of habitat in historical and predicted bricks from my rasters (created in Predict_ensemble_rasters.R)
 
@@ -132,6 +132,13 @@ save (borm_suit, file = "Models/spp_Borm_suit.RData")
 # Looking at various metrics. Percent change is the most common, but hard to interpret when negative and positive changes are very large. Makes positive changes look way more important than negative changes. 
 
 
+# landed spp only
+landed_spp <- spp_list %>%
+  filter (!is.na (Landed_name),
+          ! species %in% c("Somniosus_microcephalus", "Other_flatfish", "Capelin_roe")) %>%
+  pull (species)
+landed_spp <- c(landed_spp[1:29], "Cyclopterus_lumpus")
+
 # bring in icelandic names for graphs for stakeholders
 isl_spp <- read_csv ("Data/Raw_data/species.csv",
                      col_types = cols(
@@ -143,9 +150,10 @@ isl_spp <- read_csv ("Data/Raw_data/species.csv",
 
 
 hab_change <- pred_hist_hab %>%
-  
+  # filter landed spp for interviews
+  filter (species %in% landed_spp) %>%
   # filter suitable (makes some of the below code unnecessary)
-  filter (species %in% borm_suit) %>%
+  #filter (species %in% borm_suit) %>%
   left_join (spp_list, by = "species") %>% 
   # use isl_spp instead of spp_list for icelandic names. 
   #left_join (isl_spp, by = "species") %>%
@@ -247,7 +255,7 @@ face_landed[2] <- "bold"
 
 
 
-png (file = "Figures/Fig3_Hab_change_TB_boxplot_suitable.png", width = 16, height = 9, units = "in", res = 300)
+png (file = "Figures/Hab_change_TB_boxplot_interviews.png", width = 16, height = 9, units = "in", res = 300)
 
 hab_change_gg +
   geom_boxplot (aes (y = Common_name,
@@ -262,7 +270,7 @@ hab_change_gg +
         y = "",
         x = "Log (Thermal habitat change)") +
   #scale_color_binned (breaks = c (2, 4, 6), low = "orange", high = "blue" ) +
-  scale_color_manual (values = c("blue", "deepskyblue", "red2")) #+
+  scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
   #scale_fill_manual (values = alpha (c("lightgray", "blue", "deepskyblue", "red2"), 0.5)) +
   #scale_fill_binned (breaks = c (2, 4, 6), low = "orange", high = "blue" ) +
   #theme (legend.position = c(0.6, 0.9)) +
@@ -270,6 +278,10 @@ hab_change_gg +
   #theme (legend.title = element_text (size = 18)) +
   #theme (axis.text.x = element_text (face = face_landed)) +
   #ggtitle ("Log x-fold change, 2000-2018 vs. 2061-2080") 
+  theme (axis.text.y = element_text (size = 18),
+         strip.text = element_text (size = 18),
+         axis.text.x = element_text (size = 14),
+         axis.title = element_text (size = 18))
 
 dev.off()
 
