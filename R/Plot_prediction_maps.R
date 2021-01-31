@@ -296,6 +296,10 @@ p_hist1 <- gplot (br_hist[[1]]) +
 
 p_hist1 + p_pred[[1]] + plot_layout (ncol = 2, heights = c (1, 2))
 
+# add phylopic silhouette
+# https://cran.r-project.org/web/packages/rphylopic/readme/README.html
+# https://stackoverflow.com/questions/60917778/how-do-i-plot-an-image-from-phylopic-in-top-right-corner-of-my-ggplot-graph-in-r
+
 # plot differences, all periods for supplement ----
 
 #  helper function for plotting each period
@@ -344,7 +348,9 @@ plot_diff_maps_ts <- function (sci_name) {
     period_labs <- setNames (c("SSP 2-4.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100", "SSP 5-8.5: 2021-2040", "2041-2060", "2061-2080", "2081-2100"), names (diff_plot_br))
     
   # plot
+  
   png (paste0("Figures/Thermpred_Diff_map_allperiods_", sci_name, ".png"), width = 8, height = 4, res = 150, unit = "in")
+  print(
   gplot (diff_plot_br) +
     geom_raster (aes (fill = value)) +
     borders (fill = "grey90", col = "black", 
@@ -359,6 +365,7 @@ plot_diff_maps_ts <- function (sci_name) {
     theme_bw () +
     theme (axis.title = element_blank(),
            plot.title = element_text(face = "italic")) 
+  )
   
   dev.off()
 
@@ -366,7 +373,8 @@ plot_diff_maps_ts <- function (sci_name) {
 }# end function 
 
 
-
+load ("Models/spp_Borm_suit.RData")
+lapply (borm_suit, plot_diff_maps_ts); beep() # about 4.5 mins each
 
 
  
