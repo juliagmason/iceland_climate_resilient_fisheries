@@ -270,6 +270,7 @@ div_props <- ldgs_3sector %>%
 # using borm_coords from Rasterize_bormicon_regions.R.
 
 library (sp)
+library (raster)
 
 load ("Data/borm_coords.Rdata")
 
@@ -342,13 +343,16 @@ load ("Models/spp_Smooth_latlon.RData")
 borm_spp <- spp_Smooth_latlon %>%
   filter (!sci_name_underscore == "Myoxocephalus_scorpius")
 
+# borm suit
+load ("Models/spp_Borm_suit.RData")
+
 # list of species that are landed and that I modeled
 landed_spp <- spp_list %>%
   filter (species %in% borm_op_props$species, 
           species %in% borm_spp$sci_name_underscore) %>%
   pull (species)
 
-system.time (hist_hab_borm <- map_df (landed_spp, borm_hist_hab_fun)) # 638s
+system.time (hist_hab_borm <- map_df (borm_suit, borm_hist_hab_fun)); beep() # 638s
 
 
 # future predictions
@@ -400,19 +404,19 @@ borm_pred_hab_fun <- function (sci_name, CM, scenario) {
 
 CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 
-cm_expand <- expand_grid (sci_name = landed_spp,
+cm_expand <- expand_grid (sci_name = borm_suit,
                           CM = CM_list,
                           scenario = c(245, 585)) %>%
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list() # convert to list to feed to pmap
 
 
-system.time(pred_hab <- pmap_dfr (cm_expand, borm_pred_hab_fun)); beep() # 6091.32 
+system.time(pred_hab <- pmap_dfr (cm_expand, borm_pred_hab_fun)); beep() # 6091.32 for landed spp, 6660.18 for borm_suit
 
 #combine and save
 pred_hist_hab_borm <- pred_hab %>%
   left_join (hist_hab_borm, by = c("species", "division"))
-save (pred_hist_hab_borm, file = "Data/pred_hist_hab_borm_df.RData")
+save (pred_hist_hab_borm, file = "Data/pred_hist_hab_borm_df_suitable.RData")
 
 
 # calculate risk exposure/fishing opportunity: catch proportion * habitat change ----
@@ -446,7 +450,7 @@ png ("Figures/Hab_change_overall_biomass_bormicon_commnames_suitable.png", width
 hab_means_borm %>%
   left_join (spp_list, by = "species") %>% 
   # use same levels as top_hab_spp for overall, for clarity in presentation
-  mutate (Common_name = ifelse (species %in% top_hab_spp$species, 
+  mutate (Common_name = ifelse (species %in% top_hab_spp_borm$species, 
                                 Common_name,
                                 "Other"),
           # set factor order?
