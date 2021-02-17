@@ -897,6 +897,7 @@ dev.off()
 
 ```{r var_imp_borm_14}
 b14 <- read_csv("../Models/var_imp_Borm_14_alltemp.csv")
+load ("../Models/spp_Borm_suit.RData")
 
 # filter suitable from borm_diag below
 b14_suit <- b14 %>% filter (species %in% borm_spp$sci_name_underscore)
@@ -943,6 +944,17 @@ b14_temp %>%
 ```
 deviation variables aren't terrible...
 
+```{r var_imp_TxD}
+TxD <- read_csv("../Models/var_imp_Borm_14_alltemp_intn_test.csv")
+load ("../Models/spp_Borm_suit.RData")
+
+# filter suitable from borm_diag below
+TxD_suit <- TxD %>% filter (species %in% borm_spp$sci_name_underscore)
+TxD_suit %>% group_by (Var, GAM) %>%
+  summarise (Diff_mn = mean (Diff_f)) %>%
+  arrange (desc (Diff_mn)) %>% View()
+```
+PA: depth is 10.7, intn is 9. the rest are 6.75-7.25. LB: depth 3.7, bt_max 1.5, int 1.45, down to sst_max .12
 ### explore AUC and other diagnostics
 ```{r diagnostics_SLL}
 sll_diag <- read_csv ("../Models/GAM_diagnostics_all_spp.csv")
@@ -1751,6 +1763,8 @@ plot (gam_PA,
 showing a slight negative rltp with sst. might be that catch has been going down although temperatures have been going up so model is confused?
 
 ### species with really high prediction values
+
+### A. lupus
 ```{r a lupus}
 library (mgcv)
 load ("../Models/Borm_14_alltemp/Anarhichas_lupus_LB.Rdata")
@@ -1759,8 +1773,93 @@ load ("../Models/Borm_14_alltemp/Anarhichas_lupus_PA.Rdata")
 summary (gam_LB)
 summary (gam_PA)
 
-plot (gam_PA)
-plot (gam_LB)
+png ("../Figures/Wolffish_partial_plots_PA.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+plot (gam_PA, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_PA)$edf[6], 2), sep = ", "))
+plot (gam_PA,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_PA)$edf[7], 2), sep = ", "))
+plot (gam_PA, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_PA)$edf[8], 2), sep = ", "))
+dev.off()
+
+png ("../Figures/Wolffish_partial_plots_LB.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_LB, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_LB)$edf[1], 2), sep = ", "))
+plot (gam_LB,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_LB)$edf[2], 2), sep = ", "))
+plot (gam_LB,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_LB)$edf[3], 2), sep = ", "))
+plot (gam_LB,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_LB)$edf[4], 2), sep = ", "))
+plot (gam_LB, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
+plot (gam_LB, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_LB)$edf[6], 2), sep = ", "))
+plot (gam_LB,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_LB)$edf[7], 2), sep = ", "))
+plot (gam_LB, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_LB)$edf[8], 2), sep = ", "))
+dev.off()
 
 ```
 A. lupus LB: none of the borm regions significant, only depth and bt_max significant. PA everything highly significant, but the std dev vars and sst_max have edf 1. otherwise partial plots look ok? LB partial plots look much worse. 
@@ -1818,6 +1917,582 @@ plot (gam_PA)
 plot (gam_LB)
 
 ```
+# P. platessa
+most notable opposite trend from Valtysson
+```{r p_plat}
+library (mgcv)
+load ("../Models/Borm_14_alltemp/Pleuronectes_platessa_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Pleuronectes_platessa_LB.Rdata")
+
+plot (gam_PA)
+plot (gam_LB)
+
+summary (gam_PA)
+
+png ("../Figures/Plaice_partial_plots_PA.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+plot (gam_PA, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_PA)$edf[6], 2), sep = ", "))
+plot (gam_PA,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_PA)$edf[7], 2), sep = ", "))
+plot (gam_PA, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_PA)$edf[8], 2), sep = ", "))
+dev.off()
+
+png ("../Figures/Plaice_partial_plots_LB.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_LB, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_LB)$edf[1], 2), sep = ", "))
+plot (gam_LB,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_LB)$edf[2], 2), sep = ", "))
+plot (gam_LB,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_LB)$edf[3], 2), sep = ", "))
+plot (gam_LB,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_LB)$edf[4], 2), sep = ", "))
+plot (gam_LB, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
+plot (gam_LB, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_LB)$edf[6], 2), sep = ", "))
+plot (gam_LB,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_LB)$edf[7], 2), sep = ", "))
+plot (gam_LB, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_LB)$edf[8], 2), sep = ", "))
+dev.off()
+```
+## l limanda dab
+```{r dab}
+
+# dab distribution is patchy according to tech advice
+dab_B <- mfri_abun %>%
+  filter (species ==27)
+
+dab_V_sole <- rbind (dab_B, m_kitt_B)
+dab_V_sole %>%
+  ggplot (aes (x = kg_log, col = species)) +
+  geom_freqpoly()
+
+hist (dab_B$kg_log)
+hist (dab_B$kg_tot)
+dotchart (dab_B$kg_log)
+library (mgcv)
+load ("../Models/Borm_14_alltemp/Limanda_limanda_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Limanda_limanda_LB.Rdata")
+
+plot (gam_PA)
+plot (gam_LB)
+
+summary (gam_PA)
+
+png ("../Figures/Dab_partial_plots_PA.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+plot (gam_PA, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_PA)$edf[6], 2), sep = ", "))
+plot (gam_PA,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_PA)$edf[7], 2), sep = ", "))
+plot (gam_PA, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_PA)$edf[8], 2), sep = ", "))
+dev.off()
+
+png ("../Figures/Dab_partial_plots_LB.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_LB, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_LB)$edf[1], 2), sep = ", "))
+plot (gam_LB,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_LB)$edf[2], 2), sep = ", "))
+plot (gam_LB,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_LB)$edf[3], 2), sep = ", "))
+plot (gam_LB,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_LB)$edf[4], 2), sep = ", "))
+plot (gam_LB, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
+plot (gam_LB, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_LB)$edf[6], 2), sep = ", "))
+plot (gam_LB,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_LB)$edf[7], 2), sep = ", "))
+plot (gam_LB, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_LB)$edf[8], 2), sep = ", "))
+dev.off()
+```
+
+## lemon sole
+```{r m_kitt}
+load ("../Models/Borm_14_alltemp/Microstomus_kitt_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Microstomus_kitt_LB.Rdata")
+
+plot (gam_PA)
+plot (gam_LB)
+
+summary (gam_PA)
+
+png ("../Figures/Lemonsole_partial_plots_PA.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_PA, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_PA)$edf[1], 2), sep = ", "))
+plot (gam_PA,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_PA)$edf[2], 2), sep = ", "))
+plot (gam_PA,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_PA)$edf[3], 2), sep = ", "))
+plot (gam_PA,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_PA)$edf[4], 2), sep = ", "))
+plot (gam_PA, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_PA)$edf[5], 2), sep = ", "))
+plot (gam_PA, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_PA)$edf[6], 2), sep = ", "))
+plot (gam_PA,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_PA)$edf[7], 2), sep = ", "))
+plot (gam_PA, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_PA)$edf[8], 2), sep = ", "))
+dev.off()
+
+
+png ("../Figures/Lemonsole_partial_plots_LB.png")
+par (mfrow = c (2, 4), mar = c (2, 1.5, 1.5, 1.5), oma = c(0,1,2,0))
+plot (gam_LB, 
+      select = 1, 
+      ylab = "", xlab = "", 
+      ylim = c (-5, 5), 
+      main = paste ("s(sst)", round (summary (gam_LB)$edf[1], 2), sep = ", "))
+plot (gam_LB,   
+      select = 2, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt)", round (summary (gam_LB)$edf[2], 2), sep = ", "))
+plot (gam_LB,   
+      select = 3, 
+      #ylim = c (-10, 10), 
+      ylab = "", xlab = "", 
+      main = paste ("s(depth)", round (summary (gam_LB)$edf[3], 2), sep = ", "))
+plot (gam_LB,  
+      select = 4, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst sd)", round (summary (gam_LB)$edf[4], 2), sep = ", "))
+plot (gam_LB, 
+      select = 5, 
+      ylim = c (-5, 15), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt sd)", round (summary (gam_LB)$edf[5], 2), sep = ", "))
+plot (gam_LB, 
+      select = 6, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst max)", round (summary (gam_LB)$edf[6], 2), sep = ", "))
+plot (gam_LB,   
+      select = 7, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(sst min)", round (summary (gam_LB)$edf[7], 2), sep = ", "))
+plot (gam_LB, 
+      select = 8, 
+      ylim = c (-5, 5), 
+      ylab = "", xlab = "", 
+      main = paste ("s(bt max)", round (summary (gam_LB)$edf[8], 2), sep = ", "))
+dev.off()
+
+```
+PJW comment: Have you had a look at the GAM predictive surfaces? Are they (either biomass or presence/absence) non-linear? My only thought is that lemon sole could be more prone to singular large hauls of the species due to spawning aggregations  (so I’ve heard – you’d have to check the data), so might be also good to see if those model results are overly influenced by a few huge hauls. Can’t remember when their spawning time is but can look into it.
+```{r m_kitt distribution}
+mfri_abun <- read_csv ("../Data/MFRI_comb_survey.csv",
+                       col_types = cols(
+                         sample_id = col_factor(),
+                         species = col_factor(),
+                         stat_sq = col_factor()
+                         )
+                       ) %>% 
+  # remove autumn 2011 [labor strike] and pre-2000 autumn [sites weren't standard yet]
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn")
+          ) %>% 
+  # get one biomass value for each species and survey tow
+  group_by (sample_id, species) %>%
+  summarize (n_tot = sum(n_per_nautmile),
+             kg_tot = sum(kg_per_nautmile)
+             ) %>%
+  # calculate log biomass
+  mutate (n_log = log(n_tot),
+          kg_log = log(kg_tot))
+
+m_kitt_B <- mfri_abun %>%
+  filter (species ==24)
+
+hist (m_kitt_B$kg_log)
+hist (m_kitt_B$kg_tot)
+dotchart (m_kitt_B$kg_log)
+
+
+```
+## Try temp x depth interaction term
+for some species that were unsuitable, try temp depth interaction term. halibut species were suggested as sensitive to temp x depth in the 12/15 MFRI demersal group meeting
+
+####Greenland halibut
+Full borm 14 model: PA is 65% dev explained, everything sig except sst_Dev. Depth and bottom temp are most important variables, although everything else is around 5-6%. AIC 5805. With interaction btw bottom tempth and depth, get 65.9% dev expl, AIC 5670.135	much better.
+For LB, depth is by far the most important (15%) then bormicon region. everything else < 1. 32% dev expl. AIC 9502.49. with interaction, 32.9%, AID 9476.383
+```{r greenland_halibut_td_intn}
+
+# first load full borm_14 model
+load ("../Models/Borm_14_alltemp/Reinhardtius_hippoglossoides_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Reinhardtius_hippoglossoides_LB.Rdata")
+
+var_imp <- read_csv ("../Models/var_imp_Borm_14_alltemp.csv") 
+
+var_imp %>%
+  filter (species == "Reinhardtius_hippoglossoides") %>%
+  pivot_wider (-c(R2_s, R2_d), names_from = GAM, values_from = Diff_f)
+
+
+summary (gam_PA)
+AIC(gam_PA) # 5805
+summary (gam_LB)
+AIC(gam_LB)
+
+# add interaction term between bottom temp and depth isntead of bormicon?
+# https://stat.ethz.ch/R-manual/R-patched/library/mgcv/html/gam.models.html
+TxD_terms_noborm <- c ("s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_dev)", "s(bt_dev)", "s(sst_max)",  "s(sst_min)", "s(bt_max)", "ti(bottom_temp, tow_depth_begin)")
+formula_TxD <- as.formula (paste0 ("Presence ~", (paste (TxD_terms_noborm, collapse = " + "))))
+formula_TxD_LB <- as.formula (paste0 ("kg_log ~", (paste (TxD_terms_noborm, collapse = " + "))))
+
+
+spp_PA <- mfri_pa %>%
+     dplyr::select (sample_id, all_of("Reinhardtius_hippoglossoides")) %>%
+     right_join (mfri_pred, by = "sample_id") # use right join to cut out faulty fall samples
+   colnames (spp_PA)[2] <- "Presence"
+
+
+   # non-zero biomass data; this will have variable size. Select based on spp_ID code.
+   spp_B <- mfri_abun %>%
+     filter (species == 22) %>%
+     inner_join (mfri_pred, by = "sample_id")
+   
+   # replace some absences with very near-zero number so can have predictions in all bormicon regions
+   
+   # https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R line 87
+   # determine which regions have zero presences
+   empty_regions <- spp_PA %>%
+     group_by (bormicon_region) %>%
+     summarise (count = sum (Presence)) %>%
+     filter (count == 0) %>%
+     pull (bormicon_region)
+   
+   # I need to work from spp_PA to get the number of observations from each region. then I just need to add 10% of n to the end of spp_B. but need random subset of spp_PA to attach spatial information. 
+   
+   if (length (empty_regions) > 0) { 
+     set.seed (10)
+     
+     #https://stackoverflow.com/questions/64034962/randomly-replacing-percentage-of-values-per-group-with-na-in-r-dataframe
+     fake_zeros <- spp_PA %>%
+       filter (bormicon_region %in% empty_regions) %>%
+       group_by (bormicon_region) %>%
+       # replace a random 10% of kg_log values with log(1e-10) (approx -23)
+       mutate (kg_log = replace (Presence, sample (row_number(), size = ceiling (0.1 * n()), replace = FALSE), log(1e-10)), 
+               #add columns to match spp_B
+               species = as.factor(22),
+               n_tot = exp(kg_log), 
+               kg_tot = exp(kg_log),
+               n_log = kg_log
+               ) %>%
+       # move columns to match spp_B
+       relocate (c(species, n_tot, kg_tot, n_log, kg_log), .after =sample_id) %>%
+       dplyr::select (-Presence) %>%
+       # only take the replaced rows
+       filter (kg_log != 0) 
+     
+     # append fake zeros to spp_B
+     spp_B <- rbind (spp_B, fake_zeros)
+     
+   }
+   
+
+   # set gamma to penalize for wiggliness (From Morely github code and Simon wood)
+   # used in Morely et al. 2018 https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R; cites https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv-advanced.pdf
+   gamma_PA <- log (nrow (spp_PA)) / 2
+   gamma_B <- log (nrow (spp_B)) / 2
+
+intn_PA <- update (gam_PA, formula = formula_TxD)
+intn_LB <- update (gam_LB, formula = formula_TxD_LB)
+summary (intn_PA)
+AIC (gam_PA, intn_PA)
+
+summary (intn_LB)
+AIC (gam_LB, intn_LB)
+
+
+```
+## halibut
+Full borm model: PA al roughly same importance, high 7s. bor is 9.6 and depth 8.8. 20.5% dev expl, all sig. intn term 18.5%. AIC 9331 full; 9557 intn.
+LB: only borm and depth above 1. 20.4% expl, devs and bt_max insig. intn 92.3% expl??? AIC 5006, 5818 intn. 
+```{r halibut txd}
+
+# first load full borm_14 model
+load ("../Models/Borm_14_alltemp/Hippoglossus_hippoglossus_PA.Rdata")
+load ("../Models/Borm_14_alltemp/Hippoglossus_hippoglossus_LB.Rdata")
+ 
+
+var_imp %>%
+  filter (species == "Hippoglossus_hippoglossus") %>%
+  pivot_wider (-c(R2_s, R2_d), names_from = GAM, values_from = Diff_f)
+
+
+summary (gam_PA)
+summary (gam_LB)
+
+spp_PA <- mfri_pa %>%
+     dplyr::select (sample_id, all_of("Hippoglossus_hippoglossus")) %>%
+     right_join (mfri_pred, by = "sample_id") # use right join to cut out faulty fall samples
+   colnames (spp_PA)[2] <- "Presence"
+
+
+   # non-zero biomass data; this will have variable size. Select based on spp_ID code.
+   spp_B <- mfri_abun %>%
+     filter (species == 21) %>%
+     inner_join (mfri_pred, by = "sample_id")
+   
+   # replace some absences with very near-zero number so can have predictions in all bormicon regions
+   
+   # https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R line 87
+   # determine which regions have zero presences
+   empty_regions <- spp_PA %>%
+     group_by (bormicon_region) %>%
+     summarise (count = sum (Presence)) %>%
+     filter (count == 0) %>%
+     pull (bormicon_region)
+   
+   # I need to work from spp_PA to get the number of observations from each region. then I just need to add 10% of n to the end of spp_B. but need random subset of spp_PA to attach spatial information. 
+   
+   if (length (empty_regions) > 0) { 
+     set.seed (10)
+     
+     #https://stackoverflow.com/questions/64034962/randomly-replacing-percentage-of-values-per-group-with-na-in-r-dataframe
+     fake_zeros <- spp_PA %>%
+       filter (bormicon_region %in% empty_regions) %>%
+       group_by (bormicon_region) %>%
+       # replace a random 10% of kg_log values with log(1e-10) (approx -23)
+       mutate (kg_log = replace (Presence, sample (row_number(), size = ceiling (0.1 * n()), replace = FALSE), log(1e-10)), 
+               #add columns to match spp_B
+               species = as.factor(21),
+               n_tot = exp(kg_log), 
+               kg_tot = exp(kg_log),
+               n_log = kg_log
+               ) %>%
+       # move columns to match spp_B
+       relocate (c(species, n_tot, kg_tot, n_log, kg_log), .after =sample_id) %>%
+       dplyr::select (-Presence) %>%
+       # only take the replaced rows
+       filter (kg_log != 0) 
+     
+     # append fake zeros to spp_B
+     spp_B <- rbind (spp_B, fake_zeros)
+     
+   }
+   
+
+   # set gamma to penalize for wiggliness (From Morely github code and Simon wood)
+   # used in Morely et al. 2018 https://github.com/pinskylab/project_velocity/blob/master/6_model_fitting_loop.R; cites https://people.maths.bris.ac.uk/~sw15190/mgcv/tampere/mgcv-advanced.pdf
+   gamma_PA <- log (nrow (spp_PA)) / 2
+   gamma_B <- log (nrow (spp_B)) / 2
+
+intn_PA <- update (gam_PA, formula = formula_TxD)
+intn_LB <- update (gam_LB, formula = formula_TxD_LB)
+
+summary (intn_PA)
+AIC (gam_PA, intn_PA)
+
+summary (intn_LB)
+AIC (gam_LB, intn_LB)
+
+
+```
+## explore drop borm/temp x depth interaction
+ I fit models for all 61 species with dropped borm and a temp/depth interaction, with the borm_14_alltemp model as the naive model. so MASE_gam metric will tell me if dropping bormicon and adding the interaction term improves prediction error. What I should look at is the overall difference in dev expl, aic, and MASE GAM, and especially for what species the interaction term significantly improves the model. 
+```{r TxD performance}
+TxD <- read_csv ("../Models/GAM_performance_Borm_14_alltemp_intn_test.csv")
+borm <- read_csv ("../Models/GAM_performance_Borm_14_alltemp.csv")
+
+# how many spp passed MASE test with TxD?
+TxD_better <- TxD %>%
+  filter (MASE_GAM < 1 & DM_GAM_p < 0.05)
+
+TxD_better_med <- TxD %>%
+  filter (MASE_GAM_med < 1 & DM_GAM_p_med < 0.05)
+
+# how many species had better AIC?
+summary (borm$PA_AIC) # mean 8247
+summary (TxD$PA_AIC) # mean 8431
+
+TxD %>% 
+  dplyr::select (species, LB_AIC) %>%
+  rename (LB_AIC_TxD = LB_AIC) %>%
+  left_join (borm, by = "species") %>%
+  mutate (diff_AIC = LB_AIC - LB_AIC_TxD) %>%
+  filter (diff_AIC > 2) # so this will give me the species for which TxD improves AIC. 
+
+TxD %>% 
+  dplyr::select (species, PA_dev, LB_dev) %>%
+  rename (LB_dev_TxD = LB_dev, PA_dev_TxD = PA_dev) %>%
+  left_join (borm, by = "species") %>%
+  mutate (diff_PA_dev = PA_dev_TxD - PA_dev,
+          diff_LB_dev = LB_dev_TxD - LB_dev) %>%
+  relocate (c(diff_PA_dev, diff_LB_dev), .after = species) %>%
+  filter (diff_LB_dev > 0)
+
+```
+ Five species had better MASE performance (mean) with temp/depth interaction: lumpfish, starry ray, cod, greenland halibut, squid. Nine species had better MASE performance with median: starry ray, long rough dab, cod, saithe, greenland halibut, s.mentella, e. gurnardus (crazy E resid), squid, g. retrodorsalis (also crazy E resid)/
+ 
+ PA_AIC: temp improves for 10 species. A radiata, r. hippo, s. mentella, e. gurn (only by 8), c. haren, m. vill, myctoph (only by 7), c. fabricii, s. scombrus, e. princeps. 
+ 
+ LB_AIC: txd improves AIC for a radiata, g. morhua, r. hippo, s. mentella, m. vill, mycto (by 10.5)
+ 
+% dev expl: PA improves for a. radiata, r hippo, s. mentella, c. harengus, but only by 0.01. 
+
+for LB helps 40 spp. much more substantial. m kitt 0.44, g cyno 0.43, m mer .30, t es 0.05, p platessa 0.45, m molva 0.61, l whiff 0.51, l limanda 0.37, a silus 0.1, s mentella 0.01. h hippo 0.72, l pis, 0.76, m dyp 0.46, e gur 0.73, d patis 0.62, s acan 0.68, b saida 0.62, l esmark 0.6, c micop 0.44, b spini 0.43...
+
+for those 21 spp where TxD didn't help LB dev expl, makes very little difference. either 0 or -0.01, s. marinus is -0.04. but this includes cod, a. radiata, a. lupus, p. virens, r. hippoglossoides. 
+
+
+## how do i compare borm vs. txd interaction
+total model complexity might just be sum of edf terms? https://stats.stackexchange.com/questions/346379/calculating-total-estimated-degrees-of-freedom-for-a-gam
+  this is the df when you compare AIC for two models. actually looks like interaction is less complex, fewer degrees of freedom. and yet this doesn't always translate to better AIC. 
+  
+don't worry about ref.df terms: https://stats.stackexchange.com/questions/70871/generalised-additive-model-what-is-ref-df-in-rs-output
 
 ### cross validation--should I have used k = -1? ----
 ```{r}
