@@ -7,6 +7,7 @@ library (mgcv)
 library (tidyverse)
 library (forecast) # for RWF forecast
 library (dismo) # for PA evaluations
+library (beepr) # to notify when scripts finish
 
 # load data----
 
@@ -82,19 +83,20 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
   # sci_name is scientific name separated by an underscore, or a vector of scientific names if using for loop options
   
   # if running fresh and want to run full GAMs, variable importance, and model summary stats together, easier to use an internal for loop to save multiple CSVs. Would just need to uncomment the below and replace instances of sci_name with sci_name[i]
+
   # empty data frame for saving variable importance info
-  #var_imp_all_spp <- data.frame()
+  var_imp_all_spp <- data.frame()
 
   # empty data frame for saving model summary statistics
-  #model_stats <- data.frame()
+  model_stats <- data.frame()
 
-  #for (i in 1:length(spp_names)) {
+  for (i in 1:length(sci_name)) {
     
     # match species sci name to ID code in spp_list
-    spp_id <- as.numeric(as.character(spp_list$Spp_ID[which (spp_list$sci_name_underscore == sci_name)]))# this fixes weird factor problem
+    spp_id <- as.numeric(as.character(spp_list$Spp_ID[which (spp_list$sci_name_underscore == sci_name[i])]))# this fixes weird factor problem
     
     # signal where we are in the process 
-    print(paste(sci_name, Sys.time()))
+    print(paste(sci_name[i], Sys.time()))
    
     
     # ==================
@@ -103,7 +105,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
 
     #Presence/absences for selected species. Grab relevant P/A column and attach to predictor df. 
    spp_PA <- mfri_pa %>%
-     dplyr::select (sample_id, all_of(sci_name)) %>%
+     dplyr::select (sample_id, all_of(sci_name[i])) %>%
      right_join (mfri_pred, by = "sample_id") # use right join to cut out faulty fall samples
    colnames (spp_PA)[2] <- "Presence"
 
@@ -162,17 +164,17 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
    # Fit full GAM ----
    # ==================
    
-    set.seed(10) # needed for gamma maybe? used in Morely code.
-
-   ## Presence-absence model
-   # formula_PA <- as.formula (paste0 ("Presence ~", (paste (model_terms, collapse = " + "))))
-   # gam_PA <- gam (formula_PA,
-   #                family = "binomial",
-   #                data = spp_PA,
-   #                gamma = gamma_PA)
-
-
-  ## log biomass model:
+  #   set.seed(10) # needed for gamma maybe? used in Morely code.
+  # 
+  #  # Presence-absence model
+  #  formula_PA <- as.formula (paste0 ("Presence ~", (paste (model_terms, collapse = " + "))))
+  #  gam_PA <- gam (formula_PA,
+  #                 family = "binomial",
+  #                 data = spp_PA,
+  #                 gamma = gamma_PA)
+  # 
+  # 
+  # # log biomass model:
   # formula_LB <- as.formula (paste0 ("kg_log ~", (paste (model_terms, collapse = " + "))))
   # gam_LB <- gam (formula_LB,
   #                family = "gaussian",
@@ -181,16 +183,16 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
   # 
   # 
   # 
-  ## save models in appropriate folder
-  # save (gam_PA, file = paste0("Models/", directory, "/", sci_name, "_PA.Rdata"))
-  # save (gam_LB, file = paste0("Models/", directory, "/", sci_name, "_LB.Rdata"))
-  #   
-  # } # end function here if just fitting models, not revisiting model diagnostics
+  # # save models in appropriate folder
+  # save (gam_PA, file = paste0("Models/", directory, "/", sci_name[i], "_PA.Rdata"))
+  # save (gam_LB, file = paste0("Models/", directory, "/", sci_name[i], "_LB.Rdata"))
 
-  # 
+  #} # end function here if just fitting models, not revisiting model diagnostics
+
+
   # already fit models, just load
-  load (file.path("Models", directory, paste0(sci_name, "_PA.Rdata"))) 
-  load (file.path("Models", directory, paste0(sci_name, "_LB.Rdata")))
+  load (file.path("Models", directory, paste0(sci_name[i], "_PA.Rdata")))
+  load (file.path("Models", directory, paste0(sci_name[i], "_LB.Rdata")))
 
   formula_PA <- as.formula (paste0 ("Presence ~", (paste (model_terms, collapse = " + "))))
   formula_LB <- as.formula (paste0 ("kg_log ~", (paste (model_terms, collapse = " + "))))
@@ -200,62 +202,62 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
     # Calculate variable importance ----
     # ==================
     
-    # # defining as the deviance explained in full model minus deviance explained in model dropping the variable of interest. e.g. McHenry et al. 2019
-    # var_imp <- data.frame()
-    # 
-    # 
-    # for (x in model_terms) {
-    # 
-    #   # single variable model
-    #   G_PA <- gam (as.formula (paste0 ("Presence ~", x)),
-    #                family = gaussian,
-    #                data = spp_PA,
-    #                gamma = gamma_PA)
-    # 
-    #   G_LB <- gam (as.formula (paste0 ("kg_log ~", x)),
-    #             family = gaussian,
-    #             data = spp_B,
-    #             gamma = gamma_B)
-    # 
-    #   # full model without that variable
-    # 
-    #   G_drop_PA <- gam (as.formula (paste0 ("Presence ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
-    #                     family = gaussian,
-    #                     gamma = gamma_PA,
-    #                     data = filter (spp_PA, !is.na (x))
-    #                     )
-    # 
-    #   G_drop_LB <- gam (as.formula (paste0 ("kg_log ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
-    #                  family = gaussian,
-    #                  gamma = gamma_B,
-    #                  data = filter (spp_B, !is.na (x)))
-    # 
-    # 
-    #   # extract summaries, put together in temporary df. two rows, for lb and pa
-    #   df <- data.frame (species = rep(sci_name[i], 2),
-    #                     Var = rep(x, 2),
-    #                     GAM = c("PA", "LB"),
-    #                     R2_s = c(round (summary(G_PA)$dev.expl * 100, digits = 2),
-    #                              round (summary(G_LB)$dev.expl * 100, digits = 2)
-    #                              ),
-    # 
-    #                     R2_d =  c(round (summary(G_drop_PA)$dev.expl * 100, digits = 2),
-    #                               round (summary(G_drop_LB)$dev.expl * 100, digits = 2)
-    #                               ),
-    # 
-    #                     Diff_f = c(round (summary (gam_PA)$dev.expl * 100 - summary(G_drop_PA)$dev.expl * 100, 2),
-    #                                round (summary (gam_LB)$dev.expl * 100 - summary(G_drop_LB)$dev.expl * 100, 2)
-    #                                )
-    #                     ) # end df
-    # 
-    #   # rbind to full data frame
-    #   var_imp <- rbind (var_imp, df)
-    # 
-    # } # end variable importance loop
-    # 
-    # # rbind to build var_imp table
-    # var_imp_all_spp <- rbind (var_imp_all_spp, var_imp)
-    
+    # defining as the deviance explained in full model minus deviance explained in model dropping the variable of interest. e.g. McHenry et al. 2019
+    var_imp <- data.frame()
+
+
+    for (x in model_terms) {
+
+      # single variable model
+      G_PA <- gam (as.formula (paste0 ("Presence ~", x)),
+                   family = gaussian,
+                   data = spp_PA,
+                   gamma = gamma_PA)
+
+      G_LB <- gam (as.formula (paste0 ("kg_log ~", x)),
+                family = gaussian,
+                data = spp_B,
+                gamma = gamma_B)
+
+      # full model without that variable
+
+      G_drop_PA <- gam (as.formula (paste0 ("Presence ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
+                        family = gaussian,
+                        gamma = gamma_PA,
+                        data = filter (spp_PA, !is.na (x))
+                        )
+
+      G_drop_LB <- gam (as.formula (paste0 ("kg_log ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
+                     family = gaussian,
+                     gamma = gamma_B,
+                     data = filter (spp_B, !is.na (x)))
+
+
+      # extract summaries, put together in temporary df. two rows, for lb and pa
+      df <- data.frame (species = rep(sci_name[i], 2),
+                        Var = rep(x, 2),
+                        GAM = c("PA", "LB"),
+                        R2_s = c(round (summary(G_PA)$dev.expl * 100, digits = 2),
+                                 round (summary(G_LB)$dev.expl * 100, digits = 2)
+                                 ),
+
+                        R2_d =  c(round (summary(G_drop_PA)$dev.expl * 100, digits = 2),
+                                  round (summary(G_drop_LB)$dev.expl * 100, digits = 2)
+                                  ),
+
+                        Diff_f = c(round (summary (gam_PA)$dev.expl * 100 - summary(G_drop_PA)$dev.expl * 100, 2),
+                                   round (summary (gam_LB)$dev.expl * 100 - summary(G_drop_LB)$dev.expl * 100, 2)
+                                   )
+                        ) # end df
+
+      # rbind to full data frame
+      var_imp <- rbind (var_imp, df)
+
+    } # end variable importance loop
+
+    # rbind to build var_imp table
+    var_imp_all_spp <- rbind (var_imp_all_spp, var_imp)
+
     
     
     # ==================
@@ -333,7 +335,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
     gampred_PA <- predict.gam (gam_PA_train, test_spp, type = "response")
     
     Eresid <- mean (exp (residuals.gam (gam_LB_train))) # why mean instead of median? why lb instead of PA?
-    # Also looking at median Eresid because I'm getting some wildly different Eresids for some species
+    # Also looking at median Eresid because I'm getting some wildly different Eresids for some species (think this is because of fake zeros)
     Eresid_med <- median (exp (residuals.gam (gam_LB_train)))
     
       
@@ -345,49 +347,50 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
     ThermPred_spp_med <- gampred_PA * (exp (gampred_LB)) * Eresid_med
       
 
-    # # ==================
-    # # PA sens/spec tests ----
-    # # ==================
-    # 
-    # ## Model diagnostic statistics for PA--AUC, TSS, Kappa----
-    # 
-    # #evaluate takes a vector of the predictions at observed/true presences and observed absences
-    # p_test <- as.vector(gampred_PA[which (test_spp$Presence == 1)])
-    # a_test <- as.vector(gampred_PA[which (test_spp$Presence == 0)])
-    # 
-    # e_test <- evaluate (p_test, a_test)
-    # 
-    # conf <- as.data.frame (e_test@confusion)
-    # 
-    # p_train <- gam_PA$fitted.values[which(train_spp_PA$Presence == 1)]
-    # a_train <- gam_PA$fitted.values[which(train_spp_PA$Presence == 0)]
-    # 
-    # e_train <- evaluate(p_train, a_train)
-    # 
-    # # find prevalence threshold for training data, and then threshold from testing data that's closest to it (from Morely code)
-    # prev_th_train <- threshold (e_train, stat = "prevalence")
-    # th_diff <- abs (e_test@t - prev_th_train)
-    # e_ind <- which (th_diff == min(th_diff))
-    # 
-    # 
     # ==================
-    ## Test performance against naive models ----
+    # PA sens/spec tests ----
     # ==================
-    
-    ## Random walk forecast ----
-    # 
-    # RWF_forecast <- rwf (train_spp_B$kg_tot, drift = T, h = nrow (test_spp), lambda = NULL, biasadj = F) 
-    #   
-    
-    ## Naive GAM (no environmental variables) forecast ----
+
+    ## Model diagnostic statistics for PA--AUC, TSS, Kappa----
+
+    #evaluate takes a vector of the predictions at observed/true presences and observed absences
+    p_test <- as.vector(gampred_PA[which (test_spp$Presence == 1)])
+    a_test <- as.vector(gampred_PA[which (test_spp$Presence == 0)])
+
+    e_test <- evaluate (p_test, a_test)
+
+    conf <- as.data.frame (e_test@confusion)
+
+    p_train <- gam_PA$fitted.values[which(train_spp_PA$Presence == 1)]
+    a_train <- gam_PA$fitted.values[which(train_spp_PA$Presence == 0)]
+
+    e_train <- evaluate(p_train, a_train)
+
+    # find prevalence threshold for training data, and then threshold from testing data that's closest to it (from Morely code)
+    prev_th_train <- threshold (e_train, stat = "prevalence")
+    th_diff <- abs (e_test@t - prev_th_train)
+    e_ind <- which (th_diff == min(th_diff))
+
+
+    # ==================
+    # # Test performance against naive models ----
+    # ==================
+
+    # Random walk forecast ----
+
+    RWF_forecast <- rwf (train_spp_B$kg_tot, drift = T, h = nrow (test_spp), lambda = NULL, biasadj = F)
+
+
+    # Naive GAM (no environmental variables) forecast ----
     formula_PA_naive <- as.formula (paste0 ("Presence ~", (paste (naive_terms, collapse = " + "))))
-    gam_PA_naive <- update (gam_PA_train, 
+    gam_PA_naive <- update (gam_PA_train,
                             formula = formula_PA_naive)
-  
-    
+
+
     formula_LB_naive <- as.formula (paste0 ("kg_log ~", (paste (naive_terms, collapse = " + "))))
     gam_LB_naive <- update (gam_LB_train,
-                            formula = formula_LB_naive) 
+                            formula = formula_LB_naive)
+
    
     # Residuals and thermpred for naive gam
     Eresid_naive <- mean (exp (residuals.gam (gam_LB_naive))) # crazy!!
@@ -410,7 +413,7 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
     MAE_gam_med <- abs (ThermPred_spp_med - test_spp$kg_tot)
     MAE_gam_naive_med <- abs (ThermPred_spp_naive_med - test_spp$kg_tot)
     
-    # MAE_rwf <- abs (RWF_forecast$mean - test_spp$kg_tot)
+    MAE_rwf <- abs (RWF_forecast$mean - test_spp$kg_tot)
 
     ## Diebold-Mariano test  ----
     
@@ -435,15 +438,15 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
     
     dm_gam_med <- dm.test (E1_cc_med, E2_cc_med, h = 1, power = 1, alternative = "greater")
     
-    # # gam vs rwf
-    # 
-    # E1_rw <- RWF_forecast$mean - test_spp$kg_tot
-    # E2_rw <- ThermPred_spp - test_spp$kg_tot
-    # 
-    # E1_cc_rw <- E1_rw [ which (!is.na(E1_rw) & !is.na(E2_rw))]
-    # E2_cc_rw <- E2_rw [ which (!is.na(E1_rw) & !is.na(E2_rw))]
-    # 
-    # dm_rw <- dm.test (E1_cc_rw, E2_cc_rw, h = 1, power = 1, alternative = "greater")
+    # gam vs rwf
+
+    E1_rw <- RWF_forecast$mean - test_spp$kg_tot
+    E2_rw <- ThermPred_spp - test_spp$kg_tot
+
+    E1_cc_rw <- E1_rw [ which (!is.na(E1_rw) & !is.na(E2_rw))]
+    E2_cc_rw <- E2_rw [ which (!is.na(E1_rw) & !is.na(E2_rw))]
+
+    dm_rw <- dm.test (E1_cc_rw, E2_cc_rw, h = 1, power = 1, alternative = "greater")
     
     
     # ==================
@@ -452,33 +455,34 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
     spp_stats <- data.frame (
       
       ## general info
-      species = sci_name,
+      species = sci_name[i],
       n_presence = length (which (spp_PA$Presence == 1)),
       
-      # ## presence/absence performance ----
-      # 
-      # # dev expl and AIC from full model 
-      # PA_dev = round (summary (gam_PA)$dev.expl, 2),
-      # PA_AIC = round (AIC(gam_PA),2),
-      # 
-      # # AUC, TSS, Kappa from training/testing 
-      # AUC = round(e_test@auc, 2),
-      # # TSS should be sensitivity + specificity - 1. Morely does tss_max from full model. going to do max from test?
-      # # https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/j.1365-2664.2006.01214.x
-      # TSS_mx = round (max (with (conf, (tp/(tp + fn) + (tn)/(tn+fp) - 1))), 2),
-      # TSS_th = round (with (conf[e_ind,], (tp/(tp + fn) + (tn)/(tn+fp) - 1)), 2),
-      # 
-      # Kap_mx = round (max(e_test@kappa), 2),
-      # Kap_th = round (e_test@kappa[e_ind], 2),
-      # 
-      # ## log biomass performance ----
-      # # dev expl and AIC from full model 
-      # LB_dev = round (summary (gam_LB)$dev.expl, 2),
-      # LB_AIC = round (AIC(gam_LB),2),
-      # #correlation from Morely code. have to remove any NAs -- this is essentially R2
-      # # LB_cor = round (cor (gampred_LB[which (test_spp$Presence ==1 & !is.na(gampred_LB))], test_spp$kg_log[which (test_spp$Presence == 1 & !is.na(gampred_LB))])^2, 2),
-      # 
-      ## MASE and DM ----
+      ## presence/absence performance ----
+
+      # dev expl and AIC from full model
+      PA_dev = round (summary (gam_PA)$dev.expl, 2),
+      PA_AIC = round (AIC(gam_PA),2),
+
+      # AUC, TSS, Kappa from training/testing
+      AUC = round(e_test@auc, 2),
+      # TSS should be sensitivity + specificity - 1. Morely does tss_max from full model. going to do max from test?
+      # https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/j.1365-2664.2006.01214.x
+      TSS_mx = round (max (with (conf, (tp/(tp + fn) + (tn)/(tn+fp) - 1))), 2),
+      TSS_th = round (with (conf[e_ind,], (tp/(tp + fn) + (tn)/(tn+fp) - 1)), 2),
+
+      Kap_mx = round (max(e_test@kappa), 2),
+      Kap_th = round (e_test@kappa[e_ind], 2),
+
+      ## log biomass performance ----
+      # dev expl and AIC from full model
+      LB_dev = round (summary (gam_LB)$dev.expl, 2),
+      LB_AIC = round (AIC(gam_LB),2),
+      #correlation from Morely code. have to remove any NAs -- this is essentially R2
+      LB_cor = round (cor (gampred_LB[which (test_spp$Presence ==1 & !is.na(gampred_LB))], 
+                           test_spp$kg_log[which (test_spp$Presence == 1 & !is.na(gampred_LB))])^2, 2),
+
+      # MASE and DM ----
       
       # MASE is ratio of MAE from full gam and naive GAM. Want < 1 to trust full GAM. 
       # for Naive GAM
@@ -489,25 +493,25 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
       
       MASE_GAM_med = mean (MAE_gam_med, na.rm = TRUE) / mean (MAE_gam_naive_med, na.rm = TRUE),
       DM_GAM_p_med = dm_gam_med$p.value,
-      DM_GAM_stat_med = dm_gam_med$statistic
+      DM_GAM_stat_med = dm_gam_med$statistic,
       
-      # # for Random walk
-      # MASE_RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE),
-      # DM_RW_p = dm_rw$p.value,
-      # DM_RW_stat = dm_rw$statistic
-      # 
+      # for Random walk
+      MASE_RWF = mean (MAE_gam, na.rm = TRUE) / mean (MAE_rwf, na.rm = TRUE),
+      DM_RW_p = dm_rw$p.value,
+      DM_RW_stat = dm_rw$statistic
+
       
     ) # end stats df
     
   
-  #   # rbind model stats to full data frame
-  #   model_stats <- rbind (model_stats, spp_stats)
-  # 
-  # } # end species for loop if using
-  
-  ## save variable importance and model stats to csv if using for loop
-  # write.csv (var_imp_all_spp, file = paste0 ("Models/var_imp_", directory, ".csv"), row.names = FALSE)
-  # write.csv (model_stats, file = paste0("Models/GAM_performance_", directory, ".csv"), row.names = FALSE)
+    # rbind model stats to full data frame
+    model_stats <- rbind (model_stats, spp_stats)
+
+  } # end species for loop if using
+
+  # save variable importance and model stats to csv if using for loop
+  write.csv (var_imp_all_spp, file = paste0 ("Models/var_imp_", directory, ".csv"), row.names = FALSE)
+  write.csv (model_stats, file = paste0("Models/GAM_performance_", directory, ".csv"), row.names = FALSE)
   
 } # end function 
 
@@ -520,6 +524,37 @@ fit_gam_fun <- function (model_terms, naive_terms, directory, sci_name) {
 # ==================
 # Run functions on models ----
 # ==================
+
+# Full model run ----
+dir.create ("Models/Borm_14_alltemp")
+
+# 61 species with enough data for temp and depth models
+load ("Models/spp_Smooth_latlon.RData")
+
+# filter out species that break for bormicon region
+borm_spp <- filter (spp_Smooth_latlon, 
+                    ! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis"))
+
+Borm_14_alltemp_terms <- c ("bormicon_region", "s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_dev)", "s(bt_dev)", "s(sst_max)",  "s(sst_min)", "s(bt_max)")
+
+borm14_naive <- c("bormicon_region", "s(tow_depth_begin)")
+
+system.time(lapply (borm_spp$sci_name_underscore, fit_gam_fun,
+          model_terms = Borm_14_alltemp_terms, 
+          naive_terms = borm14_naive,
+          directory = "Borm_14_alltemp")
+          ); beep()
+          
+# try comparing borm_14_alltemp with drop borm depth/temp interaction term. set interaction term as new model, and borm_14_altemp as naive.
+dir.create ("Models/Borm_14_alltemp_intn_test")
+
+TxD_terms_noborm <- c ("s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_dev)", "s(bt_dev)", "s(sst_max)",  "s(sst_min)", "s(bt_max)", "ti(bottom_temp, tow_depth_begin)")
+
+fit_gam_fun (sci_name = borm_spp$sci_name_underscore, 
+        directory = "Borm_14_alltemp_intn_test",
+        model_terms = TxD_terms_noborm,
+          naive_terms = Borm_14_alltemp_terms); beep()
+
 
 
 dir.create ("Models/Borm_14_alltemp")
@@ -560,6 +595,8 @@ spp_suit <- MASE %>%
   filter (MASE_GAM < 1, DM_GAM_p < 0.05)
 
 borm_unsuit <- borm_spp %>% filter (!sci_name_underscore %in% spp_suit$species) %>% pull (sci_name_underscore)
+
+
 # move below to a supplemental script
 
 # ==================
