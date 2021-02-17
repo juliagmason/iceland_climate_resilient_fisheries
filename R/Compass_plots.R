@@ -181,10 +181,11 @@ scen_labs <- setNames ( c("SSP 2-4.5", "SSP 5-8.5"), c(245, 585))
 
 # could I make a vector proportional to segment lengths to feed to the text y?
 
-png ("Figures/Fig5_Compass_TB_commnames_nolabs.png", width = 16, height = 9, units = "in", res = 300)
+png ("Figures/Fig5_Compass_TB_commnames_1col.png", width = 170, height = 350, units = "mm", res = 500)
 set.seed(15)
 
 centroid_mean_change %>%
+  #filter (scenario == 585) %>%
   mutate (dist_km = mean_dist/1000) %>%
  
   ggplot() +
@@ -197,24 +198,24 @@ centroid_mean_change %>%
                size = 1.2,
                alpha = 0.7
                ) +  
-  # geom_text(aes(label = Common_name,#species, 
-  #               x = bearing,
-  #               #y = ifelse (dist_km < 100, 180, dist_km + 150),  
-  #               y = 180,
-  # 
-  #               # not sure what angle is doing here but it seems right
-  #               angle = ifelse (bearing < 180,
-  #                               -bearing + 90,
-  #                               -bearing + 270),
-  #               col = Therm_pref),
-  #           #col = "black",
-  #           alpha = 0.7,
-  #          # position = position_jitter(width = 4, height = 5),
-  #           size = 3.5, 
-  #           vjust = 0.1) +
+  geom_text(aes(label = Common_name,#species,
+                x = bearing,
+                #y = ifelse (dist_km < 100, 180, dist_km + 150),
+                y = 180,
+
+                # not sure what angle is doing here but it seems right
+                angle = ifelse (bearing < 180,
+                                -bearing + 90,
+                                -bearing + 270),
+                col = Therm_pref),
+            #col = "black",
+            alpha = 0.7,
+           # position = position_jitter(width = 4, height = 5),
+            size = 2.5,
+            vjust = 0.1) +
   # add circular average?
   geom_point (aes (x = CA, y = dist, col = Therm_pref), data = cir_avg, shape = 24, size = 5) +
-  facet_wrap (~ scenario, labeller = labeller (scenario = scen_labs)) +
+  facet_wrap (~ scenario, labeller = labeller (scenario = scen_labs), ncol = 1) +
   labs(y= "Distance (km)") + 
   # scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
   scale_x_continuous(breaks= c(0, 90, 180, 270), limits = c(0,360)) + 
@@ -222,12 +223,12 @@ centroid_mean_change %>%
   labs (color = "", x ="Bearing") + 
   theme_bw() +
   theme (
-    axis.text.x = element_text (size = 18),
-    axis.text.y = element_text (size = 18),
-    axis.title = element_text (size = 20),
+    axis.text.x = element_text (size = 12),
+    axis.text.y = element_text (size = 12),
+    axis.title = element_text (size = 14),
     plot.title = element_text (size = 24),
-    strip.text = element_text (size = 20),
-    legend.text = element_text (size = 20),
+    strip.text = element_text (size = 14),
+    legend.text = element_text (size = 12)
   ) 
   #ggtitle ("Centroid shift bearing and distance, 2000-2018 vs. 2060-2081")
 
@@ -247,6 +248,7 @@ steno_cir_avg <- centroid_mean_change %>%
   group_by (scenario, Therm_pref) %>%
   summarize (CA = circular.averaging (direction = bearing),
              dist = mean (dist_km))
+
 png ("Figures/Compass_Borm14alltemp_steno_585_commnames.png", width = 8, height = 9, units = "in", res = 300)
 set.seed(15)
 
