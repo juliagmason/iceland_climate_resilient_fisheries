@@ -136,18 +136,18 @@ library (beepr)
 
 # multipanel figure for historical 2060 period and species of interest ----
 # first a function for calculating the predicted diff 245, or diff 585. Returns a raster layer of predicted difference for either scenario
-calc_diff_maps <- function (sci_name, scenario) {
+calc_diff_maps <- function (sci_name, scenario, model) {
   # sci_name is all lowercase with underscore, e.g. gadus_morhua
   # scenario is 245, 585
   
   # load historical brick, which have a layer for each month and year
-  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_Borm_14_alltemp_2000_2018.grd"))
+  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model, "_", "2000_2018.grd"))
   
   # calculate a mean, so just one layer
   mn_hist <- calc (br_hist, mean)
 
   # for predictions, have to calculate an ensemble mean
-  file_names <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, ".*", scenario, "_2061_2080.grd"), full.names = TRUE)
+  file_names <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, "_", model, ".*", scenario, "_2061_2080.grd"), full.names = TRUE)
   
   br_pred <- stack (file_names)
   
@@ -161,15 +161,19 @@ calc_diff_maps <- function (sci_name, scenario) {
 } # end function
 
 # next layer: plot both scenarios for each species, with diverging colorbar
-plot_diff_maps_2scen <- function (sci_name) {
+plot_diff_maps_2scen <- function (sci_name, model) {
   
   scenario <- c (245, 585)
+  #scenario <- 585
   
-  diff_ls <- lapply (scenario, calc_diff_maps, sci_name = sci_name)
+  diff_ls <- lapply (scenario, calc_diff_maps, sci_name = sci_name, model = model)
   diff_br <- brick (diff_ls)
   
   # fix names for labeller
   scen_labs <- setNames ( c("SSP 2-4.5", "SSP 5-8.5"), names (diff_br))
+  
+  # add silhouette
+  #://cran.r-project.org/web/packages/rphylopic/readme/README.html
   
   # plot
   gplot (diff_br) +
@@ -177,17 +181,19 @@ plot_diff_maps_2scen <- function (sci_name) {
     borders (fill = "grey90", col = "black", 
              xlim = c (-32, -3), ylim = c (60, 69)) +
     coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
-    facet_wrap (~variable, labeller = labeller (variable = scen_labs), ncol = 1) +
+    facet_wrap (~variable, labeller = labeller (variable = scen_labs)) +
     scale_fill_gradient2 (midpoint = 0, low = "#8C510A", mid = "#F5F5F5", high = "#01665E", na.value = "white") +
     labs (fill = "Habitat \ndifference") +
     theme_bw () +
-    theme (axis.title = element_blank())
+    theme (axis.title = element_blank()) +
+    add_phylopic (img, x = -10, y = 62, alpha = 1, ysize = 5)
+    annotation_custom (cod2, xmin=, xmax=4, ymin=7.5, ymax=Inf)
 }
 
 # strip text labelling issue workaround--function for mean historical later
-calc_mn_hist_fun <- function (sci_name) {
+calc_mn_hist_fun <- function (sci_name, model) {
   # load historical brick, which have a layer for each month and year
-  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_Borm_14_alltemp_2000_2018.grd"))
+  br_hist <- brick (paste0("Models/Prediction_bricks/", sci_name, "_", model, "_", "2000_2018.grd"))
   
   # calculate a mean, so just one layer
   mn_hist <- calc (br_hist, mean)
@@ -196,16 +202,82 @@ calc_mn_hist_fun <- function (sci_name) {
 }
 
 # now grid.arrange the plots for species of interest. Can't figure out how to match historical and future, but can maybe plot 2 with the same height
-sci_name_vec <- c("Gadus_morhua", "Lophius_piscatorius", "Cyclopterus_lumpus")
-p_pred <- lapply (sci_name_vec, plot_diff_maps_2scen) 
+sci_name_vec <- c("Gadus_morhua", "Hippoglossoides_platessoides","Lophius_piscatorius", "Cyclopterus_lumpus")
+
+#import phylopic
+library (rphylopic)
+library (RCurl)
+library (png)
+
+cod_df <- name_search(text = "Gadus morhua", options = "namebankID")[[1]]
+name_get (uuid = cod_df$uid[1])
+image_get(uuid = id)
+cod <- image_data(cod_df$uid[20], size = 128)[[1]]
+ubio_get (namebankID = 180556)
+img <- image_data ("bba1800a-dd86-451d-a79b-c5944cfe5231", size = "512")[[1]]
+cod2 <- rasterGrob(img, interpolate=TRUE)
+cat <- image_data("23cd6aa4-9587-4a2e-8e26-de42885004c9", size = 128)[[1]]
+
+cod_iud <- phylopic_uid
+
+codurl<-"http://phylopic.org/name/a1a2209d-ad95-4817-bd19-bfcd93acf4d5"
+codlogo = readPNG(getURLContnt("http://phylopic.org/assets/images/submissions/27f02109-4604-4f10-a95c-73686a59a172.thumb.png"))
+cod <- image_data ("a1a2209d-ad95-4817-bd19-bfcd93acf4d5", size = 128)[[1]]
+id <- "a1a2209d-ad95-4817-bd19-bfcd93acf4d5"
+
+lump <- "35690EED-2223-41CF-B825-A3B0CD808BD8"
+lf <- image_get (http://phylopic.org/assets/images/submissions/27f02109-4604-4f10-a95c-73686a59a172.thumb.png, size = "512")[[1]]
+name_get (uuid = id)
+
+ggplot (aes (x = mpg, y = cyl), data = mtcars) +
+  geom_point() +
+  add_phylopic(codlogo)
+
+# https://scrogster.wordpress.com/2014/06/02/adding-phylopic-org-silhouettes-to-r-plots/
+logoing_func<-function(logo, x, y, size){
+  dims<-dim(logo)[1:2] #number of x-y pixels for the logo (aspect ratio)
+  AR<-dims[1]/dims[2]
+  par(usr=c(0, 1, 0, 1))
+  rasterImage(logo, x-(size/2), y-(AR*size/2), x+(size/2), y+(AR*size/2), interpolate=TRUE)
+}
+
+
+codlogo = readPNG(getURLContent(codurl), native = T)
+
+
+p_pred <- lapply (sci_name_vec, plot_diff_maps_2scen, model = "Borm_14_alltemp") 
 # https://intellipaat.com/community/23231/how-do-i-arrange-a-variable-list-of-plots-using-grid-arrange
 
-png ("Figures/Diffmap_2panel_test.png", width = 4, height = 4, units = "in", res = 300)
+ggsave ("Figures/Fig4_4panel_test.eps", width = 170, height = 350, units = "mm", dip = 300)
 do.call ("grid.arrange", c(p_pred, ncol = 1))
+dev.off()
+
+ggsave ("Figures/Fig4a_cod_diff_logo.eps", width = 170, height = 85, units = "mm", dpi= 300)
+plot (p_pred[[1]])
+logoing_func(img, x = 0.10, y = 0.90, size = 0.15)
+dev.off()
+
+ggsave ("Figures/Fig4b_lrd_diff.eps", width = 170, height = 85, units = "mm", dpi= 300)
+plot (p_pred[[2]])
+dev.off()
+
+ggsave ("Figures/Fig4a_mf_diff.eps", width = 170, height = 85, units = "mm", dpi= 300)
+plot (p_pred[[3]], )
+dev.off()
+
+ggsave ("Figures/Fig4c_whit_diff.eps", width = 170, height = 85, units = "mm", dpi= 300)
+plot_diff_maps_2scen(sci_name = "Merlangius_merlangus", model = "Borm_14_alltemp") 
+dev.off()
+
+ggsave ("Figures/Fig4a_lf_diff.eps", width = 170, height = 85, units = "mm", dpi= 300)
+plot (p_pred[[4]])
 dev.off()
 
 ls_hist <- lapply (sci_name_vec, calc_mn_hist_fun)
 br_hist <- brick (ls_hist)
+
+# jettison historical. try to facet_grid with multiple species?
+
 
 # set labeller names as sci_name
 hist_lab <- setNames (str_replace (sci_name_vec, "_", " "), names (br_hist))
@@ -296,7 +368,7 @@ p_hist1 <- gplot (br_hist[[1]]) +
 
 p_hist1 + p_pred[[1]] + plot_layout (ncol = 2, heights = c (1, 2))
 
-# add phylopic silhouette
+# add phylopic silhouette? 
 # https://cran.r-project.org/web/packages/rphylopic/readme/README.html
 # https://stackoverflow.com/questions/60917778/how-do-i-plot-an-image-from-phylopic-in-top-right-corner-of-my-ggplot-graph-in-r
 
