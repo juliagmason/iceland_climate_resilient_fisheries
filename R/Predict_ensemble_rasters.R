@@ -91,6 +91,8 @@ borm_r <- raster ("Data/bormicon_divisions.grd")
 # this will depend on the terms in the GAM
 stack_names <- c("bormicon_region", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
 
+#stack_names <- c( "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
+
 # ==================
 # Future predictions ----
 # ==================
@@ -255,6 +257,28 @@ system.time (pmap (monk_expand, predict_brick_fun)) # 2.17 hrs for monkfish
 
 # do a few at a time
 
+# just do cod, a. radiata and r. hippoglossus for temp x depth intn
+TxD_expand <- expand_grid (sci_name = c("Amblyraja_radiata", "Reinhardtius_hippoglossoides", "Cyclopterus_lumpus", "Pleuronectes_platessa", "Sebastes_mentella", "Hippoglossus_hippoglossus", "Lophius_piscatorius"),
+                            GAM = "Borm_14_alltemp_intn_test",
+                            CM = CM_list,
+                            scenario = 585,
+                            year1 = 2061,
+                            year2 = 2080) %>%
+  #filter (!(CM == "CM26" & scenario == 245)) %>% 
+  as.list()
+
+TxD_expand <- expand_grid (sci_name = c("Cyclopterus_lumpus"),
+                           GAM = "Borm_14_alltemp_intn_test",
+                           CM = CM_list,
+                           scenario = 245,
+                           year1 = 2061,
+                           year2 = 2080) %>%
+  filter (!(CM == "CM26" & scenario == 245)) %>% 
+  as.list()
+
+system.time (pmap (TxD_expand, predict_brick_fun)) 
+
+
 # ==================
 ## Historical period using GLORYS temperature ----
 # ==================
@@ -364,3 +388,13 @@ addl_hist <- expand_grid (sci_name = c("Mallotus_villosus",  "Amblyraja_radiata"
   as.list()
 
 pmap (addl_hist, hist_brick_fun); beep()
+
+TxD_expand <- expand_grid (sci_name = c("Gadus_morhua", "Amblyraja_radiata", "Reinhardtius_hippoglossoides", "Cyclopterus_lumpus", "Pleuronectes_platessa", "Sebastes_mentella", "Hippoglossus_hippoglossus", "Lophius_piscatorius"),
+                           GAM = "Borm_14_alltemp_intn_test",
+
+                           year1 = 2000,
+                           year2 = 2018) %>%
+  #filter (!(CM == "CM26" & scenario == 245)) %>% 
+  as.list()
+
+system.time (pmap (TxD_expand, hist_brick_fun)) 
