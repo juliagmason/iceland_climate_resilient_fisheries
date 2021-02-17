@@ -14,7 +14,7 @@ Stratification and allocation of stations is divided into Northern and Southern 
 
 Bottom trawl, 3.8knots for 4nm. several tows are shorter than 4nm? 2nm min. 
 
-```{r setup}
+```{r setup, eval = FALSE}
 library(tidyverse)
 library (skimr)
 library (lubridate)
@@ -869,6 +869,13 @@ mfri_pred_vars <- mfri_pred %>%
   dplyr::select (tow_depth_begin, surface_temp, bottom_temp, sst_dev, bt_dev, sst_max, sst_min, bt_max, bt_min)
 
 mfri_comp <- mfri_pred_vars [ complete.cases (mfri_pred_vars),]
+
+# pearson's rho for min bt and bt? does pamela mean spearman's rho? use spearman for ordinal or non-normal
+pearson <-  cor.test(mfri_comp$bt_min, mfri_comp$bottom_temp, 
+                    method = "spearman", exact = FALSE)
+shapiro.test (mfri_comp$bottom_temp) # too much data
+qqnorm (mfri_comp$bottom_temp)
+
 cont.corr <- round (cor (mfri_comp), 1)
 
 png (file = "../Figures/Depth_Temp_Corrplot.png", width = 6, height = 6, units = "in", res = 150)
