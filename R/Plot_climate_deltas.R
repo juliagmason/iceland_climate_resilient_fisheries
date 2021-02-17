@@ -299,6 +299,29 @@ tmp2 <- calc_ensemble_delta(scenario = 245, var = "sst", period = 2061, metric =
 
 # plot mean or sd 2panel scenarios side by side for grid.arrange ----
 # hard coded for 2061 
+
+# marmap depth for bathyetry lines
+# Depth 
+library (marmap)
+depth <- getNOAA.bathy(lon1 = -45, lon2 = 15,
+                       lat1 = 50, lat2 = 85, 
+                       resolution = 4)
+
+plot (depth, deep = -6000, shallow = 0, step= 1000, label = TRUE)
+
+# convert to df for ggplot
+# https://stackoverflow.com/questions/50119592/plot-bathymetry-and-coastline-using-ggplot2-and-marmap
+depth_m <- as.matrix (depth)
+class (depth_m) <- "matrix"
+depth_df <- depth_m %>%
+
+  as.data.frame() %>%
+  rownames_to_column(var = "lon") %>%
+  gather(lat, value, -1) %>%
+  mutate_all(funs(as.numeric)) 
+
+# can i do the same thing with eez
+
 plot_delta_map_fun <- function (var, period, metric) {
   
   # apply ensemble function for both scenarios
@@ -331,15 +354,26 @@ plot_delta_map_fun <- function (var, period, metric) {
 
   }
   
+  # add bathymtery lines??
+  # https://stackoverflow.com/questions/50119592/plot-bathymetry-and-coastline-using-ggplot2-and-marmap
+  # https://ben-williams.github.io/updated_ggplot_figures.html
+  
   # plot
   gplot (delta_br) +
+    #geom_sf (data  = eez, fill = NA, lwd = 1, lty = 1) +
     geom_raster (aes (fill = value)) +
+   
+    coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+    # plot depth contours, 1000m
+    geom_contour(aes(x = lon, y = lat, z = value), binwidth = 1000, colour = "black", data = depth_df) +
     borders (fill = "grey90", col = "black", 
              xlim = c (-32, -3), ylim = c (60, 69)) +
-    coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+
+    #coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
     facet_wrap (~variable, labeller = labeller (variable = scen_labs)) +
     scale_fill_gradient2 (low = low_val, mid = mid_val, high = high_val, midpoint = mdpt, na.value = "white", limits = lim) +
     labs (fill = expression(paste(degree, 'C'))) +
+   
     theme_bw () #+
     # better to set this in grid.arrange for different figures
     # theme (
@@ -367,7 +401,7 @@ plots_2060 <- pmap (plots_2060_ls, plot_delta_map_fun); beep()
 
 grid.arrange (plots_2060[[1]] + ggtitle ("SST") + theme(legend.position = "none"), plots_2060[[3]] + theme (axis.text.y = element_blank()) + ggtitle ("BT"), ncol = 2, top = textGrob("Mean", gp = gpar(fontsize = 20), vjust = 0.7))
 
-png ("Figures/Deltas_map_2061_bt.png", width = 4, height = 4, units = "in", res = 300)
+ggsave ("Figures/Deltas_map_2061_bt.eps", width = 4, height = 4, units = "in", dpi = 300)
 grid.arrange (plots_2060[[3]] + theme (
   axis.text = element_text (size = 8),
   axis.title = element_blank (),
@@ -384,7 +418,7 @@ plots_2060[[4]]+ theme (
 ) , nrow = 2, top = textGrob("Bottom temperature", gp = gpar(fontsize = 12), vjust = 0.7))
 dev.off()
 
-png ("Figures/Deltas_map_2061_sst.png", width = 4, height = 4, units = "in", res = 300)
+ggsave ("Figures/Deltas_map_2061_sst.eps", width = 4, height = 4, units = "in", dpi = 300)
 grid.arrange (plots_2060[[1]] + theme (
   axis.text = element_text (size = 8),
   axis.title = element_blank (),
