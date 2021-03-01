@@ -190,8 +190,13 @@ library (rasterVis)
 library (grid)
 library (gridExtra)
 
+library (beepr)
+
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
+
+# larger prediction raster clip
+eez_dims <- as.vector (extent (eez))
 
 # using several functions to get here. Unfortunately can't figure out how to do more sophisticated raster layer naming/facetting to do this within a list column.
 
@@ -206,7 +211,11 @@ calc_CM_delta_mean <- function (CM, scenario, var, period) {
   br <- brick (list.files(path = "Data/CMIP6_deltas/", pattern = paste(CM, scenario, var, "deltas.grd", sep = "_"), full.names = TRUE))
   
   # mask to iceland EEZ
-  br_mask <- mask (br, eez)
+  #br_mask <- mask (br, eez)
+  
+  # just clip to EEZ extent
+  br_mask <- crop (br,pred_r_template)
+                     
   
   # break into appropriate decades and calculate mean
 
@@ -319,6 +328,7 @@ depth_df <- depth_m %>%
   rownames_to_column(var = "lon") %>%
   gather(lat, value, -1) %>%
   mutate_all(funs(as.numeric)) 
+# this throws a warming about dplyr and funs()
 
 # can i do the same thing with eez
 
@@ -344,7 +354,7 @@ plot_delta_map_fun <- function (var, period, metric) {
     mid_val <- "#F7F7F7"
     high_val <- "#B2182B"
     mdpt <- 0
-    lim <- c(-2.6, 8.5)
+    lim <- c(-2.6, 4.5)
   } else if (metric == "sd") {
     low_val <- "#F7FCFD"
     high_val <- "#00441B"
@@ -360,12 +370,13 @@ plot_delta_map_fun <- function (var, period, metric) {
   
   # plot
   gplot (delta_br) +
-    #geom_sf (data  = eez, fill = NA, lwd = 1, lty = 1) +
-    geom_raster (aes (fill = value)) +
+    
+    geom_raster (aes (x = x, y = y, fill = value)) +
    
     coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
     # plot depth contours, 1000m
     geom_contour(aes(x = lon, y = lat, z = value), binwidth = 1000, colour = "black", data = depth_df) +
+    #geom_sf (data  = eez, fill = NA, lwd = 1, lty = 1) +
     borders (fill = "grey90", col = "black", 
              xlim = c (-32, -3), ylim = c (60, 69)) +
 
@@ -399,10 +410,18 @@ plots_2060_ls <- expand_grid (var = c("sst", "bt"),
 
 plots_2060 <- pmap (plots_2060_ls, plot_delta_map_fun); beep()
 
+
 grid.arrange (plots_2060[[1]] + ggtitle ("SST") + theme(legend.position = "none"), plots_2060[[3]] + theme (axis.text.y = element_blank()) + ggtitle ("BT"), ncol = 2, top = textGrob("Mean", gp = gpar(fontsize = 20), vjust = 0.7))
 
-ggsave ("Figures/Deltas_map_2061_bt.eps", width = 4, height = 4, units = "in", dpi = 300)
-grid.arrange (plots_2060[[3]] + theme (
+# try to plot eez
+# https://github.com/r-spatial/sf/issues/371
+eez_df <- eez %>% as_tibble() %>% dplyr::select(-geometry)
+eez_fort <- fortify (eez)
+plots_2060[[1]] +
+  geom_path (data  = eez, aes (x = x), fill = NA, lwd = 1, lty = 1)
+
+
+bt_square <- grid.arrange (plots_2060[[3]] + theme (
   axis.text = element_text (size = 8),
   axis.title = element_blank (),
   strip.text = element_text (size = 10),
@@ -416,10 +435,11 @@ plots_2060[[4]]+ theme (
   legend.text = element_text (size = 8),
   legend.title = element_text (size = 10)
 ) , nrow = 2, top = textGrob("Bottom temperature", gp = gpar(fontsize = 12), vjust = 0.7))
-dev.off()
 
-ggsave ("Figures/Deltas_map_2061_sst.eps", width = 4, height = 4, units = "in", dpi = 300)
-grid.arrange (plots_2060[[1]] + theme (
+ggsave ("Figures/Deltas_map_2061_bt_sq.eps", bt_square, width = 4, height = 4, units = "in", dpi = 300)
+
+
+sst_sq <- grid.arrange (plots_2060[[1]] + theme (
   axis.text = element_text (size = 8),
   axis.title = element_blank (),
   strip.text = element_text (size = 10),
@@ -433,7 +453,12 @@ plots_2060[[2]]+ theme (
   legend.text = element_text (size = 8),
   legend.title = element_text (size = 10)
 ) , nrow = 2, top = textGrob("Surface temperature", gp = gpar(fontsize = 12), vjust = 0.7))
-dev.off()
+
+ggsave ("Figures/Deltas_map_2061_sst_sq.eps", sst_sq, width = 4, height = 4, units = "in", dpi = 300)
+
+ggsave ("Figures/eez.eps", plot (eez), width = 4, height = 4, units = "in", dpi = 300)
+
+ggplot() + geom_sf (data  = eez, fill = NA, lwd = 1, lty = 1) +
 
 
 # supplemental figure--plot ensemble mean and sd for all periods ----
