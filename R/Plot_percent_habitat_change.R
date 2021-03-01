@@ -28,6 +28,7 @@ borm_spp <- spp_Smooth_latlon %>%
   filter (!sci_name_underscore == "Myoxocephalus_scorpius")
 
 
+
 # Calculate amount of habitat in historical and predicted bricks from my rasters (created in Predict_ensemble_rasters.R)
 
 # doing both historical and future at the same time takes >2x longer, because repeating the historical one 4-5 times. Instead, make separate df for historical and future, and combine with left_join. 
@@ -109,12 +110,7 @@ save (pred_hist_hab, file = "Data/pred_hist_hab_df.RData")
 load ("Data/pred_hist_hab_df.RData")
 
 # Plot only 47 suitable species presented in publication
-# list of suitable/used species. 49
-load ("Models/spp_Smooth_latlon.RData")
 
-# filter out pelagics and spp that didn't have enough data for training, so couldn't determine suitability
-borm_spp <- spp_Smooth_latlon %>% 
-  filter (! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis", "Clupea_harengus", "Scomber_scombrus", "Mallotus_villosus", "Micromesistius_poutassou", "Argentina_silus"))
 
 # GAM performance suitability measures
 MASE <- read_csv ("Models/GAM_performance_Borm_14_alltemp.csv")
@@ -126,13 +122,15 @@ borm_suit <- borm_spp %>% filter (sci_name_underscore %in% spp_suit$species) %>%
 # save for running on remote desktop. 49 species. 47 without blue whiting or argentine. 
 save (borm_suit, file = "Models/spp_Borm_suit.RData")
 
+# suitable species with Bormicon model:
+load ("Models/spp_Borm_suit.RData")
 
 # species-by-species change ----
 
 # Looking at various metrics. Percent change is the most common, but hard to interpret when negative and positive changes are very large. Makes positive changes look way more important than negative changes. 
 
 
-# landed spp only
+# plot landed spp only for interviewed
 landed_spp <- spp_list %>%
   filter (!is.na (Landed_name),
           ! species %in% c("Somniosus_microcephalus", "Other_flatfish", "Capelin_roe")) %>%
@@ -151,9 +149,9 @@ isl_spp <- read_csv ("Data/Raw_data/species.csv",
 
 hab_change <- pred_hist_hab %>%
   # filter landed spp for interviews
-  filter (species %in% landed_spp) %>%
+  #filter (species %in% landed_spp) %>%
   # filter suitable (makes some of the below code unnecessary)
-  #filter (species %in% borm_suit) %>%
+  filter (species %in% borm_suit) %>%
   left_join (spp_list, by = "species") %>% 
   # use isl_spp instead of spp_list for icelandic names. 
   #left_join (isl_spp, by = "species") %>%
@@ -255,7 +253,7 @@ face_landed[2] <- "bold"
 
 
 
-png (file = "Figures/Hab_change_TB_boxplot_interviews.png", width = 16, height = 9, units = "in", res = 300)
+png (file = "Figures/Fig3_Hab_change_TB_boxplot_suitable.png", width = 16, height = 9, units = "in", res = 300)
 
 hab_change_gg +
   geom_boxplot (aes (y = Common_name,
@@ -402,15 +400,15 @@ med_hab_change <- hab_change %>%
   group_by (species, scenario) %>%
   # use mutate to keep other columns
   mutate (md_change = median (log10_foldchange)) %>%
-  distinct_at (vars (species, Common_name, heiti, mean_TB, mean_Steno, mean_depth, scenario, md_change)) 
+  distinct_at (vars (species, Common_name,  mean_TB, mean_Steno, mean_depth, scenario, md_change)) 
 
 
 # is there a rltp between hab change and TB/steno?
 summary (lm (md_change ~ mean_TB, data = filter (med_hab_change, scenario == 245)))
-# y = 0.04x -0.05, adj r2 = 0.14, p = 0.00123
+# y = 0.03x -0.05, adj r2 = 0.03, p = 0.13
 
 summary (lm (md_change ~ mean_TB, data = filter (med_hab_change, scenario == 585)))
-# y = 0.07x -0.04, adj r2 = 0.25, p = 1.626e-05
+# y = 0.06x -0.04, adj r2 = 0.12, p = 0.009765
 
 # would expect larger Steno to be smaller habitat change, but not significant
 summary (lm (md_change ~ mean_Steno, data = filter (med_hab_change, scenario == 245)))
@@ -465,10 +463,10 @@ cent_change_mn <- centroid_change %>%
 
 # is there a rltp between edge change and TB/steno?
 summary (lm (med_cold ~ mean_TB, data = filter (edge_change_med, scenario == 245)))
-# p = 0.9 for warm, but y = 0.09x + 0.03, adj r2 0.13, p = 0.006 for med_cold
+# p = 0.5 for warm, but y = 0.09x + 0.03, adj r2 0.13, p = 0.02 for med_cold
 
 summary (lm (med_cold ~ mean_TB, data = filter (edge_change_med, scenario == 585)))
-# p = 0.09 for warm, y = 0.09x + 0.11, adj r2 = 0.19, p = 0.001
+# p = 0.08 for warm, y = 0.09x + 0.11, adj r2 = 0.19, p = 0.004 for cold
 
 # this means that warmer species see their cold edge push upward. 
 
