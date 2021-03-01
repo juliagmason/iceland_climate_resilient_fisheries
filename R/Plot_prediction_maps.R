@@ -248,6 +248,8 @@ codlogo = readPNG(getURLContent(codurl), native = T)
 p_pred <- lapply (sci_name_vec, plot_diff_maps_2scen, model = "Borm_14_alltemp") 
 # https://intellipaat.com/community/23231/how-do-i-arrange-a-variable-list-of-plots-using-grid-arrange
 
+whit <- plot_diff_maps_2scen(sci_name = "Merlangius_merlangus", model = "Borm_14_alltemp") 
+
 ggsave ("Figures/Fig4_4panel_test.eps", width = 170, height = 350, units = "mm", dip = 300)
 do.call ("grid.arrange", c(p_pred, ncol = 1))
 dev.off()
@@ -269,7 +271,7 @@ ggsave ("Figures/Fig4c_whit_diff.eps", width = 170, height = 85, units = "mm", d
 plot_diff_maps_2scen(sci_name = "Merlangius_merlangus", model = "Borm_14_alltemp") 
 dev.off()
 
-ggsave ("Figures/Fig4a_lf_diff.eps", width = 170, height = 85, units = "mm", dpi= 300)
+ggsave ("Figures/Fig4d_lf_diff.eps", width = 170, height = 85, units = "mm", dpi= 300)
 plot (p_pred[[4]])
 dev.off()
 
