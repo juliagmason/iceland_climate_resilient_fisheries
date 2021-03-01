@@ -10,7 +10,8 @@ library (SDMTools) # for calculating circular average. Not available for R versi
 #library (spatstat) # for weighted quantiles
 
 
-
+################################################################
+# Calculate change in centroid of distribution ----
 # Code from Morely et al. 2018, calculating % habitat change as change in sum of prediction values
 
 # trying something different, with purr. Still think it's faster to separate historical and future
@@ -171,6 +172,7 @@ centroid_mean_change <- centroid_change %>%
 # not seeing much of a pattern. is there a difference in circular average?
 # overall CA
 cir_avg <- centroid_mean_change %>%
+  filter (sp)
   mutate (dist_km = mean_dist/1000) %>%
   group_by (scenario, Therm_pref) %>%
   summarize (CA = circular.averaging (direction = bearing),
@@ -179,13 +181,11 @@ cir_avg <- centroid_mean_change %>%
 # scenario names for labeller
 scen_labs <- setNames ( c("SSP 2-4.5", "SSP 5-8.5"), c(245, 585))
 
-# could I make a vector proportional to segment lengths to feed to the text y?
 
-png ("Figures/Fig5_Compass_TB_commnames_1col.png", width = 170, height = 350, units = "mm", res = 500)
+png ("Figures/Fig5_Compass_TB_nolab.png", width = 170, height = 350, units = "mm", res = 500)
 set.seed(15)
 
 centroid_mean_change %>%
-  #filter (scenario == 585) %>%
   mutate (dist_km = mean_dist/1000) %>%
  
   ggplot() +
@@ -198,21 +198,21 @@ centroid_mean_change %>%
                size = 1.2,
                alpha = 0.7
                ) +  
-  geom_text(aes(label = Common_name,#species,
-                x = bearing,
-                #y = ifelse (dist_km < 100, 180, dist_km + 150),
-                y = 180,
-
-                # not sure what angle is doing here but it seems right
-                angle = ifelse (bearing < 180,
-                                -bearing + 90,
-                                -bearing + 270),
-                col = Therm_pref),
-            #col = "black",
-            alpha = 0.7,
-           # position = position_jitter(width = 4, height = 5),
-            size = 2.5,
-            vjust = 0.1) +
+  # geom_text(aes(label = Common_name,#species,
+  #               x = bearing,
+  #               #y = ifelse (dist_km < 100, 180, dist_km + 150),
+  #               y = 180,
+  # 
+  #               # not sure what angle is doing here but it seems right
+  #               angle = ifelse (bearing < 180,
+  #                               -bearing + 90,
+  #                               -bearing + 270),
+  #               col = Therm_pref),
+  #           #col = "black",
+  #           alpha = 0.7,
+  #          # position = position_jitter(width = 4, height = 5),
+  #           size = 2.5,
+  #           vjust = 0.1) +
   # add circular average?
   geom_point (aes (x = CA, y = dist, col = Therm_pref), data = cir_avg, shape = 24, size = 5) +
   facet_wrap (~ scenario, labeller = labeller (scenario = scen_labs), ncol = 1) +
@@ -235,8 +235,63 @@ centroid_mean_change %>%
 dev.off()
 
 
+# split into TB, with labels, for supplement
+png ("Figures/Fig5SI_Compass_TB_facet_labels.png", width = 6.5, height = 9, units = "in", res = 500)
+set.seed(15)
 
+centroid_mean_change %>%
+  mutate (dist_km = mean_dist/1000,
+          Common_name = case_when (
+            Common_name == "Lycodes eudipleurostictus" ~ "L. eudipleur.",
+            Common_name == "Lycodes seminudus" ~ "L. seminudus",
+            Common_name == "Rabbitfish (rat fish)" ~ "Rabbitfish",
+          TRUE ~ Common_name
+          )) %>%
+  
+  ggplot() +
+  coord_polar(start = 0) +
+  geom_segment(aes (y = 0,x = bearing,
+                    xend = bearing, 
+                    yend = dist_km,
+                    col = Therm_pref), 
+               size = 1,
+               alpha = 0.7
+               ) +  
+  geom_text(aes(label = Common_name,#species,
+              x = bearing,
+              y = 180,
 
+              # not sure what angle is doing here but it seems right
+              angle = ifelse (bearing < 180,
+                              -bearing + 90,
+                              -bearing + 270)),
+          col = "black",
+          alpha = 0.7,
+        #position = position_jitter(width = 4, height = 5),
+          size = 2,
+          vjust = 0.1) +
+#   # add circular average?
+# geom_point (aes (x = CA, y = dist, col = Therm_pref), data = cir_avg, shape = 24, size = 5) +
+  facet_grid (Therm_pref ~ scenario, labeller = labeller (scenario = scen_labs)) +
+  labs(y= "Distance (km)") + 
+  # scale_x_continuous(breaks= c(22.5,67.5,112.5,157.5,202.5,247.5,292.5,337.5), limits = c(0,360)) + 
+  scale_x_continuous(breaks= c(0, 90, 180, 270), limits = c(0,360)) + 
+  scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
+  labs (color = "", x ="Bearing") + 
+  theme_bw() +
+  theme (
+    axis.text.x = element_text (size = 12),
+    axis.text.y = element_text (size = 12),
+    axis.title = element_text (size = 14),
+    plot.title = element_text (size = 24),
+    strip.text = element_text (size = 14),
+    legend.position = "none"
+  ) 
+ggtitle ("Centroid shift bearing and distance, 2000-2018 vs. 2060-2081, by thermal preference")
+
+dev.off()
+
+###########################################################################
 # plot just 585 with depth, TB, steno, like campana figure 5----
 steno_cir_avg <- centroid_mean_change %>%
   mutate (dist_km = mean_dist/1000,
