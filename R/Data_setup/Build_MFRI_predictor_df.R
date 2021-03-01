@@ -2,7 +2,8 @@
 # 6/26/2020
 # JGM
 
-# Start to build dataframe for attaching environmental predictor variables to sample lat lon
+# Build dataframe for attaching environmental predictor variables to survey lat lon
+
 # pairing rasters to points: https://stackoverflow.com/questions/34294376/how-to-extract-data-from-a-rasterbrick
 
 library (tidyverse)
@@ -10,7 +11,7 @@ library (raster)
 library (lubridate)
 
 # csv of MFRI tow information ----
-# This is a combined csv of spring and autumn surveys, where each row is a sample/tow. Goes through March 2020. 
+# Created in Data_setup/Write_combined_MFRI_survey_csvs.R. Each row is a sample/tow, with information about depth, temp, date, tow. Species information has been removed. Goes through March 2020. 
 mfri_samples <- read_csv ("Data/MFRI_comb_survey_samples.csv",
                           col_types = cols(
                             sample_id = col_factor(),
@@ -31,7 +32,7 @@ mfri_dates <- unique (mfri_pts$date)
 # GINS salinity ----
 # Salinity climatology from NOAA: https://www.nodc.noaa.gov/OC5/regional_climate/gin-seas-climate/about_gin.html
 # this is not the right salinity data to be using since it's averaged over decades. I used it in my first model but shouldn't use for anything else. It only goes until 2012. 
-# adding back in 9/22 to document variable importance
+# adding back in 9/22/2020 to document variable importance
 gins_sal <- brick ("Data/GINS_bottom_sal.grd")
 
 mfri_dates_gins <- unique (mfri_pts$date[which (mfri_pts$date < "2013-01-01")]) # 106 total dates; 73 before 2012
@@ -100,6 +101,8 @@ hab_table <- read.csv ("Data/Raw_data/bormicon_table.csv") %>%
 # mfri has a 4214 stat sq not in hab_table. I think I looked at it, definitely in 421 stat sq. division would be 101. 
 
 # GLORYS sst min, max, stdev ----
+
+# I wrote the .grd files with Data_setup/Rasterize_GLORYS.R
 
 # https://resources.marine.copernicus.eu/?option=com_csw&view=details&product_id=GLOBAL_REANALYSIS_PHY_001_031
 # temperature reanalysis product for more sophisticated temperature variables, e.g. annual max and min, as in Morely et al. 2018

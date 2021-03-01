@@ -183,75 +183,7 @@ quota_spp <- c(1:19, 21:28, 30:36, 40:47, 49, 60:63, 77, 78, 86, 95, 130, 173, 1
 # Thermal bias is median catch-weighted temperature of species, all years - median bottom water temp of all stations. 
 # Steno index: range of 5th adn 95th percentile catch-weighted temperature, all years
 
-mfri_abun <- read_csv ("Data/MFRI_comb_survey.csv",
-                       col_types = cols(
-                         sample_id = col_factor(),
-                         species = col_factor(),
-                         stat_sq = col_factor()
-                       )
-)%>%
-  filter (!(year == 2011 & season == "autumn"),
-          !(year < 2000 & season == "autumn")) %>% # remove autumn 2011 [labor strike] and pre-2000 autumn [sites weren't standard yet]
-  group_by (sample_id, species) %>%
-  summarize (n_tot = sum(n_per_nautmile),
-             kg_tot = sum(kg_per_nautmile)) %>%
-  mutate (n_log = log(n_tot),
-          kg_log = log(kg_tot))
-
-# predictor variables
-# I compiled these in Build_MFRI_predictor_df.R. 
-mfri_pred <-  read_csv ("Data/MFRI_predictor_df.csv",
-                        col_types = cols(
-                          sample_id = col_factor(),
-                          stat_sq = col_factor(),
-                          bormicon_region = col_factor(),
-                          sst_dev = col_number(),
-                          bt_dev = col_number(),
-                          sst_max = col_number(),
-                          sst_min = col_number(),
-                          bt_max = col_number(),
-                          bt_min = col_number()
-                        )
-) %>%
-  filter (!(year == 2011 & season == "autumn"),
-          !(year < 2000 & season == "autumn")
-  ) 
-
-# overall median bottom temp
-med_bw <- median (mfri_pred$bottom_temp, na.rm = TRUE)
-med_seas <- mfri_pred %>%
-  group_by (season) %>%
-  summarize (med = median (bottom_temp, na.rm = TRUE))
-
-# calculate thermal index for each species. Since temperature distributions are different in the two seasons and Campana only did autumn, separate by season and take a mean
-spp_therm <- mfri_abun %>%
-  left_join (mfri_pred, by = "sample_id") %>%
-  filter (!is.na (bottom_temp)) %>%
-  group_by (species, season) %>%
-  summarise (Therm = weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE),
-             Steno = weighted.quantile (bottom_temp, w = kg_tot, probs = 0.95, na.rm = TRUE) - weighted.quantile (bottom_temp, w = kg_tot, probs = 0.05, na.rm = TRUE),
-             Depth = weighted.median (tow_depth_begin, w = kg_tot, na.rm = TRUE)
-  ) %>%
-  left_join (med_seas, by = "season") %>%
-  mutate (TB = Therm - med) %>%
-  group_by(species) %>%
-  summarise (mean_TB = mean (TB),
-             mean_Steno = mean(Steno),
-             mean_depth = mean(Depth)) %>%
-  mutate (Spp_ID = as.numeric(as.character(species)), .keep = "unused") # rename to match other tables
-
-# campana only did years 1996-2018, only autumn?
-spp_therm_campana <- mfri_abun %>%
-  left_join (mfri_pred, by = "sample_id") %>%
-  filter (between (year, 1996, 2018), season == "autumn") %>% 
-  group_by (species) %>%
-  summarise (
-    TB = (weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE) - med_bw),
-             Steno = weighted.quantile (bottom_temp, w = kg_tot, probs = 0.95, na.rm = TRUE) - weighted.quantile (bottom_temp, w = kg_tot, probs = 0.05, na.rm = TRUE),
-             Depth = weighted.mean (tow_depth_begin, w = kg_tot, na.rm = TRUE)
-  ) %>%
-  arrange (as.numeric(species))
-
+spp_therm <- read_csv ("Data/spp_thermal_affinity.csv")
   
   
 # ==================
