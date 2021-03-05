@@ -596,6 +596,17 @@ spp_suit <- MASE %>%
 
 borm_unsuit <- borm_spp %>% filter (!sci_name_underscore %in% spp_suit$species) %>% pull (sci_name_underscore)
 
+# where to put this?? where i made spp_borm_suit
+# GAM performance suitability measures (compiled in Step1_Fit_GAMs_fun.R)
+MASE <- read_csv ("Models/GAM_performance_Borm_14_alltemp.csv")
+
+spp_suit <- MASE %>%
+  filter (MASE_GAM < 1, DM_GAM_p < 0.05)
+
+borm_suit <- borm_spp %>% filter (sci_name_underscore %in% spp_suit$species) %>% pull (sci_name_underscore)
+# save for running on remote desktop. 49 species. 47 without blue whiting or argentine. 
+save (borm_suit, file = "Models/spp_Borm_suit.RData")
+
 
 # move below to a supplemental script
 
