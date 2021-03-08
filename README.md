@@ -1,15 +1,19 @@
 # README
 
-*Preprint* Julia G. Mason, Pamela J. Woods, Magnús Thorlacius, Kristinn Guðnason, Vincent S. Saba, Patrick J. Sullivan, Kristin M. Kleisner (2021), Projecting climate-driven shifts in demersal fish habitat in Iceland’s waters.
+**Preprint:** Julia G. Mason, Pamela J. Woods, Magnús Thorlacius, Kristinn Guðnason, Vincent S. Saba, Patrick J. Sullivan, Kristin M. Kleisner (2021), Projecting climate-driven shifts in demersal fish habitat in Iceland’s waters. doi: [https://doi.org/10.1101/2021.03.04.433927](https://doi.org/10.1101/2021.03.04.433927)
 
-*Contact* Julia Mason: jmason@edf.org
+**Contact:** Julia Mason: jmason@edf.org
 
 ## Directories
-*Data setup:* Scripts for cleaning and compiling input data used for fitting GAMs. Note: bottom trawl survey data are not shared here per MOU between EDF and MFRI.
+**Download climate data:** Scripts in python and MATLAB to download and standardize ocean temperature data from CMIP6, CM 2.6, OISST, GINS, and GLORYS. 
 
-*Models:* GAM objects and summary tables of GAM diagnostics.
+**Data setup:** Scripts for cleaning and compiling predictor data used for fitting GAMs. Includes scripts for rasterizing climate data and calculating species thermal affinity indices. Note: bottom trawl survey data are not shared here per MOU between EDF and MFRI.
 
-*Plotting:* Code for plotting manuscript and supplemental figures
+**Models:** GAM objects and summary tables of GAM diagnostics.
+
+**Plot figures:** Code for plotting manuscript and supplemental figures
+
+Other directories (Notebooks, spp niche annual trends, scraps) were not used for this manuscript. 
 
 ## Workflow
 Step1_Fit_GAMs_Function.R: Fits presence-absence and log-biomass Generalized Additive Models for species of interest. Includes code for model validation and evaluation, including training/testing, variable importance calculation, AUC, TSS, and MASE
