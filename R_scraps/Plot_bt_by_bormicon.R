@@ -3,6 +3,7 @@
 library (raster)
 library (sf)
 library (sp)
+library (lubridate)
 
 eez <- st_read("Data/eez.shp")
 
@@ -43,7 +44,7 @@ v_br_mn <- v_br %>%
   # this takes the sum for each time step within each subdivision. returns a list of 38, each with a vector of 1:228
   # actually I want a mean
   map (colMeans, na.rm = TRUE) %>%
-  # convert this to a data frame with 38 rows (subdivisions) and 240 columns (time step values)
+  # convert this to a data frame with 38 rows (subdivisions) and 312 columns (time step values)
   unlist () %>%
   matrix (nrow = 312) %>% 
   t() %>%
