@@ -170,7 +170,11 @@ pred_hist_hab_borm <- pred_hab_borm %>%
 save (pred_hist_hab_borm, file = "Data/pred_hist_hab_borm_df.RData")
 
 
+###############################
 # calculate and plot habitat change ----
+
+load ("Data/pred_hist_hab_borm_df.RData")
+
 pred_hist_hab_borm %>%
   mutate (log10_foldchange = log10 (pred_mn / hist_mn)) %>%
   filter (scenario == 585) %>%
@@ -182,7 +186,8 @@ pred_hist_hab_borm %>%
 # biggest high spread in 111, biggest lows in 197, 103, 101, 104, 108, 111
 
 
-# order the borm regions by temperature, depth, etc. 
+# order the borm regions by temperature, depth, etc. ----
+
 # use code from Plot_bt_by_bormicon. Maybe only take the mean from the 2000-2018 period, and then look at the future period too. 
 min(which (year(glorys_dates) == 2000))
 
@@ -277,3 +282,69 @@ pred_hist_hab_borm %>%
 dev.off()
 
 # same with future?
+
+# plot fig 3 species by species habitat change by bormicon region ----
+plot_hab_change_borm <- function (sci_name) {
+  
+  pred_hist_hab_borm %>%
+    filter (species == sci_name) %>%
+    mutate (log10_foldchange = log10 (pred_mn / hist_mn)) %>%
+    ggplot () +
+    geom_boxplot (aes (y = as.factor(division),
+                       x = log10_foldchange,
+                       #color = Therm_pref, 
+                       #color = mean_Steno,
+                       #fill = mean_Steno,
+                       #fill = fill_therm,
+                       width = 0.85
+    )) +
+    #guides (color = FALSE) +
+    geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
+    facet_wrap (~scenario) +
+    theme_bw() +
+    theme (
+      axis.text.x = element_text (size = 14),
+      axis.text.y = element_text (size = 12),
+      axis.title = element_text (size = 14),
+      plot.title = element_text (size = 16),
+      strip.text = element_text (size = 14),
+      legend.text = element_text (size = 14)
+    ) +
+    labs (y = "Bormicon region", x = "log10-fold habitat change") +
+    ggtitle (sci_name)
+}
+
+pdf ("Figures/Hab_change_boxplots_by_Bormicon.pdf", width = 11, height = 8.5)
+lapply (borm_suit, plot_hab_change_borm)
+dev.off()
+
+plot_hab_change_borm("Gadus_morhua")
+
+
+pred_hist_hab_borm %>%
+  filter (species == "Microstomus_kitt") %>%
+  mutate (log10_foldchange = log10 (pred_mn / hist_mn)) %>%
+  ggplot () +
+    geom_boxplot (aes (y = as.factor(division),
+                       x = log10_foldchange,
+                       #color = Therm_pref, 
+                       #color = mean_Steno,
+                       #fill = mean_Steno,
+                       #fill = fill_therm,
+                       width = 0.85
+    )) +
+  #guides (color = FALSE) +
+  geom_vline (xintercept = 0, lty = 2, col = "dark gray") +
+  facet_wrap (~scenario) +
+  theme_bw() +
+  theme (
+    axis.text.x = element_text (size = 14),
+    axis.text.y = element_text (size = 12),
+    axis.title = element_text (size = 14),
+    plot.title = element_text (size = 16),
+    strip.text = element_text (size = 14),
+    legend.text = element_text (size = 14)
+  ) +
+  labs (y = "Bormicon region") +
+  ggtitle (sci_name)
+  
