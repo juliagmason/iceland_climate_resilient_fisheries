@@ -360,7 +360,61 @@ system.time(plot_pred_maps_fun (sci_name = "Gadus_morhua",
 comm_spp <- c("Brosme_brosme", "Microstomus_kitt", "Merlangius_merlangus", "Limanda_limanda", "Glyptocephalus_cynoglossus", "Sebastes_marinus", "Anarchicus_minor", "Clupea_harengus", "Scomber_scombrus")
 
 purrr::map (comm_spp, plot_pred_maps_fun); beep()
+
+
 # look at differences among CM predictions----
+
+# plot standard deviation of projections ----
+
+calc_SD_maps <- function (sci_name, scenario, GAM) {
+  # sci_name is all lowercase with underscore, e.g. gadus_morhua
+  # scenario is 245, 585
+  # GAM is GAM model name/folder name--Borm_14_alltemp, etc.
+
+  
+  # for predictions, have to calculate an ensemble mean. Find all future files, all climate models
+  file_names <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, "_", GAM, ".*", scenario, "_2061_2080.grd"), full.names = TRUE)
+  
+  br_pred <- stack (file_names)
+  
+  # calculate standard deviation of the ensemble
+  sd_pred <- calc (br_pred, sd, na.rm = TRUE)
+  
+  
+} # end function
+
+plot_SD_maps_2scen <- function (sci_name, GAM) {
+  # sci_name is all lowercase with underscore, e.g. gadus_morhua
+  # GAM is GAM model name/folder name--Borm_14_alltemp, etc.
+  
+  scenario <- c (245, 585)
+  
+  # apply above function to calculate difference for both scenarios
+  sd_ls <- lapply (scenario, calc_SD_maps, sci_name = sci_name, GAM = GAM)
+  sd_br <- brick (sd_ls)
+  
+  # fix scenario names for labeller
+  scen_labs <- setNames ( c("SSP 2-4.5", "SSP 5-8.5"), names (sd_br))
+  
+  # add silhouette
+  #://cran.r-project.org/web/packages/rphylopic/readme/README.html
+  
+  # plot
+  gplot (sd_br) +
+    geom_raster (aes (fill = value)) +
+    borders (fill = "grey90", col = "black", 
+             xlim = c (-32, -3), ylim = c (60, 69)) +
+    coord_quickmap (xlim = c (-32, -3), ylim = c (60, 69)) +
+    facet_wrap (~variable, labeller = labeller (variable = scen_labs)) +
+    # diverging colorscale with white middle. Using values from BrBG R colorbrewer
+     scale_fill_distiller (palette = "BuGn", direction = 1, na.value = "white") +
+    labs (fill = "Projection standard deviation") +
+    theme_bw () +
+    theme (axis.title = element_blank()) #+
+  # add_phylopic (img, x = -10, y = 62, alpha = 1, ysize = 5)
+  # annotation_custom (cod2, xmin=, xmax=4, ymin=7.5, ymax=Inf)
+}
+
 plot_cm_maps_fun <- function (sci_name) {
   
   # find filenames
