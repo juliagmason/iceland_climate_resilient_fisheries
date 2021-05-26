@@ -47,7 +47,7 @@ spp_therm <- mfri_abun %>%
              Depth = weighted.median (tow_depth_begin, w = kg_tot, na.rm = TRUE)
   ) %>%
   left_join (med_seas, by = "season") %>%
-  mutate (TB = Therm - med) %>%
+  mutate (TB = Therm - med) %>% 
   group_by(species) %>%
   summarise (mean_TB = weighted.mean (TB, w = n_obs),
              mean_Steno = weighted.mean(Steno, w = n_obs),
@@ -55,6 +55,46 @@ spp_therm <- mfri_abun %>%
   mutate (Spp_ID = as.numeric(as.character(species)), .keep = "unused") # rename to match other tables
 
 write.csv (spp_therm, file = "Data/spp_thermal_affinity.csv", row.names = FALSE)
+
+# Do any species have a different thermal bias in spring vs. autumn? ----
+
+spp_tb_season <- mfri_abun %>%
+  filter (!is.na (bottom_temp)) %>%
+  group_by (species, season) %>%
+  summarise (n_obs = n(),
+             Therm = weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE),
+             Steno = weighted.quantile (bottom_temp, w = kg_tot, probs = 0.95, na.rm = TRUE) - weighted.quantile (bottom_temp, w = kg_tot, probs = 0.05, na.rm = TRUE),
+             Depth = weighted.median (tow_depth_begin, w = kg_tot, na.rm = TRUE)
+  ) %>%
+  left_join (med_seas, by = "season") %>%
+  mutate (TB = Therm - med,
+          Therm_pref = case_when (
+            TB > 0 ~ "Warm",
+            between (TB, -3, 0) ~ "Cool",
+            TB < 0 ~ "Cold"
+          )) %>%  filter (species %in% c(12, 28, 23, 9,  87, 62, 79, 80, 31, 65, 58)) %>% View()
+  group_by (species) %>%
+  summarise (n_tb = length (unique (Therm_pref))) %>%
+  filter (n_tb > 1) %>% 
+  pull (species)
+
+# how many of these are in the model?
+load("Models/spp_Smooth_latlon.RData")
+spp_tb_season[which (spp_tb_season %in% spp_Smooth_latlon$Spp_ID)] # 11spp: 9, 12, 23, 28, 31, 58, 62, 65, 79, 80, 87
+
+spp_therm %>% filter (Spp_ID %in% c(12, 28, 23, 9,  87, 62, 79, 80, 31, 65, 58)) %>%
+  mutate (Spp_ID = as.factor (Spp_ID)) %>%
+  left_join (spp_Smooth_latlon, by = "Spp_ID")
+
+# A. radiata (12), -1.57
+
+# how many in borm suit?
+load ("Models/spp_Borm_suit.RData")
+
+# need to pair with spp_ID...
+spp_borm_id <- spp_Smooth_latlon %>%
+  filter (sci_name_underscore %in% borm_suit)
+spp_tb_season[which (spp_tb_season %in% spp_borm_id$Spp_ID)] # 8 spp: 9, 12, 28, 23, 62, 79, 65, 58
 
 
 
