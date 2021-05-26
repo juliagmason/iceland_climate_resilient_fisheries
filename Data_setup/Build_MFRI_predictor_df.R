@@ -204,7 +204,43 @@ for (x in glorys_dates) {
 
   }
   
-  
+## rugosity ----
+# https://www.rdocumentation.org/packages/raster/versions/2.6-7/topics/terrain
+# using 0.05 cells for now, per Morely et al. 2018
+mfri_env_df <- read_csv ("Data/MFRI_predictor_df.csv",
+                         col_types = cols(
+                           sample_id = col_factor(),
+                           stat_sq = col_factor(),
+                           bormicon_region = col_factor(),
+                           sst_dev = col_number(),
+                           bt_dev = col_number(),
+                           sst_max = col_number(),
+                           sst_min = col_number(),
+                           bt_max = col_number(),
+                           bt_min = col_number()
+                         ))
+
+depth <- getNOAA.bathy(lon1 = -45, lon2 = 15,
+                       lat1 = 50, lat2 = 85, 
+                       resolution = 3)
+
+
+
+depth_r <- as.raster(depth)
+
+f <- matrix(1, nrow=3, ncol=3)
+
+rug_abs <- focal(depth_r, w=f, fun=function(x, ...) sum(abs(x[-5]-x[5]))/8, pad=TRUE, padValue=NA)
+
+rug_extract <- raster::extract (rug_abs, mfri_pts,  method = "simple")
+
+rug_df <- data.frame (
+  sample_id = mfri_pts$sample_id,
+  rugosity = rug_extract
+)
+
+mfri_env_df <- mfri_env_df %>%
+  left_join (rug_df, by = "sample_id")
 
 # combine df ----
 
@@ -214,7 +250,8 @@ mfri_env_df <- mfri_samples %>%
   mutate (bormicon_region = ifelse (stat_sq == "4214", 101, bormicon_region)) %>%
   left_join (mfri_sal_df, by = "sample_id") %>%
   left_join (mfri_glorys_df, by = "sample_id") %>%
-  left_join (mfri_glorys_dev_df, by = "sample_id")
+  left_join (mfri_glorys_dev_df, by = "sample_id") %>%
+  left_join (rug_df, by = "sample_id")
 
 
 
