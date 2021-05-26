@@ -183,6 +183,7 @@ quota_spp <- c(1:19, 21:28, 30:36, 40:47, 49, 60:63, 77, 78, 86, 95, 130, 173, 1
 # Thermal bias is median catch-weighted temperature of species, all years - median bottom water temp of all stations. 
 # Steno index: range of 5th adn 95th percentile catch-weighted temperature, all years
 
+# I compiled this in Data_setup --> "Calculate_spp_thermal_affinity.R"
 spp_therm <- read_csv ("Data/spp_thermal_affinity.csv")
   
   
@@ -212,3 +213,47 @@ spp_therm <- read_csv ("Data/spp_thermal_affinity.csv")
     mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
 
   write.csv (spp_table_cat, file = "Data/species_eng.csv", row.names = FALSE)
+  
+  ### Write supplemental file with scientific names, common names, icelandic names, and habitat affinity indices ----
+  load ("Models/spp_Smooth_latlon.RData")
+  borm_spp <- filter (spp_Smooth_latlon, 
+                      ! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis")) %>%
+    # also take out pelagic
+    filter (!sci_name_underscore %in% c ("Ammodytes_marinus", "Mallotus_villosus", "Micromesistius_poutassou", "Argentina_silus", "Scomber_scombrus", "Clupea_harengus"))
+  
+  load ("Models/spp_Borm_suit.RData")
+  
+  # species list
+  # This relates species IDs to scientific names
+  spp_list <- read_csv ("Data/species_eng.csv",
+                        col_types = cols(
+                          Spp_ID = col_factor()
+                        ))
+  
+  #spp_ISL <- read.csv2 (file = "Data/Raw_data/species_UTF8.csv")
+  spp_SI <- spp_list %>%
+    filter (sci_name_underscore %in% borm_spp$sci_name_underscore) %>%
+    mutate (
+      # add an asterisk to species we dropped bc not suitable
+      Common_name = ifelse (
+        sci_name_underscore %in% borm_suit,
+        Common_name, 
+        paste0(Common_name, "*")
+      ),
+      # add a therm pref column
+      Therm_pref = case_when (
+        mean_TB > 0 ~ "Warm",
+        between (mean_TB, -3, 0) ~ "Cool",
+        mean_TB < 0 ~ "Cold"
+        )
+    
+    )  %>%
+    select (Common_name, Scientific_name, mean_depth, mean_Steno, mean_TB, Therm_pref) %>%
+    rename (Depth_index = mean_depth,
+            Stenothermal_index = mean_Steno,
+            Thermal_bias_index = mean_TB,
+            Thermal_niche_category = Therm_pref)
+  
+  # https://stackoverflow.com/questions/30283454/controlling-digits-in-r-in-write-csv
+  
+  write.csv (spp_SI, file = "Data/Species_SI.csv", row.names = FALSE)
