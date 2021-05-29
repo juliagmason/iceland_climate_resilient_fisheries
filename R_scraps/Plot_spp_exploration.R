@@ -466,3 +466,61 @@ plot_season_length_dist_fun <- function (spp) {
 pdf (file = "Figures/Maj_spp_length_season_dist.pdf")
 lapply (maj_spp_list, plot_season_length_dist_fun)
 dev.off()
+
+
+#### plot neater biomass distribution histograms for selected spp----
+library (grid)
+
+scan_fun <- function(x){
+  sc <- scan(what = "", text = x, sep = ".")[1]
+  return (sc)
+}
+
+nb_files <- list.files ("Models/Borm_14_nb/")
+nb_spp <- map_chr (nb_files, scan_fun)
+
+load ("Data/abun_full_borm.RData")
+
+plot_biomass_hist <- function (sci_name) {
+  
+  spp_id <- as.numeric(as.character(spp_list$Spp_ID[which (spp_list$sci_name_underscore == sci_name)]))# this fixes weird factor problem
+  
+  spp_subset <- filter (mfri_abun_full_borm, species == spp_id)
+  
+  n_zero <- length (which (spp_subset$kg_tot == 0))
+  perc_zero = round(n_zero/nrow (spp_subset), 2)
+  
+  spp_presence <- filter (spp_subset, kg_tot > 0)
+  
+  histp <- ggplot(spp_presence) +
+    geom_histogram (aes(x = kg_tot)) +
+    theme_bw() +
+    ggtitle ("Biomass, presence only")
+  
+  histlog <- ggplot(spp_presence) +
+    geom_histogram (aes(x = log(kg_tot))) +
+    theme_bw() +
+    ggtitle ("log(Biomass), presence only")
+  
+  # https://stackoverflow.com/questions/36008659/edit-style-of-grid-arrange-title-bold-italic-etc-r
+  # https://stackoverflow.com/questions/32280476/gridextra-2-0-0-change-title-size
+  #textGrob("Title", gp=gpar(fontsize=15,font=8)))
+  title1 = textGrob(paste0 (sci_name, ", ", "% zeros = ", perc_zero), gp=gpar(fontsize=15))
+  
+  grid.arrange (histp, histlog,  nrow = 1, # nicer to have mean ts larger
+                #widths = c (1,2),
+                top = title1
+                
+  )
+  
+}
+
+plot_biomass_hist("Microstomus_kitt")
+
+pdf (file = "Figures/Biomass_distrib_10spp.pdf")
+lapply (sort(borm_spp$sci_name_underscore[1:10]), plot_biomass_hist)
+dev.off()
+
+pdf (file = "Figures/Biomass_distrib_borm_spp.pdf")
+lapply (sort(borm_spp$sci_name_underscore), plot_biomass_hist)
+dev.off()
