@@ -63,7 +63,7 @@ mfri_pred_borm <-  read_csv ("Data/MFRI_predictor_df.csv",
   # remove autumn 2011 [labor strike] and pre-2000 autumn [sites weren't standard yet]
   filter (!(year == 2011 & season == "autumn"),
           !(year < 2000 & season == "autumn")) %>%
-  dplyr::select (sample_id, year, tow_depth_begin, bottom_temp, surface_temp, bormicon_region, sst_max, sst_min, bt_max, bt_min) %>%
+  dplyr::select (sample_id, year, tow_depth_begin, bottom_temp, surface_temp, bormicon_region, sst_max, sst_min, bt_max, bt_min, rugosity) %>%
 # as of 12/17/2020, also filter out NAs for borm_14 model predictors to speed things up, and so I can replace relevant fake zeroes. now should have 19759 rows
 drop_na (c("tow_depth_begin", "surface_temp", "bottom_temp", "sst_max"))
 
@@ -85,7 +85,8 @@ mfri_abun_full_borm <-  mfri_abun %>%
   filter (species %in% borm_spp$Spp_ID) %>%
   full_join (full_spp_sample, by = c("sample_id", "species")) %>%
   replace_na (list (kg_tot = 0)) %>%
-  left_join (mfri_pred_borm, by = "sample_id")
+  # right join to cut out faulty samples
+  right_join (mfri_pred_borm, by = "sample_id")
 
 save (mfri_abun_full_borm, file = "Data/abun_full_borm.RData")
 
@@ -94,9 +95,9 @@ save (mfri_abun_full_borm, file = "Data/abun_full_borm.RData")
 
 model_formula <- c ("bormicon_region", "s(surface_temp)", "s(bottom_temp)", "s(tow_depth_begin)", "s(sst_max)",  "s(sst_min)", "s(bt_max)")
 
-b <- gam (log (kg_tot + 1) ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
+system.time(b <- gam (as.integer(kg_tot) ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
           family = ziP(),
-          data = filter (mfri_abun_full_borm, species == 24))
+          data = filter (mfri_abun_full_borm, species == 1)))
 # Error in eval(family$initialize) : 
 #Non-integer response variables are not allowed with ziP 
 
@@ -119,8 +120,8 @@ fit_tw_fun <- function (sci_name, directory) {
   spp_id <- as.numeric(as.character(spp_list$Spp_ID[which (spp_list$sci_name_underscore == sci_name)]))# this fixes weird factor problem
   
   spp_data_train <- mfri_abun_full_borm %>%
-    filter (species == spp_id, 
-            year <= 2013) %>% 
+       filter (species == spp_id, 
+         year <= 2013) %>% 
     drop_na (c("tow_depth_begin", "surface_temp", "bottom_temp", "sst_max", "bt_max"))
   
   spp_data_test <- mfri_abun_full_borm %>%
@@ -131,15 +132,21 @@ fit_tw_fun <- function (sci_name, directory) {
   # time this, highly variable 
   start_time <- Sys.time()
   
-  # gam_tw <- gam (log(kg_tot + 1) ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
-  #                family = tw(),
-  #                data = spp_data_train,
-  #                method = "REML") 
-  
   gam_tw <- gam (kg_tot  ~ bormicon_region + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
                  family = tw(link = "log"),
                  data = spp_data_train,
                  method = "REML")
+  
+  # gam_tw <- gam (log(kg_tot + 1) ~ s(rugosity) + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
+  #                family = tw(),
+  #                data = spp_data_train,
+  #                method = "REML")
+
+  
+  # gam_tw <- gam (kg_tot  ~ s(rugosity) + s(surface_temp) + s(bottom_temp) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
+  #                family = tw(link = "log"),
+  #                data = spp_data_train,
+  #                method = "REML")
   
   end_time <- Sys.time()
   
@@ -151,10 +158,20 @@ fit_tw_fun <- function (sci_name, directory) {
   MAE_tw <- mean(abs(predict_tw - spp_data_test$kg_tot))
   
   
-  system.time(gam_naive <- gam (kg_tot ~ bormicon_region +  s(tow_depth_begin),
+  gam_naive <- gam (kg_tot ~ bormicon_region +  s(tow_depth_begin),
                  family = tw(link = "log"),
                  data = spp_data_train,
-                 method = "REML"))
+                 method = "REML")
+  
+  # gam_naive <- gam (log(kg_tot + 1) ~ s(rugosity) +  s(tow_depth_begin),
+  #                family = tw(),
+  #                data = spp_data_train,
+  #                method = "REML")
+  
+  # gam_naive <- gam (kg_tot ~ s(rugosity) +  s(tow_depth_begin),
+  #                family = tw(link = "log"),
+  #                data = spp_data_train,
+  #                method = "REML")
   
   predict_naive <- predict.gam (gam_naive, spp_data_test, type = "response")
   
@@ -187,6 +204,41 @@ fit_tw_fun <- function (sci_name, directory) {
   
 }
 
+
+
+# ==================
+# Run functions on models ----
+# ==================
+
+# rugosity ----
+dir.create ("Models/Rug_tw_LL")
+
+# first did 2:9
+rug_tw_ls <- expand.grid (sci_name = borm_spp$sci_name_underscore[17:20],
+                           directory = "Rug_tw_LL") %>%
+  as.list()
+
+system.time(rug_tw_df3 <- pmap_dfr (rug_tw_ls , fit_tw_fun)); beep()
+system.time(mk_rug <- fit_tw_fun (sci_name = "Microstomus_kitt", directory = "Rug_tw_LL"))
+system.time(pp_rug <- fit_tw_fun (sci_name = "Pleuronectes_platessa", directory = "Rug_tw_LL"))
+
+save (rug_tw_df, file = "Models/tw_rug_tmp_2-9.RData")
+save (rug_tw_df2, file = "Models/tw_rug_tmp_11-16.RData")
+rug_LL_20 <- rbind (mk_rug, rug_tw_df, pp_rug, rug_tw_df2, rug_tw_df3)
+row.names (rug_LL_20) <- NULL
+save (rug_LL_20, file = "Models/tw_rug_20spp.RData")
+
+# rugosity lognormal
+rug_tw_ls <- expand.grid (sci_name = borm_spp$sci_name_underscore[1:20],
+                          directory = "Rug_tw") %>%
+  as.list()
+
+system.time(rug_tw_lognorm_df <- pmap_dfr (rug_tw_ls , fit_tw_fun)); beep()
+row.names(rug_tw_lognorm_df) <- NULL
+rug_tw_lognorm_df2 <- rug_tw_lognorm_df
+save (rug_tw_lognorm_df, file = "Models/tw_rug_lognorm_20spp.RData")
+
+# full bormicon----
 dir.create ("Models/Borm_14_tw")
 test_spp <- c("Gadus_morhua", "Melanogrammus_aeglefinus", "Anarhichas_lupus", "Lophius_piscatorius", "Merlangius_merlangus")
 
@@ -231,12 +283,30 @@ save (lognorm_df_tmp, file = "Models/Borm_14_tw_lognorm_performance_24spp.RData"
 
 # compare with log link----
 dir.create ("Models/Borm_14_tw_loglink")
-loglink_test_ls <- list (sci_name = test_spp, 
+
+fit_tw_fun ("Gadus_morhua", directory = "Borm_14_tw_loglink")
+
+loglink_test_ls <- list (sci_name = borm_spp$sci_name_underscore[1:10], 
                                 directory = "Borm_14_tw_loglink") %>%
   as.list()
 
-system.time(loglink_df <- pmap_dfr (loglink_test_ls, fit_tw_fun)); beep() #3920.02
-save(loglink_df, file = "Models/tweedie_LL_test.RData")
+system.time(loglink_df <- pmap_dfr (loglink_test_ls, fit_tw_fun)); beep() #3920.02, 19338.59  for 10
+
+
+save(loglink_df, file = "Models/tweedie_LL_10spp.RData")
+
+# redo 11-20
+loglink_test_ls2 <- list (sci_name = borm_spp$sci_name_underscore[11:20], 
+                         directory = "Borm_14_tw_loglink") %>%
+  as.list()
+
+system.time(loglink_df2 <- pmap_dfr (loglink_test_ls2, fit_tw_fun)); beep() #3920.02, 19338.59  for 10, 1651.73  for 11-20
+row.names(loglink_df2) <- NULL
+row.names(loglink_df) <- NULL
+
+loglink_df20 <- rbind (loglink_df, loglink_df2)
+
+save(loglink_df20, file = "Models/tweedie_LL_20spp.RData")
 
 
 loglink_test_ls <- list (sci_name = borm_remain$sci_name_underscore[1:6], 
@@ -256,6 +326,31 @@ ll_df_suit <- loglink_df %>%
 loglink_df_tmp <- rbind (ll_df_suit, loglink_df2)
 row.names (loglink_df_tmp) <- NULL
 save (loglink_df_tmp, file ="Models/tw_LL_11spp.RData")
+
+# continue with ones I can compare with lognormal
+lognorm_spp <- list.files ("Models/Borm_14_tw")
+
+ll_files <- list.files("Models/Borm_14_tw_loglink/")
+ll_todo <-lognorm_spp_files[which (!lognorm_spp_files %in% ll_files)]
+
+scan_fun <- function(x){
+  sc <- scan(what = "", text = x, sep = ".")[1]
+  return (sc)
+}
+
+ll_todo_spp <- map_chr (ll_todo, scan_fun)
+
+loglink_remain_ls <- list (sci_name = ll_todo_spp, 
+                         directory = "Borm_14_tw_loglink") %>%
+  as.list()
+
+system.time(loglink_df3 <- pmap_dfr (loglink_remain_ls, fit_tw_fun)); beep()
+row.names (loglink_df3) <- NULL
+
+load ("Models/tw_LL_11spp.RData")
+
+ll_24 <- rbind (loglink_df_tmp, loglink_df3)
+save (ll_24, file = "Models/tw_LL_24spp.RData")
 
 # compare performance 
 gam_2step <- read_csv ("../Models/GAM_performance_Borm_14_alltemp_NOFAKEZEROS.csv") %>%
@@ -351,3 +446,88 @@ system.time(
 ); beep() # this was faster, 40s, but worse dev expl and AIC
 
 
+#####################################
+# Try negbin
+
+fit_nb_fun <- function (sci_name, directory) {
+  
+  spp_id <- as.numeric(as.character(spp_list$Spp_ID[which (spp_list$sci_name_underscore == sci_name)]))# this fixes weird factor problem
+  
+  spp_data_train <- mfri_abun_full_borm %>%
+    filter (species == spp_id, 
+            year <= 2013) %>% 
+    drop_na (c("tow_depth_begin", "surface_temp", "bottom_temp", "sst_max", "bt_max"))
+  
+  spp_data_test <- mfri_abun_full_borm %>%
+    filter (species == spp_id, 
+            year > 2013) %>% 
+    drop_na (c("tow_depth_begin", "surface_temp", "bottom_temp", "sst_max", "bt_max"))
+  
+  # time this, highly variable 
+  start_time <- Sys.time()
+  
+  gam_nb <- gam (kg_tot ~ bormicon_region + s(surface_temp) + s(bt_min) + s(tow_depth_begin) + s(sst_max) + s(sst_min) + s(bt_max),
+                 family = nb(link = "log"),
+                 data = spp_data_train,
+                 method = "REML") #8:54
+  
+  end_time <- Sys.time()
+  
+  save (gam_nb,  file = paste0("Models/", directory, "/", sci_name, ".Rdata"))
+  
+  predict_nb <- predict.gam (gam_nb, spp_data_test, type = "response")
+  
+  MAE_nb <- mean(abs(predict_nb - spp_data_test$kg_tot))
+  
+  
+  gam_naive <- update (gam_nb, formula = as.formula("kg_tot ~ bormicon_region +  s(tow_depth_begin)"))
+  
+  predict_naive <- predict.gam (gam_naive, spp_data_test, type = "response")
+
+  MAE_naive <- mean (abs (predict_naive - spp_data_test$kg_tot))
+  
+  E1 <- predict_naive - spp_data_test$kg_tot 
+  E2 <- predict_nb - spp_data_test$kg_tot 
+  
+  # need complete cases; remove NA
+  E1_cc <- E1 [ which (!is.na(E1) & !is.na(E2))]
+  E2_cc <- E2 [ which (!is.na(E1) & !is.na(E2))]
+  
+  dm_gam <- dm.test (E1_cc, E2_cc, h = 1, power = 1, alternative = "greater")
+  
+  MASE = MAE_nb / MAE_naive
+  
+  DM_GAM_p = dm_gam$p.value
+  
+  stats_tw <- data.frame (
+    species = sci_name,
+    AIC = round(AIC(gam_nb), 2),
+    dev_ex = round (summary (gam_nb)$dev.expl, 2),
+    MAE = round (MAE_nb, 2),
+    MASE_suit = ifelse (MASE < 1 & DM_GAM_p < 0.05, 1, 0),
+    time = end_time - start_time
+  )
+  
+}
+
+dir.create ("Models/Borm_14_nb")
+
+tmp <- fit_nb_fun (sci_name = "Gadus_morhua", directory = "Borm_14_nb")
+
+borm_nb_ls <- expand.grid (sci_name = borm_spp$sci_name_underscore[1:10],
+                          directory = "Borm_14_nb") %>%
+  as.list()
+
+system.time(borm_nb_df <- pmap_dfr (borm_nb_ls , fit_nb_fun)); beep()
+
+borm_nb_ls2 <- expand.grid (sci_name = borm_spp$sci_name_underscore[11:20],
+                           directory = "Borm_14_nb") %>%
+  as.list()
+
+system.time(borm_nb_df2 <- pmap_dfr (borm_nb_ls2 , fit_nb_fun)); beep()
+
+row.names(borm_nb_df) <- NULL
+row.names(borm_nb_df2) <- NULL
+
+borm_nb_20 <- rbind (borm_nb_df, borm_nb_df2)
+save (borm_nb_20, file = "Models/nb_LL_20spp.Rdata")
