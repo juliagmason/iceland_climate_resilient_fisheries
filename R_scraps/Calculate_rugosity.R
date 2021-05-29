@@ -80,7 +80,7 @@ rug_size_test <- function (res) {
 x <- rug_size_test (14)
 
 # 11, 13 doesn't work?
-test_seq <- c(3:10, 12, 14:15)
+test_seq <- c(1:10, 12, 14:15)
 system.time(rug_test <- map_dfr (test_seq, rug_size_test)) # 88s
 
 save (rug_test, file = "Data/Rugosity_test_absdiff_resample.RData")
