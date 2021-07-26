@@ -21,24 +21,6 @@ load ("Data/prediction_raster_template.RData") # named pred_r_template
 # iceland EEZ shapefile downloaded from https://www.marineregions.org/gazetteer.php?p=details&id=5680
 eez <- st_read("Data/eez.shp")
 
-# function for applying focal statistics on a brick--for spatial standard deviation
-# https://stat.ethz.ch/pipermail/r-sig-geo/2016-May/024454.html
-multiFocal <- function(x, w=matrix(1, nr=3, nc=3), ...) {
-  
-  if(is.character(x)) {
-    x <- brick(x)
-  }
-  # The function to be applied to each individual layer
-  fun <- function(ind, x, w, na.rm = TRUE, ...){
-    focal(x[[ind]], w=w, ...)
-  }
-  
-  n <- seq(nlayers(x))
-  list <- lapply(X=n, FUN=fun, x=x, w=w, ...)
-  
-  out <- stack(list)
-  return(out)
-}
 
 # ==================
 # set up static variables ----
@@ -60,38 +42,31 @@ depth_r <- as.raster(depth)
 depth_r_neg <- calc (depth_r, function (x) -x)
 depth_r <- raster::resample (depth_r_neg, pred_r_template, method = "bilinear")
 
-# # plot depth and eez map for reference
-# depth_r_pts <- rasterToPoints (depth_r, spatial = TRUE)
-# depth_r_df <- data.frame(depth_r_pts)
-# 
-# png ("Figures/Depth_map_eez.png")
-# ggplot() +
-#   geom_raster(data = depth_r_df , aes(x = x, y = y, fill = layer)) +
-#   geom_polygon(data = map_data("world",'Iceland'), 
-#                aes(long,lat,group = group), col = 'gray10' ,fill = 'gray90',size = 0.3) +
-#   geom_sf (data  = eez, fill = NA, lwd = 0.5, col = "gray10") 
-# dev.off()
-#   
 
-# cropped plot for MFRI
-# png ("Figures/Depth_map_MFRI.png", width = 6, height = 6, units = "in", res = 300)
-# plot (depth_r, 
-#       xlim = c (-32, -3), ylim = c (60, 69),
-#       col = rev(brewer.pal(name = "PuBu", n = 9)),
-#       cex.main = 2,
-#       main = "Bathymetry")
-# map('worldHires',add=TRUE, col='grey90', fill=TRUE)
-# dev.off()
+# Rugosity ----
+
+f <- matrix(1, nrow=3, ncol=3)
+
+rug_abs <- focal(depth_r, w=f, fun=function(x, ...) sum(abs(x[-5]-x[5]))/8, pad=TRUE, padValue=NA)
+rug_r <- raster::resample (rug_abs, pred_r_template, method = "bilinear")
+
+# very large values are skewing the predictions where there's a very narrow peninsula off the southwest. 
+#rug_r <- clamp(rug_r, upper=600, useValues=FALSE)
+probcell <- cellFromXY(rug_r, cbind(c(-20, -19.25), c(63.25, 63.5)))
+
+rug_r[20741] <- NA
+rug_r[20742] <- NA
+rug_r[20743] <- NA
+
   
 # Bormicon region ----
 # I created this in Rasterize_bormicon_regions.R
-borm_r <- raster ("Data/bormicon_divisions.grd")
+#borm_r <- raster ("Data/bormicon_divisions.grd")
 
 # vector of names ----
 # this will depend on the terms in the GAM
-stack_names <- c("bormicon_region", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
 
-#stack_names <- c( "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
+stack_names <- c("rugosity", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max")
 
 # ==================
 # Future predictions ----
@@ -107,18 +82,16 @@ predict_list_fun <- function (sci_name, GAM, CM, scenario, month_index) {
   # GAM is the name of the model (name of directory where I saved them in "Fit_GAMS_function.R")
   # scenario is either 245 or 585
   # CM is four-letter lowercase abbreviation
+  
+  
+  # For H. platessoides and M. molva outliers in deeper values are uninterpretable; crop at 1200m depth
+  if (sci_name %in% c("Hippoglossoides_platessoides", "Molva_molva")) {
+    depth_r[depth_r[] > 1200] <- NA
+  }
 
   
   # load saved GAM for species of interest ----
-  # load previously fit GAMs, which have slightly different naming conventions depending on the model
-  if (GAM %in% c ("First_full_tensor_season", "Tensor_drop_season", "Smooth_latlon")) {
-    load (file.path("Models", GAM, paste0(sci_name, "_PA_full.Rdata")))
-    load (file.path("Models", GAM, paste0(sci_name, "_LB_full.Rdata")))
-  } else {
-    load (file.path("Models", GAM, paste0(sci_name, "_PA.Rdata")))
-    load (file.path("Models", GAM, paste0(sci_name, "_LB.Rdata")))
-  }
-
+  load (file.path("Models", GAM, paste0(sci_name, ".Rdata")))
   
   # run predictions for each climate model ----
 
@@ -152,28 +125,15 @@ predict_list_fun <- function (sci_name, GAM, CM, scenario, month_index) {
     max)
 
   
-  # calculate sst and bt dev
-  sst_dev_r <- multiFocal(sst_r, fun = function (x) sd (x, na.rm = TRUE))
-  bt_dev_r <- multiFocal(bt_r, fun = function (x) sd (x, na.rm = TRUE))
-  
   # stack the layers together
-  stack_1 <- stack (borm_r, sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r, sst_dev_r, bt_dev_r)
+  stack_1 <- stack (rug_r, sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r)
   names (stack_1) <- stack_names
   
   # crop to Iceland EEZ
   clip_1 <- mask (stack_1, eez)
   
   # make predictions
-  predict_PA <- raster::predict (clip_1, gam_PA, type = "response")
-  predict_LB <- raster::predict (clip_1, gam_LB, type = "response")
-  
-  # get Eresid smear transformation value
-  Eresid <- mean (exp (residuals.gam (gam_LB)))
-  
-  # thermal prediction--relate PA to log biomass
-  pred_stack <- overlay (predict_PA, predict_LB, 
-                      fun = function (x,y) {x * exp(y) * Eresid}
-                      )
+  predict_ras <- raster::predict (clip_1, gam_nb, type = "response") 
 
 } # end prediction function 
 
@@ -211,7 +171,7 @@ predict_brick_fun <- function (sci_name, GAM, CM, scenario, year1, year2) {
 }
 
 ### Run on Borm 14 species
-load ("Models/spp_Smooth_latlon.RData")
+load ("Models/spp_Borm.RData")
 
 CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 
@@ -224,59 +184,18 @@ CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 # 3622 s + 4745.94 s for a. raj mapply, both scenarios (had to redo because doesn't do the permutations)
 
 # use expand_grid to get all the possible permutations of species, CM, scenario. Cut out CM 2.6 and 245. 
-# I did A. radiata, M. villosus, and S. scombrus separately while testing. I also don't have M. scorpius
-borm_spp <- spp_Smooth_latlon %>%
-  filter (!sci_name_underscore %in% c ( "Myoxocephalus_scorpius",  "Mallotus_villosus",  "Amblyraja_radiata" , "Scomber_scombrus"))
 
 borm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
-                            GAM = "Borm_14_alltemp",
+                            GAM = "Rug_nb",
                             CM = CM_list,
                             scenario = c(245, 585),
                             year1 = 2061,
                             year2 = 2080) %>%
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list()
-# for 61 species (there will be 64 total if running again from scratch), there should be 549. I found expand_grid much more straightforward than cross or cross_df. Seems to play better with pmap, and I couldn't figure out how to filter with cross. 
-
 
 
 system.time (pmap (borm_expand, predict_brick_fun)); beep (sound = 3)
-
-# redo with borm_empty spp
-# try with just one first
-monk_expand <- expand_grid (sci_name = c("Phycis_blennoides", "Cottunculus_microps", "Bathyraja_spinicauda"),
-                        GAM = "Borm_14_alltemp",
-                        CM = CM_list,
-                        scenario = c(245, 585),
-                        year1 = 2061,
-                        year2 = 2080) %>%
-  filter (!(CM == "CM26" & scenario == 245)) %>% 
-  as.list()
-
-system.time (pmap (monk_expand, predict_brick_fun)) # 2.17 hrs for monkfish
-
-# do a few at a time
-
-# just do cod, a. radiata and r. hippoglossus for temp x depth intn
-TxD_expand <- expand_grid (sci_name = c("Amblyraja_radiata", "Reinhardtius_hippoglossoides", "Cyclopterus_lumpus", "Pleuronectes_platessa", "Sebastes_mentella", "Hippoglossus_hippoglossus", "Lophius_piscatorius"),
-                            GAM = "Borm_14_alltemp_intn_test",
-                            CM = CM_list,
-                            scenario = 585,
-                            year1 = 2061,
-                            year2 = 2080) %>%
-  #filter (!(CM == "CM26" & scenario == 245)) %>% 
-  as.list()
-
-TxD_expand <- expand_grid (sci_name = c("Cyclopterus_lumpus"),
-                           GAM = "Borm_14_alltemp_intn_test",
-                           CM = CM_list,
-                           scenario = 245,
-                           year1 = 2061,
-                           year2 = 2080) %>%
-  filter (!(CM == "CM26" & scenario == 245)) %>% 
-  as.list()
-
-system.time (pmap (TxD_expand, predict_brick_fun)) 
 
 
 # ==================
@@ -284,7 +203,7 @@ system.time (pmap (TxD_expand, predict_brick_fun))
 # ==================
 
 # stack names to match model formula
-stack_names <- c("bormicon_region", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max", "sst_dev", "bt_dev")
+stack_names <- c("bormicon_region", "surface_temp", "bottom_temp", "tow_depth_begin", "sst_max", "sst_min", "bt_max")
 
 # load temperature bricks
 sst_brick_hist <- brick ("Data/GLORYS_sst_hist.grd") # these go from 2000-2018; 228 layers
@@ -304,9 +223,8 @@ hist_list_fun <- function (sci_name, GAM, month_index) {
   # GAM is the GAM name/folder
   
   # load saved GAM for species of interest
-  load (paste0("Models/", GAM, "/", sci_name, "_PA.Rdata")) # gam_PA
-  load (paste0("Models/", GAM, "/", sci_name, "_LB.Rdata")) # gam_LB
-  
+
+  load (file.path("Models", GAM, paste0(sci_name, ".Rdata")))
   
   # subset temperature layers
    # regular sst and bottom t are 2000-2018, 228 layers
@@ -319,28 +237,16 @@ hist_list_fun <- function (sci_name, GAM, month_index) {
   sst_min_r <- calc (subset (sst_min_brick_hist, (72 + month_index):(83 + month_index)), min)
   bt_max_r <- calc (subset (bt_max_brick_hist, (72 + month_index):(83 + month_index)), max)
   
-  # calculate sst and bt dev
-  sst_dev_r <- multiFocal(sst_r, fun = function (x) sd (x, na.rm = TRUE))
-  bt_dev_r <- multiFocal(bt_r, fun = function (x) sd (x, na.rm = TRUE))
     
   # stack the layers together and give names that match model formula
-  stack_1 <- stack (borm_r, sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r, sst_dev_r, bt_dev_r)
+  stack_1 <- stack (rug_r, sst_r, bt_r, depth_r, sst_max_r, sst_min_r, bt_max_r)
   names (stack_1) <- stack_names
     
   # crop to Iceland EEZ
   clip_1 <- mask (stack_1, eez)
     
   # make predictions
-  predict_PA <- raster::predict (clip_1, gam_PA, type = "response")
-  predict_LB <- raster::predict (clip_1, gam_LB, type = "response")
-    
-  # get Eresid smear transformation value
-  Eresid <- mean (exp (residuals.gam (gam_LB)))
-  
-  # thermal prediction--relate PA to log biomass
-  pred_stack <- overlay (predict_PA, predict_LB, 
-                         fun = function (x,y) {x * exp(y) * Eresid}
-  )
+  pred_stack <- raster::predict (clip_1, gam_nb, type = "response")
     
 } # end hist function
 
@@ -369,32 +275,12 @@ hist_brick_fun <- function (sci_name, GAM, year1, year2) {
 } # end brick function
 
 
-# run again on empty species, defined in fit_GAMS_fun
 
-borm_expand_hist <- expand_grid (sci_name = empty_spp$sci_name_underscore,
-                            GAM = "Borm_14_alltemp",
+borm_expand_hist <- expand_grid (sci_name = borm_spp$sci_name_underscore,
+                            GAM = "Rug_nb",
                             year1 = 2000,
                             year2 = 2018) %>%
   as.list()
 
 system.time (pmap (borm_expand_hist, hist_brick_fun)); beep (sound = 3)
 # 14.7 hours, about 14-15 mins each
-
-# forgot to bring back in the species I tested for the pred function
-addl_hist <- expand_grid (sci_name = c("Mallotus_villosus",  "Amblyraja_radiata" , "Scomber_scombrus"),
-                          GAM = "Borm_14_alltemp",
-                          year1 = 2000,
-                          year2 = 2018) %>%
-  as.list()
-
-pmap (addl_hist, hist_brick_fun); beep()
-
-TxD_expand <- expand_grid (sci_name = c("Gadus_morhua", "Amblyraja_radiata", "Reinhardtius_hippoglossoides", "Cyclopterus_lumpus", "Pleuronectes_platessa", "Sebastes_mentella", "Hippoglossus_hippoglossus", "Lophius_piscatorius"),
-                           GAM = "Borm_14_alltemp_intn_test",
-
-                           year1 = 2000,
-                           year2 = 2018) %>%
-  #filter (!(CM == "CM26" & scenario == 245)) %>% 
-  as.list()
-
-system.time (pmap (TxD_expand, hist_brick_fun)) 
