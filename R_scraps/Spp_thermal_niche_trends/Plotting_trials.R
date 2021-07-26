@@ -2,13 +2,50 @@
 # 5/21/21
 # JGM
 
+library (tidyverse)
+
+mfri_abun <- read_csv ("Data/MFRI_comb_survey.csv",
+                       col_types = cols(
+                         sample_id = col_factor(),
+                         species = col_factor(),
+                         stat_sq = col_factor()
+                       )
+)%>%
+  filter (!(year == 2011 & season == "autumn"),
+          !(year < 2000 & season == "autumn")) %>% # remove autumn 2011 [labor strike] and pre-2000 autumn [sites weren't standard yet]
+  # tweaked this from in the other gam_fitting etc. scripts so I don't have to bring in mfri_pred
+  select (-length_cm) %>% # this is the only remaining column that varies within sample_id
+  group_by (sample_id, species) %>%
+  mutate (n_tot = sum(n_per_nautmile),
+          kg_tot = sum(kg_per_nautmile),
+          n_log = log (n_tot),
+          kg_log = log (kg_tot), 
+          .keep = "unused") %>% 
+  
+  ungroup() %>%
+  distinct ()  # now should have one row per species, per sample
+
+
+#  df of species names
+spp_list  <- read_csv ("Data/species_eng.csv",
+                       col_types = cols(
+                         Spp_ID = col_factor()
+                       )) %>%
+  # rename (species = sci_name_underscore) %>% #rename to match species column
+  # Common names have several options separated by commas, only grab first option for more legible graphs
+  # https://stackoverflow.com/questions/42565539/using-strsplit-and-subset-in-dplyr-and-mutate
+  mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
+
+
+
+
 common_spp <- spp_list %>%
   filter (n_spring > 35 | n_autumn > 24)
 
 # group species by abundance trends ----
 abundance_trends <- mfri_abun %>%
   group_by (species, year, season) %>%
-  summarise (wtmean_abundance = mean (n_tot), 
+  summarize (wtmean_abundance = mean (n_tot), 
              se_abundance = sd (n_tot, na.rm = TRUE)/sqrt(length(n_tot)),
              wtmean_biomass = mean (kg_tot),
              se_biomass = sd (kg_tot, na.rm = TRUE)/sqrt(length(kg_tot))
@@ -122,7 +159,14 @@ spp_PCA <- princomp (scale_df, cor = FALSE)
 plot (spp_PCA$scores)
 summary (spp_PCA)
 loadings (spp_PCA)
-biplot (spp_PCA)
+png ("Figures/PCA_spp_niche.png", width = 8,height = 6, units = "in", res = 300)
+biplot (spp_PCA, xlim = c(-0.55, 0.5), main = "PCA on the difference from 1995-1999 to 2010-2014 in mean bottom temp, depth, lon, lat")
+dev.off()
+
+# https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
+library (ggfortify)
+spp_prcomp <- prcomp(scale_df, .scale = TRUE)
+autoplot(spp_prcomp, data = tb, colour = 'Therm_pref', loadings = TRUE)
 
 # add tb?
 tb <- pca_df %>%
@@ -134,6 +178,42 @@ tb <- pca_df %>%
   ))
   
 therm_pref <- tb$Therm_pref
+
+# https://programmer.group/sample-pca-scatter-grouped-ellipse-principal-component-abundance-and-correlation.html
+library(ggbiplot) # breaks group_by
+png("Figures/Spp_niche_PCA_Therm_pref.png", width = 8,height = 6, units = "in", res = 300)
+ggbiplot(spp_PCA,  obs.scale = 1, var.scale = 1,
+          ellipse = FALSE, circle = FALSE, alpha = 0.0) +
+  scale_color_discrete(name = '') +
+  theme(legend.direction = 'horizontal', legend.position = 'top') +
+  theme_bw() +
+  geom_text (aes (label = tb$Spp_ID, col = tb$Therm_pref)) +
+  scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
+  labs (col = "Thermal pref") +
+  ggtitle ("PCA on the difference from 1995-1999 to 2010-2014 in mean bottom temp, depth, lon, lat")
+dev.off()
+
+# try with biomass categories
+bc <- biomass_categories %>%
+  rename (Spp_ID = species) %>%
+  filter (season == "spring")
+tb_biomass <- tb %>%
+  left_join (bc, by = "Spp_ID")
+
+png("Figures/Spp_niche_PCA_biomass.png", width = 8,height = 6, units = "in", res = 300)
+ggbiplot(spp_PCA,  obs.scale = 1, var.scale = 1,
+         ellipse = FALSE, circle = FALSE, alpha = 0.0) +
+  scale_color_discrete(name = '') +
+  theme(legend.direction = 'horizontal', legend.position = 'top') +
+  theme_bw() +
+  geom_text (aes (label = tb_biomass$Spp_ID, col = tb_biomass$biomass_cat)) +
+  scale_color_manual (values = c("gray", "red2", "blue")) +
+  labs (col = "Biomass trend") +
+  ggtitle ("PCA on the difference from 1995-1999 to 2010-2014 in mean bottom temp, depth, lon, lat")
+dev.off()
+
+# https://bioconductor.org/packages/release/bioc/vignettes/PCAtools/inst/doc/PCAtools.html#a-bi-plot-1
+library (PCAtools)
 
 
 
@@ -184,6 +264,7 @@ biomass_cat_spring <- biomass_categories %>%
   filter (season == "spring") %>%
   rename (Spp_ID = species)
 
+png("Figures/Spp_niche_parallel_coords.png", width = 8,height = 6, units = "in", res = 300)
 tb %>%
   left_join (biomass_cat_spring, by = "Spp_ID") %>% 
   ggparcoord (
@@ -193,7 +274,7 @@ tb %>%
     alphaLines = 0.5
   ) + 
   theme_bw() +
-  scale_color_manual (values = c("blue", "deepskyblue", "red2")) +
+  scale_color_manual (values = c("gray", "red2", "blue")) +
   theme(legend.position = "top") +
   ggtitle ("Parallel coordinates, major spp, 2010-2014 vs 1995-1999")
-
+dev.off()

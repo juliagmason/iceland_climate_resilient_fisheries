@@ -25,11 +25,15 @@ spp_annual_trends <- read_csv ("Data/spp_niche_annual_trends.csv")
 slopes <- spp_annual_trends %>%
   group_by (species, season, var) %>%
   filter (n() > 1) %>%
-  summarise (slope = coef(lm (wtmean ~ year))[2])
+  summarise (slope = coef(lm (wtmean ~ year))[2]) %>%
+  mutate (species = as.factor(species))
 
 spp_tbl <- spp_list %>%
   #select (Scientific_name, Spp_ID, mean_TB) %>%
-  mutate (species = as.double (Spp_ID))
+  #mutate (species = as.double (Spp_ID))
+  
+  # slopes is now saying species is a factor, not integer
+  rename (species = Spp_ID)
 
 spr_sl <- slopes %>%
   filter (season == "spring") %>%
@@ -41,8 +45,8 @@ fig <- plot_ly (spr_sl, x = ~bottom.temp, y = ~lat, z = ~tow.depth.begin, hoveri
                 text = spr_sl$Scientific_name,
                 color = ~mean_TB)  
 
-# fig %>% 
-  # add_markers () 
+fig %>%
+add_markers ()
 
 #https://stackoverflow.com/questions/34580095/using-r-and-plot-ly-how-do-i-script-saving-my-output-as-a-webpage
 library (htmlwidgets)
@@ -58,4 +62,7 @@ spr_deeper <- spp_lm_sig %>%
   distinct (species, .keep_all = TRUE)
 
 spr_deeper$species[which (duplicated (spr_deeper$species))]
-# how uniform is ti
+# how uniform is it
+
+
+## can I plot the lollipop distances in 3 dimensions? 
