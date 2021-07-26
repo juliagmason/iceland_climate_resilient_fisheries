@@ -6,6 +6,15 @@ library (tidyverse)
 
 # look at compare_performance but would need to do for each species
 #https://easystats.github.io/performance/reference/compare_performance.html
+library (performance)
+
+load("Models/Borm_14_alltemp/Gadus_morhua_PA.Rdata")
+Borm_orig_PA <- gam_PA
+
+load ("Models/rugos3m/Gadus_morhua_PA.Rdata")
+rug_PA <- gam_PA
+
+compare_performance (Borm_orig_PA, rug_PA)
 
 # Compiled separate csvs of GAM performance. Put them all in one place, with values relative to the main model, Borm_14_alltemp
 
@@ -47,6 +56,12 @@ Smooth_latlon_perf <- read_csv("Models/GAM_performance_Smooth_latlon_drop_year.c
           model = "Smooth_latlon") %>%
   dplyr::select (model,species, Suitable, PA_dev, PA_AIC, LB_dev, LB_AIC, MAE_gam)
 
+
+Rug_perf <- read_csv ("Models/GAM_performance_rugos3m.csv") %>%
+  mutate (Suitable = ifelse (MASE_GAM < 1 & DM_GAM_p < 0.05, 1, 0),
+          model = "Rugosity") %>%
+  dplyr::select (model,species, Suitable, PA_dev, PA_AIC, LB_dev, LB_AIC, MAE_gam)
+
 # df_rbind <- rbind (Borm_14_alltemp_perf, Borm_14_alltemp_btmin_perf, Depth_temp_perf, Depth_temp_btmin_perf, Borm_14_intn_perf, Smooth_latlon_perf) %>%
 #   pivot_wider (-c(species),
 #                names_from )
@@ -75,6 +90,53 @@ comp_join <- Borm_14_alltemp_perf %>%
 write.csv (comp_join, file = "Models/GAM_performance_comparison_NOFAKEZEROS.csv", row.names = FALSE)
 
 # also just do averages? even p-value differences??
+
+# Compare rugosity and borm_14
+borm_long <- Borm_14_alltemp_perf %>%
+  filter (species %in% Rug_perf$species) %>%
+  dplyr::select (species, PA_dev, PA_AIC, LB_dev, LB_AIC, MAE_gam, Suitable) %>%
+  pivot_longer (PA_dev:LB_AIC,
+                names_to = c("Part", "metric"),
+                names_sep = "_", ) %>%
+  pivot_wider (names_from = "metric",
+               values_from = "value") %>%
+  mutate (Model = "Bormicon region")
+
+rug_long <- Rug_perf %>%
+  dplyr::select (species, PA_dev, PA_AIC, LB_dev, LB_AIC, MAE_gam, Suitable) %>%
+  pivot_longer (PA_dev:LB_AIC,
+                names_to = c("Part", "metric"),
+                names_sep = "_", ) %>%
+  pivot_wider (names_from = "metric",
+               values_from = "value")%>%
+  mutate (Model = "Rugosity")
+
+dt_long  <-  Depth_temp_perf %>%
+  filter (species %in% Rug_perf$species) %>%
+  dplyr::select (species, PA_dev, PA_AIC, LB_dev, LB_AIC, MAE_gam, Suitable) %>%
+  pivot_longer (PA_dev:LB_AIC,
+                names_to = c("Part", "metric"),
+                names_sep = "_", ) %>%
+  pivot_wider (names_from = "metric",
+               values_from = "value") %>%
+  mutate (Model = "Depth temp only")
+
+dxt_long <- Borm_14_intn_perf %>%
+  filter (species %in% Rug_perf$species) %>%
+  dplyr::select (species, PA_dev, PA_AIC, LB_dev, LB_AIC, MAE_gam, Suitable) %>%
+  pivot_longer (PA_dev:LB_AIC,
+                names_to = c("Part", "metric"),
+                names_sep = "_", ) %>%
+  pivot_wider (names_from = "metric",
+               values_from = "value") %>%
+  mutate (Model = "Depth temp interaction")
+
+rug_compare <- rbind (borm_long, rug_long, dt_long, dxt_long) %>%
+  relocate (c(MAE_gam, Suitable), .after = AIC) %>%
+  arrange (species, Part, AIC)
+
+save (rug_compare, file = "Models/Borm_Rug_TD_compare10.RData")
+
 
 
 

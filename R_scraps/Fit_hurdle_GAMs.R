@@ -63,7 +63,7 @@ mfri_pred_borm <-  read_csv ("Data/MFRI_predictor_df.csv",
   # remove autumn 2011 [labor strike] and pre-2000 autumn [sites weren't standard yet]
   filter (!(year == 2011 & season == "autumn"),
           !(year < 2000 & season == "autumn")) %>%
-  dplyr::select (sample_id, year, tow_depth_begin, bottom_temp, surface_temp, bormicon_region, sst_max, sst_min, bt_max, bt_min, rugosity) %>%
+  dplyr::select (sample_id, year, tow_depth_begin, bottom_temp, surface_temp, bormicon_region, sst_max, sst_min, bt_max, bt_min, rugosity, rugosity1, rugosity6) %>%
 # as of 12/17/2020, also filter out NAs for borm_14 model predictors to speed things up, and so I can replace relevant fake zeroes. now should have 19759 rows
 drop_na (c("tow_depth_begin", "surface_temp", "bottom_temp", "sst_max"))
 
@@ -351,6 +351,23 @@ load ("Models/tw_LL_11spp.RData")
 
 ll_24 <- rbind (loglink_df_tmp, loglink_df3)
 save (ll_24, file = "Models/tw_LL_24spp.RData")
+
+
+# fit remaining spp on local machine
+ll_spp_done <- map_chr(ll_files, scan_fun)
+ll_spp_remain <- borm_spp$sci_name_underscore[which (!borm_spp$sci_name_underscore %in% ll_spp_done)]
+
+loglink_remain_ls <- list (sci_name = ll_spp_remain, 
+                           directory = "Borm_14_tw_loglink") %>%
+  as.list()
+
+system.time(loglink_df_remain <- pmap_dfr (loglink_remain_ls, fit_tw_fun)); beep() #21061.13
+row.names (loglink_df_remain) <- NULL
+save (loglink_df_remain, file = "Modelstweedie_LL_remain.RData")
+load ("Models/tw_LL_24spp.RData") # ll_24
+
+tw_LL_borm <- rbind (ll_24, loglink_df_remain)
+save (tw_LL_borm, file = "Models/tw_LL_borm_stats.RData")
 
 # compare performance 
 gam_2step <- read_csv ("../Models/GAM_performance_Borm_14_alltemp_NOFAKEZEROS.csv") %>%
