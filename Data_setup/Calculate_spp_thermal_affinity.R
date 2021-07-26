@@ -37,7 +37,7 @@ med_seas <- mfri_abun %>%
   group_by (season) %>%
   summarize (med = median (bottom_temp, na.rm = TRUE))
 
-# calculate thermal index for each species. Since temperature distributions are different in the two seasons and Campana only did autumn, separate by season and take a mean
+# calculate thermal index for each species. Since temperature distributions are different in the two seasons and Campana only did autumn, separate by season and take a weighted mean
 spp_therm <- mfri_abun %>%
   filter (!is.na (bottom_temp)) %>%
   group_by (species, season) %>%
@@ -57,9 +57,14 @@ spp_therm <- mfri_abun %>%
 write.csv (spp_therm, file = "Data/spp_thermal_affinity.csv", row.names = FALSE)
 
 # Do any species have a different thermal bias in spring vs. autumn? ----
+load ("Models/spp_Smooth_latlon.RData") 
+borm_spp <- filter (spp_Smooth_latlon, 
+                    ! sci_name_underscore %in% c("Myoxocephalus_scorpius", "Amblyraja_hyperborea", "Rajella_fyllae,", "Lumpenus_lampretaeformis", "Ammodytes_marinus", "Mallotus_villosus", "Micromesistius_poutassou", "Argentina_silus", "Scomber_scombrus", "Clupea_harengus"))
+
 
 spp_tb_season <- mfri_abun %>%
-  filter (!is.na (bottom_temp)) %>%
+  filter (!is.na (bottom_temp),
+          species %in% borm_spp$Spp_ID) %>%
   group_by (species, season) %>%
   summarise (n_obs = n(),
              Therm = weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE),
@@ -72,11 +77,36 @@ spp_tb_season <- mfri_abun %>%
             TB > 0 ~ "Warm",
             between (TB, -3, 0) ~ "Cool",
             TB < 0 ~ "Cold"
-          )) %>%  filter (species %in% c(12, 28, 23, 9,  87, 62, 79, 80, 31, 65, 58)) %>% View()
+          )) %>%  #filter (species %in% c(12, 28, 23, 9,  87, 62, 79, 80, 31, 65, 58)) %>% View()
   group_by (species) %>%
   summarise (n_tb = length (unique (Therm_pref))) %>%
-  filter (n_tb > 1) %>% 
+  filter (n_tb > 1) %>% #View()
   pull (species)
+
+spp_sci_names <- read_csv ("Data/species_eng.csv",
+                                       col_types = cols(
+                                         Spp_ID = col_factor()
+                                       )) %>%
+  select (Spp_ID, sci_name_underscore, Common_name) %>%
+  rename (species = Spp_ID)
+
+spp_therm_2seas <- mfri_abun %>%
+  filter (!is.na (bottom_temp),
+          species %in% spp_tb_season) %>%
+  group_by (species, season) %>%
+  summarise (n_obs = n(),
+             Therm = weighted.median(bottom_temp, w = kg_tot, na.rm = TRUE),
+             ) %>%
+  left_join (med_seas, by = "season") %>%
+  mutate (TB = Therm - med,
+          Therm_pref = case_when (
+            TB > 0 ~ "Warm",
+            between (TB, -3, 0) ~ "Cool",
+            TB < 0 ~ "Cold")
+          ) %>%
+  left_join (spp_sci_names, by = "species")
+  
+save (spp_therm_2seas, file = "Data/spp_diff_therm_pref_season_borm55.Rdata")
 
 # how many of these are in the model?
 load("Models/spp_Smooth_latlon.RData")
