@@ -5,7 +5,7 @@ library (tidyverse)
 
 
 # CSV of individual variable contribution to deviance explained. Made this table in Step1_Fit_GAMs. Focusing on the difference between dev explained in the full model and dev explained in a model with each variable dropped. That column is called "Diff_f"
-var_imp <- read_csv ("Models/var_imp_Rug_nb.csv")
+var_imp <- read_csv ("Models/var_imp_sp_Rug_tw_LL.csv")
 
 
 var_imp %>%

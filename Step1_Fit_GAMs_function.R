@@ -132,15 +132,15 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
       # time this, highly variable 
       start_time <- Sys.time()
       
-      gam_nb <- gam (formula = formula_gam,
-                     family = nb(link = "log"),
+      gam_tw <- gam (formula = formula_gam,
+                     family = tw(link = "log"),
                      data = spp_data_train,
                      method = "REML",
                      select = TRUE)
       
       
       
-      save (gam_nb,  file = paste0("Models/", directory, "/", sci_name, ".Rdata"))
+      save (gam_tw,  file = paste0("Models/", directory, "/", sci_name, ".Rdata"))
       
       end_time <- Sys.time()
       
@@ -179,7 +179,7 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
         
         G_drop <- gam (as.formula (paste0 ("kg_tot ~", (paste (model_terms[! model_terms %in% x], collapse = " + ")))),
                        #sp = drop_sp,
-                       family = nb(link = "log"),
+                       family = tw(link = "log"),
                        data = spp_data_train,
                        method = "REML")
         
@@ -210,20 +210,20 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
       
       
       # Calculate prediction error ----
-      predict_nb <- predict.gam (gam_nb, spp_data_test, type = "response")
+      predict_tw <- predict.gam (gam_tw, spp_data_test, type = "response")
       
-      MAE_nb <- mean(abs(predict_nb - spp_data_test$kg_tot))
+      MAE_tw <- mean(abs(predict_tw - spp_data_test$kg_tot))
       
       
       # Calculate prediction error of a naive GAM with static variables only
-      gam_naive <- update (gam_nb, formula = as.formula(paste0 ("kg_tot ~", (paste (naive_terms, collapse = " + ")))))
+      gam_naive <- update (gam_tw, formula = as.formula(paste0 ("kg_tot ~", (paste (naive_terms, collapse = " + ")))))
       
       predict_naive <- predict.gam (gam_naive, spp_data_test, type = "response")
       
       MAE_naive <- mean (abs (predict_naive - spp_data_test$kg_tot))
       
       E1 <- predict_naive - spp_data_test$kg_tot
-      E2 <- predict_nb - spp_data_test$kg_tot
+      E2 <- predict_tw - spp_data_test$kg_tot
       
       # need complete cases; remove NA
       E1_cc <- E1 [ which (!is.na(E1) & !is.na(E2))]
@@ -232,7 +232,7 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
       dm_gam <- dm.test (E1_cc, E2_cc, h = 1, power = 1, alternative = "greater")
       
       # Calculate mean absolute squared error, ratio of MAE/naive MAE
-      MASE = MAE_nb / MAE_naive
+      MASE = MAE_tw / MAE_naive
       
       
       spp_stats <- data.frame (
@@ -240,8 +240,8 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
         ## general info
         species = sci_name[i],
         n_presence = length (which (spp_data_train$kg_tot > 0)),
-        dev_ex = round (summary (gam_nb)$dev.expl, 2),
-        AIC = round (AIC(gam_nb),2),
+        dev_ex = round (summary (gam_tw)$dev.expl, 2),
+        AIC = round (AIC(gam_tw),2),
         
         dev_ex_naive = round (summary (gam_naive)$dev.expl, 2),
         
@@ -251,7 +251,7 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
         # for Naive GAM
         MAE = round(MAE_nb, 3),
         MAE_naive = round(MAE_naive, 3),
-        MASE = round(MAE_nb / MAE_naive,2),
+        MASE = round(MAE_tw / MAE_naive,2),
         DM_GAM_p = round(dm_gam$p.value, 2),
         DM_GAM_stat = round(dm_gam$statistic, 2)
         
@@ -284,8 +284,8 @@ fit_gam_fun <- function (sci_name, directory, model_terms, naive_terms, fit_gam 
 # Run functions on models ----
 # ==================
 
-system.time (fit_nb_fun (sci_name = borm_spp$sci_name_underscore, 
-                         directory = "Rug_nb",
+system.time (fit_gam_fun (sci_name = borm_spp$sci_name_underscore, 
+                         directory = "Rug_tw_LL",
                          fit_gam = TRUE,
                          var_imp = TRUE, 
                          gam_stats = TRUE, 

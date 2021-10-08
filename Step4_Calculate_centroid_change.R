@@ -7,7 +7,8 @@ library (raster)
 library (tidyverse)
 library (beepr) # for alerting me when code is done
 library (SDMTools) # for calculating circular average. Not available for R version 4.0.2, downloaded from https://www.rforge.net/SDMTools/git.html
-#library (spatstat) # for weighted quantiles
+# install.packages('SDMTools',,'http://www.rforge.net/')
+
 
 
 # species data
@@ -22,6 +23,10 @@ spp_list  <- read_csv ("Data/species_eng.csv",
          Common_name = gsub ("Atlantic", "Atl", Common_name))
 
 
+# raster with depth cropped at 1200m, made in Step2. I only cropped the historical rasters, not the prediction bricks for the cropped species so need to mask the prediction rasters before calculating differences.
+depth_mask <- raster ("Data/depth_1200_mask.grd")
+
+
 ################################################################
 # Calculate change in centroid of distribution ----
 # Code from Morely et al. 2018, calculating % habitat change as change in sum of prediction values
@@ -29,17 +34,10 @@ spp_list  <- read_csv ("Data/species_eng.csv",
 # trying something different, with purr. Still think it's faster to separate historical and future
 hist_centroids_fun <- function (sci_name) {
   # load raster brick for historical period
-  if (sci_name %in% c("Molva_molva", "Hippoglossoides_platessoides")) {
-    hist_br <- brick (file.path ("Models/Prediction_bricks", 
-                                 paste0("Rug_nb_depth_crop", sci_name, "_Rug_nb_", "2000_2018.grd"))
-    )
-  } else {
-    
-    hist_br <- brick (file.path ("Models/Prediction_bricks", 
-                                 paste(sci_name, "Rug_nb", "2000_2018.grd", sep = "_"))
-    )
-    
-  }
+  hist_br <- brick (file.path ("Models/Prediction_bricks",
+                               paste0(sci_name, "_Rug_tw_LL_2000_2018.grd")
+                               )
+                    )
   
   # take mean so have one value per period
   hist_mn <- calc (hist_br, median) # calc is faster than StackApply
@@ -71,10 +69,15 @@ system.time( hist_centroids <- map_df (borm_spp$sci_name_underscore, hist_centro
 
 future_centroids_fun <- function (sci_name, CM, scenario) {
   # load raster brick for historical period
-  pred_br <- brick (file.path ("Models/Prediction_bricks", 
-                               paste(sci_name, "Borm_14_alltemp", CM, scenario, "2061_2080.grd", sep = "_")
+  pred_br <- brick (file.path ("Models/Prediction_bricks",
+                               paste(sci_name, "Rug_tw_LL", CM, scenario, "2061_2080.grd", sep = "_")
                                )
                     )
+  
+  # for spp with uninterpretable values, crop depths with depth_mask
+  if (sci_name %in% c("Sebastes_marinus", "Sebastes_viviparus", "Sebastes_mentella", "Lycodes_gracilis", "Chimaera_monstrosa", "Lepidion_eques")) {
+    pred_br <- mask(pred_br, depth_mask)
+  }
   
   #take mean so have one value per period
   pred_mn <- calc (pred_br, median) # calc is faster
@@ -106,11 +109,12 @@ cm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
   filter (!(CM == "CM26" & scenario == 245)) %>% 
   as.list() # convert to list to feed to pmap
 
-system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)); beep() # 382s landed, 1206.62  full. 923 secodn time
+system.time( pred_centroids <- pmap_dfr (cm_expand, future_centroids_fun)); beep() # 382s landed, 1206.62  full
 
 # combine and save 
 # start with just centroids, do warm/cold later
-centroid_change <- pred_centroids %>%
+# _dc for depth crop
+centroid_change_dc <- pred_centroids %>%
   left_join (hist_centroids, by = "species") %>%
   mutate (dist = distHaversine (cbind(hist_lon, hist_lat),
                                 cbind(pred_lon, pred_lat)),
@@ -120,4 +124,4 @@ centroid_change <- pred_centroids %>%
   )
 
 # save 
-save (centroid_change, file = "Data/centroids_Rug_allscenarios_DepthCrop.RData")
+save (centroid_change_dc, file = "Data/centroids_Rug_allscenarios_tw.RData")

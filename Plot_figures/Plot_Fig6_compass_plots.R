@@ -17,11 +17,12 @@ spp_list  <- read_csv ("Data/species_eng.csv",
 
 
 # Load centroid df from Step4_Calculate_centroid_change.R
-load ("Data/centroids_Rug_allscenarios_DepthCrop.RData")
+load ("Data/centroids_Rug_allscenarios_tw.RData")
 
-
+# take mean distance and bearing among the climate models
 centroid_mean_change <- centroid_change_dc %>%
-  filter (!species %in% c("Squid", "Myctophidae", "Squalus_acanthias")) %>%
+  # remove species deemed unsuitable for temperature predictions
+  filter (!species %in% c("Squalus_acanthias", "Icelus_bicornis")) %>%
   group_by (species, scenario) %>%
   summarise (mean_dist = mean(dist),
              sd_dist = sd (dist),
@@ -71,8 +72,10 @@ cent_minmax <- centroid_change_dc %>%
     bearing = ifelse (mean_bearing < 0, mean_bearing + 360, mean_bearing))
 
 
+
 cent_labels_minmax <- cent_minmax %>%
   mutate (
+    # further shorten names for readability
     Common_name = case_when (
       Common_name == "Lycodes eudipleurostictus" ~ "Doubleline eelpout",
       Common_name == "Lycodes seminudus" ~ "Longear eelpout",
@@ -97,12 +100,12 @@ cent_labels_minmax <- cent_minmax %>%
                 x = bearing,
                 y = 280,
                 
-                # not sure what angle is doing here but it seems right
+                # not sure what angle is doing here but it seems to be working
                 angle = ifelse (bearing < 180,
                                 -bearing + 90,
                                 -bearing + 270)),
             col = "black",
-            alpha = 1,
+            #alpha = 1,
             #position = position_jitter(width = 4, height = 5),
             size = 2,
             vjust = 0.1) +
@@ -123,7 +126,7 @@ cent_labels_minmax <- cent_minmax %>%
     strip.text = element_text (size = 14),
     legend.position = "none"
   ) +
-  ggtitle ("Centroid shift bearing and distance,\nmin and max") +
+  #ggtitle ("Centroid shift bearing and distance,\nmin and max") +
   ylim(0, 400)
 
 ggsave ("Figures/Compass_Rug_facet_minmax.png", width = 170, height = 220, units = "mm", dpi = 300)

@@ -101,19 +101,18 @@ plot_predmaps_from_list <- function (predmap, sci_name, GAM) {
 
 load ("Models/spp_Borm.RData")
 
-system.time (rug_predmap_ls_full <- lapply (spp_borm, plot_diff_maps_2scen, GAM = "Rug_nb")); beep() 
+system.time (rug_predmap_ls_full <- lapply (spp_borm, plot_diff_maps_2scen, GAM = "Rug_tw_LL")); beep() 
 
-pdf (file = "Figures/Rug_nb_predmaps.pdf")
-mapply (plot_predmaps_from_list, rug_predmap_ls_full, sci_name = borm_suit, GAM = "Rugosity neg binom")
+pdf (file = "Figures/Rug_tw_predmaps.pdf")
+mapply (plot_predmaps_from_list, rug_predmap_ls_full, sci_name = borm_suit, GAM = "Rugosity Tweedie")
 dev.off()
 
 
 # Figure 5 multipanel habitat difference ----
 
 sci_name_vec <- c("Gadus_morhua", "Trisopterus_esmarkii", "Lophius_piscatorius", "Cyclopterus_lumpus")
-p_pred <- lapply (sci_name_vec, plot_diff_maps_2scen, GAM = "Rug_nb") 
+p_pred <- lapply (sci_name_vec, plot_diff_maps_2scen, GAM = "Rug_tw_LL") 
 
-plaice <- plot_diff 
 
 ggsave ("Figures/Fig5a_gm_diff.eps", p_pred[[1]], width = 170, height = 85, units = "mm", dpi= 300)
 ggsave ("Figures/Fig5b_te_diff.eps", p_pred[[2]], width = 170, height = 85, units = "mm", dpi= 300)
@@ -131,17 +130,7 @@ ggsave ("Figures/Fig5d_cl_diff.eps", p_pred[[4]], width = 170, height = 85, unit
 # show baseline historical habitat
 plot_hist_hab <- function (sci_name) {
   
-  if (sci_name %in% c("Molva_molva", "Hippoglossoides_platessoides")) {
-    br_hist <- brick (file.path ("Models/Prediction_bricks", 
-                                 paste0("Rug_nb_depth_crop", sci_name, "_Rug_nb_", "2000_2018.grd"))
-    )
-  } else {
-    
-    br_hist <- brick (file.path ("Models/Prediction_bricks", 
-                                 paste(sci_name, "Rug_nb", "2000_2018.grd", sep = "_"))
-    )
-    
-  }
+  br_hist <- brick (paste0("Models/Prediction_bricks/Rug_tw_depth_crop", sci_name, "_Rug_tw_LL_2000_2018.grd"))
   
   # calculate a mean, so just one layer
   med_hist <- calc (br_hist, median)
@@ -176,33 +165,14 @@ calc_diff_maps_ts <- function (sci_name, scenario, period) {
   
   
   # load bricks, which have a layer for each month and year
-  if (sci_name %in% c("Molva_molva", "Hippoglossoides_platessoides")) {
-    br_hist <- brick (file.path ("Models/Prediction_bricks", 
-                                 paste0("Rug_nb_depth_crop", sci_name, "_Rug_nb_", "2000_2018.grd"))
-    )
-  } else {
-    
-    br_hist <- brick (file.path ("Models/Prediction_bricks", 
-                                 paste(sci_name, "Rug_nb", "2000_2018.grd", sep = "_"))
-    )
-    
-  }
+  br_hist <- brick (paste0("Models/Prediction_bricks/Rug_tw_depth_crop", sci_name, "_Rug_tw_LL_2000_2018.grd"))
   
   # calculate a mean, so just one layer
   med_hist <- calc (br_hist, median)
   
   # load predictions, stack, and take ensemble mean
   
-  
-  if (sci_name %in% c("Molva_molva", "Hippoglossoides_platessoides") & period == 2061) {
-    
-    file_names <- list.files (path = "Models/Prediction_bricks/", pattern = paste0("Rug_nb_depth_crop", sci_name,"_Rug_nb_", ".*", scenario, ".*", period, ".*", ".grd"), full.names = TRUE)
-    
-  } else {
-    
-    file_names <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, "_Rug_nb_", ".*", scenario, ".*", period, ".*", ".grd"), full.names = TRUE)
-    
-  }
+  file_names <- list.files (path = "Models/Prediction_bricks/", pattern = paste0(sci_name, "_Rug_tw_LL", ".*", scenario, ".*", period, ".*", ".grd"), full.names = TRUE)
   
   br_pred <- stack (file_names)
   
@@ -260,6 +230,7 @@ plot_maps_allper <- function (sci_name) {
   p_future <- readRDS (paste0("Figures/SI_tmp/", sci_name, "_future.RDS"))
   
   comm_name <- spp_list$Common_name[which (spp_list$species == sci_name)]
+  
   # for clarity, make an object for scientific name without underscore
   title_name <- str_replace (sci_name, "_", " ")
   
@@ -276,11 +247,11 @@ plot_maps_allper <- function (sci_name) {
 
 
 
-rug_spp <- borm_spp %>%
-  filter (species != "Squalus_acanthias")
+suit_spp <- borm_spp %>%
+  filter (species != c("Squalus_acanthias", "Icelus_bicornis"))
 
 
 pdf ("Figures/FigSI2_habitat_diff_maps.pdf")
-lapply (sort(rug_spp$sci_name_underscore), plot_maps_allper)
+lapply (sort(suit_spp$sci_name_underscore), plot_maps_allper)
 dev.off()
 beep()

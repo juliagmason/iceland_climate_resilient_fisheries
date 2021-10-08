@@ -42,6 +42,11 @@ depth_r <- as.raster(depth)
 depth_r_neg <- calc (depth_r, function (x) -x)
 depth_r <- raster::resample (depth_r_neg, pred_r_template, method = "bilinear")
 
+# make a depth mask for depth > 1200m
+depth_r_mask <- depth_r
+depth_r_mask  [depth_r_mask[] > 1200] <- NA
+writeRaster (depth_r_mask, file = "Data/depth_1200_mask.RData")
+
 
 # Rugosity ----
 
@@ -84,11 +89,11 @@ predict_list_fun <- function (sci_name, GAM, CM, scenario, month_index) {
   # CM is four-letter lowercase abbreviation
   
   
-  # For H. platessoides and M. molva outliers in deeper values are uninterpretable; crop at 1200m depth
-  if (sci_name %in% c("Hippoglossoides_platessoides", "Molva_molva")) {
+  # For some species outliers in deeper values are uninterpretable; crop at 1200m depth
+  
+  if (sci_name %in% c("Sebastes_marinus", "Sebastes_viviparus", "Sebastes_mentella", "Lycodes_gracilis", "Chimaera_monstrosa", "Lepidion_eques")) {
     depth_r[depth_r[] > 1200] <- NA
   }
-
   
   # load saved GAM for species of interest ----
   load (file.path("Models", GAM, paste0(sci_name, ".Rdata")))
@@ -177,7 +182,7 @@ CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 
 # #https://amber.rbind.io/2018/03/26/purrr/
 
-# from my experiments, lapply might be faster than pmap, about ~2 mins per run which could be significant (13 mins vs 15 mins). Not actually that different from the for loops. But, no good way to feed it all the different options. Might actually be better for my computer/sanity to run one CM and scenario at a time, though. 
+# from my experiments, lapply might be faster than pmap, about ~2 mins per run which could be significant (13 mins vs 15 mins). Not actually that different from the for loops. But, no good way to feed it all the different options. 
 
 # 3925.65 s, 65 mins for lapply Scomber 585
 # 3235.67  for pmap scomber 245
@@ -186,7 +191,7 @@ CM_list <- c("gfdl", "cnrm", "ipsl", "mohc", "CM26")
 # use expand_grid to get all the possible permutations of species, CM, scenario. Cut out CM 2.6 and 245. 
 
 borm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
-                            GAM = "Rug_nb",
+                            GAM = "Rug_tw_LL",
                             CM = CM_list,
                             scenario = c(245, 585),
                             year1 = 2061,
@@ -196,7 +201,7 @@ borm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
 
 
 system.time (pmap (borm_expand, predict_brick_fun)); beep (sound = 3)
-
+# takes about 4 days
 
 # ==================
 ## Historical period using GLORYS temperature ----
@@ -277,7 +282,7 @@ hist_brick_fun <- function (sci_name, GAM, year1, year2) {
 
 
 borm_expand_hist <- expand_grid (sci_name = borm_spp$sci_name_underscore,
-                            GAM = "Rug_nb",
+                            GAM = "Rug_tw_LL",
                             year1 = 2000,
                             year2 = 2018) %>%
   as.list()

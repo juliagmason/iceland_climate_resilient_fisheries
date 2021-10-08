@@ -107,4 +107,4 @@ fig1_map <- ggplot() +
   lims (y = c(59, 70), x = c(-34, -4))
 
 ggsave("Figures/Fig1_Map_survey_pts.png", fig1_map, width = 85, height = 85, units = "mm", dpi = 300)
-
+ggsave("Figures/Fig1_Map_survey_pts.eps", fig1_map, width = 85, height = 85, units = "mm", dpi = 300)

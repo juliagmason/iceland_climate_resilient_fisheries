@@ -28,6 +28,8 @@ load ("Models/spp_Borm.RData")
 # raster with extent of GFDL model, resolves issues with historical vs. projections coastal NAs
 load ("Data/gfdl_ISL_mask.RData")
 
+# raster with depth cropped at 1200m, made in Step2. I only cropped the historical rasters, not the prediction bricks for the cropped species so need to mask the prediction rasters before calculating differences.
+depth_mask <- raster ("Data/depth_1200_mask.grd")
 
 # Calculate amount of habitat in historical and predicted bricks from my rasters (created in Step2_Predict_ensemble_rasters.R)
 
@@ -38,7 +40,7 @@ sum_habitat_hist <- function (sci_name) {
   
   # load raster brick for historical period
   hist_br <- brick (file.path ("Models/Prediction_bricks", 
-                               paste(sci_name, "Rug_nb", "2000_2018.grd", sep = "_"))
+                               paste(sci_name, "Rug_tw_LL", "2000_2018.grd", sep = "_"))
   )
   
   # mask to gfdl
@@ -56,21 +58,25 @@ sum_habitat_hist <- function (sci_name) {
 
 
 
-# apply function, base r method:
-
-landed_hist_hab <- do.call(rbind, lapply(landed_spp, sum_habitat_hist, GAM = "Borm_14_alltemp"))
-
 # purr method:
 system.time (hist_hab <- map_df (borm_spp$sci_name_underscore, sum_habitat_hist)) # 20s for landed_spp, 95s for all spp
+
+save (hist_hab_rug_med, file = "Data/hist_hab_rug_med.RData")
 
 # future function ----
 sum_habitat_future <- function (sci_name, CM, scenario) {
   # CM is 4-letter lowercase climate model abbreviation
   # scenario is 245 or 585
   pred_br <- brick (file.path ("Models/Prediction_bricks", 
-                               paste(sci_name, "Rug_nb", CM, scenario, "2061_2080.grd", sep = "_")
+                               paste(sci_name, "Rug_tw_LL", CM, scenario, "2061_2080.grd", sep = "_")
                                )
   )
+  
+  
+  # for spp with uninterpretable values, crop depths with depth_mask
+  if (sci_name %in% c("Sebastes_marinus", "Sebastes_viviparus", "Sebastes_mentella", "Lycodes_gracilis", "Chimaera_monstrosa", "Lepidion_eques")) {
+    pred_br <- mask(pred_br, depth_mask)
+  }
   
   # mask to gfdl
   pred_br <- mask(pred_br, gfdl_mask)
@@ -101,7 +107,7 @@ cm_expand <- expand_grid (sci_name = borm_spp$sci_name_underscore,
 
 
 system.time(pred_hab <- pmap_dfr (cm_expand, sum_habitat_future)); beep() 
-# 233 seconds for landed spp, 530 seconds for all spp
+# about 40min
 
 # combine and save
 pred_hist_hab <- pred_hab %>%

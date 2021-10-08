@@ -14,16 +14,16 @@ spp_list  <- read_csv ("Data/species_eng.csv",
   mutate(Common_name = sapply(str_split(Common_name, ","), function(x) x[1]))
 
 # gam performance to indicate suitable species 
-MASE <- read_csv("Models/GAM_performance_Rug_nb.csv")
+MASE <- read_csv("Models/GAM_performance_Rug_tw_LL.csv")
 
 # ==================
 # load and plot habitat change ----
 # ==================
 
 # load habitat change df, made in Step3_Calculate_habitat_change.R
-load ("Data/hab_change_df.RData")
+load ("Data/hab_change_rug_tw_df.RData")
 
-load ("Models/spp_Borm.RData")
+load ("Models/spp_bormicon.RData")
 
 # species-by-species change ----
 
@@ -31,11 +31,11 @@ load ("Models/spp_Borm.RData")
 
 
 # rugosity med, combine with molva and hippo crop
-load ("Data/hab_change_rug_df_MmHp_crop.RData")
-load ("Data/hab_change_rug_df.RData")
-hab_change_rug_dc <- hab_change_rug %>%
-  filter (!species %in% c("Molva_molva", "Hippoglossoides_platessoides")) %>%
-  rbind (hab_change_rug_MmHp_crop) %>%
+# load ("Data/hab_change_rug_df_MmHp_crop.RData")
+# load ("Data/hab_change_rug_df.RData")
+hab_change_rug <- hab_change_rug %>%
+  # filter (!species %in% c("Molva_molva", "Hippoglossoides_platessoides")) %>%
+  # rbind (hab_change_rug_MmHp_crop) %>%
   mutate(Common_name = case_when (
     Common_name == "Lycodes eudipleurostictus" ~ "Doubleline eelpout",
     Common_name == "Lycodes seminudus" ~ "Longear eelpout",
@@ -55,8 +55,8 @@ hab_change_rug_dc <- hab_change_rug %>%
 scen_labs <- c("SSP 2-4.5", "SSP 5-8.5")
 names (scen_labs) <- c(245, 585) 
 
-hab_change_gg <- hab_change_rug_dc %>%
-  filter (!species %in% c("Squalus_acanthius")) %>%
+hab_change_gg <- hab_change_rug %>%
+  filter (!species %in% c("Squalus_acanthias", "Icelus_bicornis")) %>%
   left_join (MASE, by = "species") %>%
   mutate (
           # column for fill based on thermal preference
